@@ -21,7 +21,9 @@ export class Worker {
     // Windows kill(SIGTERM) is forceful; the worker bridge emits the same signal cooperatively.
     if (process.platform === "win32") this.child.send({ type: "muster:shutdown" });
     else this.child.kill("SIGTERM");
-    await this.exited;
+    const timer = setTimeout(() => this.child.kill("SIGKILL"), 10_000);
+    try { await this.exited; }
+    finally { clearTimeout(timer); }
   }
 }
 export async function waitForServer(origin: string, worker: Worker): Promise<void> {

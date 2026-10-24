@@ -36,7 +36,7 @@ async function shutdown() {
   if (poll) clearInterval(poll);
   eventsAbort.abort();
   tray?.destroy();
-  // A daemon may be uploading stopped turns for a long time: keep its server alive until it exits.
+  // Keep the server available while the daemon reports interrupted turns (up to 10s).
   await daemon?.stop();
   await server?.stop();
   stopped = true;

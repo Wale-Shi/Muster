@@ -55,11 +55,11 @@ export class MachineClient {
     await rename(`${file}.tmp`, file);
     return this.registration;
   }
-  heartbeat(running: string[]): Promise<{ stop: string[] }> { return this.request("/api/machine/heartbeat", { running }); }
+  heartbeat(running: string[], signal?: AbortSignal, retry = true): Promise<{ stop: string[] }> { return this.request("/api/machine/heartbeat", { running }, signal, retry); }
   claim(signal?: AbortSignal): Promise<TurnJob | null> { return this.request("/api/machine/claim", { requestId: crypto.randomUUID() }, signal); }
   events(turnId: string, upload: EventUpload): Promise<{ accepted: number }> { return this.request(`/api/machine/turns/${turnId}/events`, upload); }
   inbox(turnId: string, signal?: AbortSignal): Promise<Array<{ id: string; content: string }>> { return this.request(`/api/machine/turns/${turnId}/inbox`, undefined, signal); }
-  ackInbox(turnId: string, ids: string[]): Promise<{ accepted: true }> { return this.request(`/api/machine/turns/${turnId}/inbox/ack`, { ids }); }
+  ackInbox(turnId: string, ids: string[], signal?: AbortSignal): Promise<{ accepted: true }> { return this.request(`/api/machine/turns/${turnId}/inbox/ack`, { ids }, signal); }
   async complete(turnId: string, payload: TurnCompletePayload): Promise<void> {
     await this.request(`/api/machine/turns/${turnId}/complete`, payload);
   }

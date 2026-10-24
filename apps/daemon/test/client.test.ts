@@ -94,3 +94,22 @@ it("reports journaled turns as stopped when reusing a registration after restart
   expect(completions).toEqual([{ status: "stopped", error: expect.stringContaining("restarted") }]);
   expect(JSON.parse(await readFile(join(c.options.home, "running.json"), "utf8"))).toMatchObject({ turns: [] });
 });
+
+it("stops promptly by aborting pending claim and heartbeat requests", async () => {
+  const { Daemon } = await import("../src/daemon.js");
+  const aborted: string[] = [];
+  const c = await client((async (url, options) => {
+    const path = String(url);
+    if (path.endsWith("/enroll")) return Response.json({ machineId: "id", token: "token" });
+    return await new Promise<Response>((_resolve, reject) => {
+      options!.signal!.addEventListener("abort", () => { aborted.push(path); reject(options!.signal!.reason); }, { once: true });
+    });
+  }) as typeof fetch);
+  const daemon = new Daemon({ client: c, workspacesDir: join(c.options.home, "ws"), log: () => {} });
+  await daemon.start();
+  const started = Date.now();
+  await daemon.stop();
+  expect(Date.now() - started).toBeLessThan(1500);
+  expect(aborted).toContain("http://test/api/machine/claim");
+  expect(aborted.filter((path) => path.endsWith("/heartbeat"))).toHaveLength(2);
+}, 3000);

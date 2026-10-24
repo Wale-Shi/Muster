@@ -119,6 +119,24 @@ export class Scheduler {
     });
   }
 
+  // Roll back only a still-running, undelivered claim. A completed turn must never be requeued.
+  releaseClaim(token: string, job: TurnJob, requestId?: string): void {
+    const machine = this.authenticate(token);
+    this.db.transaction(() => {
+      const turn = this.db.row("SELECT id FROM turns WHERE id=? AND machine_id=? AND status='running'", job.turnId, machine.id);
+      if (!turn) return;
+      this.db.run("DELETE FROM mcp_tokens WHERE turn_id=?", job.turnId);
+      if (requestId) this.db.run("DELETE FROM machine_claims WHERE machine_id=? AND request_id=?", machine.id, requestId);
+      this.db.run("UPDATE turns SET status='queued', machine_id=NULL, started_at=NULL, last_reported_at=NULL, agent_snapshot_json=NULL WHERE id=?", job.turnId);
+      // Preserve affinity to a machine that already holds this build's worktree.
+      this.db.run("UPDATE builds SET machine_id=NULL WHERE id=? AND NOT EXISTS (SELECT 1 FROM turns WHERE build_id=? AND machine_id IS NOT NULL)", job.buildId, job.buildId);
+      if (job.todoId) {
+        this.db.run("UPDATE todos SET phase='queued', updated_at=? WHERE id=? AND phase IN ('planning','building')", now(), job.todoId);
+        this.events.emit({ type: "todo.changed", todoId: job.todoId, payload: {} });
+      }
+    });
+  }
+
   ingestEvents(token: string, turnId: string, agentEvents: AgentEvent[], batchId: string): void {
     const machine = this.authenticate(token);
     // An already accepted batch can be retried even after completion.

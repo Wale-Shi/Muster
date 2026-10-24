@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { serve } from "@hono/node-server";
 import { createApp } from "../app.js";
 import { createTodo, enroll, requestJson, seedProjectAndAgent } from "../test/helpers.js";
 
@@ -27,4 +28,64 @@ describe("machine protocol", () => {
     const messages = (await requestJson(app, `/api/conversations/${job.buildId}/messages`)).json.data;
     expect(messages).toEqual(expect.arrayContaining([expect.objectContaining({ role: "agent", content: "Plan it" }), expect.objectContaining({ role: "tool" })]));
   });
+});
+
+it("releases an assigned claim when the socket closes before the response is sent", async () => {
+  const { app, services } = createApp({ claimWaitMs: 25_000 }); databases.push(services.db);
+  const { projectId, agentId } = await seedProjectAndAgent(app);
+  const todoId = await createTodo(app, projectId, agentId);
+  const machine = await enroll(app);
+  let responseReady!: () => void;
+  const ready = new Promise<void>((resolve) => { responseReady = resolve; });
+  let finishResponse!: () => void;
+  const hold = new Promise<void>((resolve) => { finishResponse = resolve; });
+  const server = serve({ hostname: "127.0.0.1", port: 0, fetch: async (request, env) => {
+    const response = await app.fetch(request, env);
+    responseReady();
+    await hold;
+    return response;
+  } });
+  if (!server.listening) await new Promise<void>((resolve) => server.once("listening", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Missing server address");
+  const abort = new AbortController();
+  const pending = fetch(`http://127.0.0.1:${address.port}/api/machine/claim`, {
+    method: "POST", headers: { authorization: `Bearer ${machine.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ requestId: "aborted-claim" }), signal: abort.signal,
+  }).catch(() => null);
+  try {
+    // Start with an idle long poll, then assign a turn on its next scheduler pass.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await requestJson(app, `/api/todos/${todoId}/start`, "POST", { mode: "plan" });
+    await ready;
+    expect(services.db.row("SELECT status FROM turns")?.status).toBe("running");
+    abort.abort(); await pending;
+    await vi.waitFor(() => expect(services.db.row("SELECT status, machine_id FROM turns")).toMatchObject({ status: "queued", machine_id: null }));
+    expect(services.db.rows("SELECT * FROM mcp_tokens")).toHaveLength(0);
+    expect(services.db.rows("SELECT * FROM machine_claims")).toHaveLength(0);
+    expect(services.db.row("SELECT machine_id FROM builds")?.machine_id).toBeNull();
+    expect(services.orchestrator.getTodo(todoId).phase).toBe("queued");
+    const other = services.scheduler.enroll("other", ["mock"], 1);
+    expect(services.scheduler.claim(other.token)?.todoId).toBe(todoId);
+  } finally {
+    abort.abort(); finishResponse(); await pending;
+    if ("closeAllConnections" in server) server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+it("does not assign work after a pending long poll is aborted", async () => {
+  const { app, services } = createApp({ claimWaitMs: 25_000 }); databases.push(services.db);
+  const { projectId, agentId } = await seedProjectAndAgent(app);
+  const todoId = await createTodo(app, projectId, agentId);
+  const machine = await enroll(app);
+  const abort = new AbortController();
+  const pending = app.request("/api/machine/claim", {
+    method: "POST", headers: { authorization: `Bearer ${machine.token}`, "content-type": "application/json" }, body: "{}", signal: abort.signal,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  abort.abort();
+  await requestJson(app, `/api/todos/${todoId}/start`, "POST", { mode: "plan" });
+  expect(await (await pending).json()).toBeNull();
+  expect(services.db.row("SELECT status, machine_id FROM turns")).toMatchObject({ status: "queued", machine_id: null });
 });

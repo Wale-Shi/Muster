@@ -1,3 +1,5 @@
+import type { ServerResponse } from "node:http";
+import type { TurnJob } from "@muster/shared";
 import { Hono } from "hono";
 import { eventUploadSchema, claimSchema, inboxAckSchema, enrollMachineSchema, heartbeatSchema, turnCompleteSchema } from "@muster/shared";
 import type { TurnCompletePayload } from "@muster/shared";
@@ -24,9 +26,31 @@ export function machineRoutes(services: AppServices): Hono {
   app.post("/claim", async (c) => {
     const token = machineToken(c.req.header("authorization"));
     const input = await body(c, claimSchema);
-    const deadline = Date.now() + services.claimWaitMs; let job = services.scheduler.claim(token, input.requestId);
-    while (!job && Date.now() < deadline && !c.req.raw.signal.aborted) { await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now()))); job = services.scheduler.claim(token, input.requestId); }
-    return c.json(job);
+    const signal = c.req.raw.signal;
+    const outgoing = (c.env as { outgoing?: ServerResponse } | undefined)?.outgoing;
+    let job: TurnJob | null = null;
+    const release = () => { if (job) services.scheduler.releaseClaim(token, job, input.requestId); };
+    const cleanup = () => signal.removeEventListener("abort", release);
+    signal.addEventListener("abort", release, { once: true });
+    // Keep rollback armed until Node has actually flushed the response, not just until
+    // this handler returns it. The adapter aborts the request on premature socket close.
+    outgoing?.once("finish", cleanup);
+    outgoing?.once("close", cleanup);
+    try {
+      const deadline = Date.now() + services.claimWaitMs;
+      while (!signal.aborted) {
+        job = services.scheduler.claim(token, input.requestId);
+        if (job || Date.now() >= deadline) break;
+        await new Promise<void>((resolve) => {
+          const done = () => { clearTimeout(timer); signal.removeEventListener("abort", done); resolve(); };
+          const timer = setTimeout(done, Math.min(250, deadline - Date.now()));
+          signal.addEventListener("abort", done, { once: true });
+        });
+      }
+      if (signal.aborted) { release(); cleanup(); return c.json(null); }
+      if (!job) cleanup();
+      return c.json(job);
+    } catch (error) { release(); cleanup(); throw error; }
   });
   app.post("/turns/:id/events", async (c) => { const input = await body(c, eventUploadSchema); services.scheduler.ingestEvents(machineToken(c.req.header("authorization")), c.req.param("id"), input.events, input.batchId); return c.json({ accepted: input.events.length }); });
   app.get("/turns/:id/inbox", (c) => c.json(services.scheduler.inbox(machineToken(c.req.header("authorization")), c.req.param("id"))));

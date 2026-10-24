@@ -35,7 +35,6 @@ export class Daemon {
   private runtimes: Record<RuntimeName, Runtime>;
   private loop: Promise<void> | undefined;
   private heartbeatTask: Promise<void> | undefined;
-  private claimsDone = false;
   private lock: string;
   private ownsLock = false;
   private stopping: Promise<void> | undefined;
@@ -82,7 +81,7 @@ export class Daemon {
     await this.loop;
     await Promise.all([...this.active.values()].map((entry) => entry.task));
     await this.heartbeatTask;
-    try { await this.options.client.heartbeat([]); }
+    try { await this.options.client.heartbeat([], AbortSignal.timeout(500), false); }
     catch (error) { this.options.log("error", "Final heartbeat failed", { error: errorText(error) }); }
     await this.journal.run("running", async () => {});
     await this.releaseLock();
@@ -111,50 +110,46 @@ export class Daemon {
     if (this.ownsLock) { this.ownsLock = false; await rm(this.lock, { recursive: true, force: true }); }
   }
   private async heartbeats(): Promise<void> {
-    // Continue heartbeating while turns drain during shutdown.
-    while (!this.abort.signal.aborted || !this.claimsDone || this.active.size) {
+    while (!this.abort.signal.aborted) {
       try {
-        const { stop } = await this.options.client.heartbeat(this.running);
+        const { stop } = await this.options.client.heartbeat(this.running, this.abort.signal);
         for (const id of stop) {
           const active = this.active.get(id);
           if (active) { active.stopped = true; void active.runtime?.interrupt().catch((error: unknown) => this.options.log("error", "Interrupt failed", { turnId: id, error: errorText(error) })); }
         }
-      } catch (error) { this.options.log("error", "Heartbeat failed", { error: errorText(error) }); }
-      await delay(this.options.heartbeatMs ?? 5000);
+      } catch (error) { if (!this.abort.signal.aborted) this.options.log("error", "Heartbeat failed", { error: errorText(error) }); }
+      await delay(this.options.heartbeatMs ?? 5000, this.abort.signal);
     }
   }
   private async claims(): Promise<void> {
-    try {
-      while (!this.abort.signal.aborted) {
-        if (this.active.size >= this.options.client.options.concurrency) { await delay(100, this.abort.signal); continue; }
-        try {
-          // Drain the current long poll on shutdown: aborting its HTTP response can
-          // hide a job M1 has already assigned, leaving no way to stop that turn.
-          const job = await this.options.client.claim();
-          if (!job) { await delay(100, this.abort.signal); continue; }
-          const active: Active = { stopped: this.abort.signal.aborted, task: Promise.resolve() };
-          this.active.set(job.turnId, active);
+    while (!this.abort.signal.aborted) {
+      if (this.active.size >= this.options.client.options.concurrency) { await delay(100, this.abort.signal); continue; }
+      try {
+        const job = await this.options.client.claim(this.abort.signal);
+        if (!job) { await delay(100, this.abort.signal); continue; }
+        const active: Active = { stopped: this.abort.signal.aborted, task: Promise.resolve() };
+        this.active.set(job.turnId, active);
+        try { await this.saveRunning(); }
+        catch (error) { active.stopped = true; this.options.log("error", "Cannot journal claimed turn", { turnId: job.turnId, error: errorText(error) }); }
+        active.task = this.run(job, active).catch((error: unknown) => {
+          this.options.log("error", "Turn reporting failed", { turnId: job.turnId, error: errorText(error) });
+        }).finally(async () => {
+          this.active.delete(job.turnId);
           try { await this.saveRunning(); }
-          catch (error) { active.stopped = true; this.options.log("error", "Cannot journal claimed turn", { turnId: job.turnId, error: errorText(error) }); }
-          active.task = this.run(job, active).catch((error: unknown) => {
-            this.options.log("error", "Turn reporting failed", { turnId: job.turnId, error: errorText(error) });
-          }).finally(async () => {
-            this.active.delete(job.turnId);
-            try { await this.saveRunning(); }
-            catch (error) { this.options.log("error", "Cannot update turn journal", { error: errorText(error) }); }
-          });
-        } catch (error) {
-          if (!this.abort.signal.aborted) { this.options.log("error", "Claim failed", { error: errorText(error) }); await delay(1000, this.abort.signal); }
-        }
+          catch (error) { this.options.log("error", "Cannot update turn journal", { error: errorText(error) }); }
+        });
+      } catch (error) {
+        if (!this.abort.signal.aborted) { this.options.log("error", "Claim failed", { error: errorText(error) }); await delay(1000, this.abort.signal); }
       }
-    } finally { this.claimsDone = true; }
+    }
   }
+
   private async run(job: TurnJob, active: Active): Promise<void> {
     const started = Date.now();
     const batch = new EventBatcher(this.options.client, job.turnId, (error) => this.options.log("error", "Event upload failed", { turnId: job.turnId, error: errorText(error) }), this.options.flushMs);
     let workspace: Workspace | undefined;
-    let inboxDone = false;
     const inboxAbort = new AbortController();
+    const inboxSignal = AbortSignal.any([inboxAbort.signal, this.abort.signal]);
     let inboxTask: Promise<void> | undefined;
     let payload: TurnCompletePayload = { status: "failed" };
     this.options.log("info", "Turn started", { turnId: job.turnId, kind: job.kind, runtime: job.agent.runtime });
@@ -179,17 +174,17 @@ export class Daemon {
         inboxTask = (async () => {
           // ACK only after runtime acceptance. Retry a lost ACK without steering twice.
           const pending: Array<{ id: string; content: string; accepted?: boolean }> = [];
-          while (!inboxDone) {
+          while (!inboxSignal.aborted) {
             try {
-              if (!pending.length) pending.push(...await this.options.client.inbox(job.turnId, inboxAbort.signal));
-              while (pending.length && !inboxDone) {
+              if (!pending.length) pending.push(...await this.options.client.inbox(job.turnId, inboxSignal));
+              while (pending.length && !inboxSignal.aborted) {
                 const message = pending[0]!;
                 if (!message.accepted) { await runtime.steer(message.content); message.accepted = true; }
-                await this.options.client.ackInbox(job.turnId, [message.id]);
+                await this.options.client.ackInbox(job.turnId, [message.id], inboxSignal);
                 pending.shift();
               }
-            } catch (error) { if (!inboxDone) this.options.log("error", "Inbox delivery failed", { turnId: job.turnId, error: errorText(error) }); }
-            await delay(this.options.inboxMs ?? 500, inboxAbort.signal);
+            } catch (error) { if (!inboxSignal.aborted) this.options.log("error", "Inbox delivery failed", { turnId: job.turnId, error: errorText(error) }); }
+            await delay(this.options.inboxMs ?? 500, inboxSignal);
           }
         })();
         const result = await runtime.result;
@@ -200,7 +195,7 @@ export class Daemon {
     } catch (error) { payload = { ...payload, status: active.stopped ? "stopped" : "failed", error: errorText(error) }; }
     finally {
       if (workspace) payload.baseCommit = workspace.baseCommit;
-      inboxDone = true; inboxAbort.abort();
+      inboxAbort.abort();
       await inboxTask;
       if (job.readOnly && workspace) {
         try { await this.worktrees.reset(workspace); }
