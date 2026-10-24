@@ -2601,3 +2601,22 @@ kbd {
     visibility: visible;
   }
 }
+
+/* Electron titlebar: browser layouts never receive these classes. */
+.muster-desktop.muster-mac .sidebar-brand {
+  -webkit-app-region: drag;
+  min-height: 54px;
+  padding-top: 0;
+  padding-left: 72px;
+}
+.muster-desktop.muster-mac .sidebar-brand .brand > .dim { display: none; }
+.muster-desktop.muster-mac .sidebar-brand button,
+.muster-desktop.muster-mac .sidebar-brand a { -webkit-app-region: no-drag; }
+.muster-desktop.muster-mac .sidebar { padding-top: 0; }
+.muster-desktop.muster-mac .sidebar.collapsed { min-width: 82px; width: 82px; }
+.muster-desktop.muster-mac .sidebar.collapsed .sidebar-brand { padding-top: 32px; padding-left: 0; }
+.muster-desktop.muster-mac .page-header { -webkit-app-region: drag; }
+.muster-desktop.muster-mac .page-header button,
+.muster-desktop.muster-mac .page-header a,
+.muster-desktop.muster-mac .page-header input { -webkit-app-region: no-drag; }
+.local-path { color: var(--accent); text-decoration: underline; cursor: pointer; text-align: left; }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, Route, Routes, useLocation, useParams } from "react-router";
 import { Command, PanelLeft } from "lucide-react";
+import { DesktopIntegration } from "./components/DesktopIntegration";
 import { Sidebar } from "./components/Sidebar";
 import { CommandPalette } from "./components/CommandPalette";
 import { NewTaskDialog } from "./components/NewTaskDialog";
@@ -63,7 +64,8 @@ export function App() {
     return () => window.removeEventListener("keydown", keydown);
   }, [setCollapsed, search]);
   return (
-    <div className={`app ${collapsed ? "sidebar-is-collapsed" : ""}`}>
+    <div className={`app ${collapsed ? "sidebar-is-collapsed" : ""} ${window.muster?.desktop ? "muster-desktop" : ""} ${window.muster?.platform === "darwin" ? "muster-mac" : ""}`} >
+      <DesktopIntegration onNewTask={() => setNewTask(true)} />
       <Sidebar
         collapsed={collapsed}
         mobileOpen={mobileOpen}

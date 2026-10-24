@@ -10,7 +10,8 @@ import {
   Terminal,
   X,
 } from "lucide-react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
+import { absolutePath, localPathLinks } from "../lib/localPaths";
 import remarkGfm from "remark-gfm";
 import type { Message, Todo } from "@muster/shared";
 import { QueuedMessages } from "./QueuedMessages";
@@ -20,9 +21,25 @@ import { useRealtime } from "../api/realtime";
 import { Avatar, ErrorNotice, Loading } from "./ui";
 
 export function Markdown({ children }: { children: string }) {
+  const [pathError, setPathError] = useState<unknown>(null);
+  const openPath = (path: string) => { void window.muster?.openPath(path).then((error) => { if (error) setPathError(new Error(error)); }).catch(setPathError); };
   return (
     <div className="markdown">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={window.muster?.desktop ? [remarkGfm, localPathLinks] : [remarkGfm]}
+        urlTransform={(url) => window.muster?.desktop && absolutePath(url) ? url : defaultUrlTransform(url)}
+        components={{
+          a: ({ href, children }) => {
+            const path = window.muster?.desktop && href ? absolutePath(href) : null;
+            return path ? <a href={href} title={`Open ${path}`} onClick={(event) => { event.preventDefault(); openPath(path); }}>{children}</a> : <a href={href} target="_blank" rel="noreferrer">{children}</a>;
+          },
+          code: ({ children, className }) => {
+            const path = window.muster?.desktop && !className && typeof children === "string" ? absolutePath(children) : null;
+            return path && !path.includes("\n") ? <code><button className="local-path" onClick={() => openPath(path)}>{children}</button></code> : <code className={className}>{children}</code>;
+          },
+        }}
+      >{children}</ReactMarkdown>
+      <ErrorNotice error={pathError} />
     </div>
   );
 }

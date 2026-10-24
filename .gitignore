@@ -6,3 +6,6 @@ dist/
 .muster/
 coverage/
 .muster-briefs/
+
+apps/desktop/release/
+apps/desktop/.stage/

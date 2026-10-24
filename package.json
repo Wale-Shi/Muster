@@ -10,7 +10,8 @@
     "packages/shared",
     "apps/server",
     "apps/daemon",
-    "apps/web"
+    "apps/web",
+    "apps/desktop"
   ],
   "scripts": {
     "dev": "npm run build --workspace @muster/shared && node scripts/dev.mjs",
@@ -19,12 +20,18 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "daemon": "npm run build --workspace @muster/shared && npm run build --workspace @muster/daemon && node apps/daemon/dist/index.js start --server http://127.0.0.1:7420",
     "start": "node apps/server/dist/index.js",
-    "e2e": "node scripts/e2e.mjs"
+    "e2e": "node scripts/e2e.mjs",
+    "desktop:dev": "npm run build && npm run dev --workspace @muster/desktop",
+    "desktop:dist": "npm run build && npm run dist --workspace @muster/desktop",
+    "desktop:smoke": "node apps/desktop/dist/scripts/smoke.js"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.27.7",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.16",
-    "tsx": "^4.21.0"
+    "vitest": "^4.0.16"
   }
 }

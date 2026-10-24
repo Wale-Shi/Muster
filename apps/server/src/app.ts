@@ -36,7 +36,7 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
     if (error instanceof Error && /FOREIGN KEY constraint failed/.test(error.message)) return c.json({ error: "Resource is still in use" }, 409);
     console.error(error); return c.json({ error: "Internal server error" }, 500);
   });
-  app.get("/health", (c) => c.json({ status: "ok" }));
+  app.get("/health", (c) => c.json({ status: "ok", service: "muster" }));
   app.route("/api/machine", machineRoutes(services));
   app.route("/api/events", eventRoutes(services));
   app.route("/api", apiRoutes(services));

@@ -45,6 +45,25 @@ Open <http://localhost:7420>. The server serves the built web app and API togeth
 
 Muster currently targets a single user on a trusted local machine. Web/API login and multi-user access control are deferred. The enrollment key protects machine enrollment only. Keep the service on loopback or behind your own authenticated access layer when hosting remotely. Writable model turns run with elevated permissions; use repositories and machines you trust.
 
+## Desktop app
+
+On macOS, run the whole local workspace in one app:
+
+```sh
+npm install
+npm run desktop:dev
+# Build an ad-hoc signed Muster.app and DMG for this Mac's architecture:
+npm run desktop:dist
+# Optional hidden-window check of the packaged app, using only mock turns:
+npm run desktop:smoke
+```
+
+Builds are written to `apps/desktop/release/` (`mac-arm64/Muster.app` on Apple Silicon, `mac/Muster.app` on Intel). The app bundles Electron's Node, server, daemon and web UI; users do not need a system Node installation to run it. Install/authenticate Git and any desired `codex` or `claude` CLIs separately. Windows NSIS and Linux AppImage targets are configured for native builds on those platforms.
+
+Launching starts a loopback server on 7420 (or the next free port), automatically enrolls this machine, and opens the workspace. An existing Muster server is reused. Data lives in `~/.muster`, with desktop worker logs in `~/.muster/logs`. Quit waits for owned daemon turns to report stopped before stopping its server. Attached services remain running. Native folder selection, clickable absolute conversation paths, gate notifications, a Needs-you dock badge, and a status menubar icon are included. The File menu provides New task (⌘N), Open in browser and Show logs.
+
+See [desktop architecture and runtime verification](docs/ARCHITECTURE.md#desktop-m6) for the bundled `node:sqlite` check, PATH discovery and shutdown behavior.
+
 ## Configuration
 
 Set environment variables in the process environment; Muster does not automatically load `.env` files.

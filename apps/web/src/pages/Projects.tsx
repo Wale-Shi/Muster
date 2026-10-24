@@ -72,6 +72,11 @@ function ProjectDialog({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [baseBranch, setBaseBranch] = useState("main");
+  const [folderError, setFolderError] = useState<unknown>(null);
+  const chooseFolder = async () => {
+    try { const path = await window.muster?.chooseFolder(); if (path) setRepoUrl(path); }
+    catch (error) { setFolderError(error); }
+  };
   const client = useQueryClient();
   const create = useMutation({
     mutationFn: () =>
@@ -113,6 +118,8 @@ function ProjectDialog({ onClose }: { onClose: () => void }) {
               onChange={(event) => setRepoUrl(event.target.value)}
             />
           </label>
+          {window.muster?.desktop && <button type="button" className="button" onClick={() => { void chooseFolder(); }}>Choose folder…</button>}
+          <ErrorNotice error={folderError} />
           <p className="hint">
             Local paths must be accessible on the machine running the agent.
           </p>
