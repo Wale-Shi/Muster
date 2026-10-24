@@ -1,8 +1,10 @@
 import { useI18n, languageNames } from "../i18n";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  BookOpen,
+  KeyRound,
   BarChart3,
   Bot,
   ChevronDown,
@@ -83,9 +85,11 @@ export function Sidebar({
   };
   const links = [
     { to: "/agents", title: t("ui.agents"), icon: Bot },
+    { to: "/skills", title: t("parity.skills"), icon: BookOpen },
     { to: "/projects", title: t("ui.projects"), icon: FolderGit2 },
-    { to: "/machines", title: t("ui.machines"), icon: Monitor },
     { to: "/usage", title: t("ui.usage"), icon: BarChart3 },
+    { to: "/machines", title: t("ui.machines"), icon: Monitor },
+    { to: "/secrets", title: t("parity.secrets"), icon: KeyRound },
   ];
   return (
     <>
@@ -201,7 +205,7 @@ export function Sidebar({
             </div>
           )}
           <div className="nav-separator" />
-          {links.map(({ to, title, icon: Icon }) => (
+          {links.map(({ to, title, icon: Icon }) => (<Fragment key={to}>{to === "/machines" && <div className="sidebar-section-label">{t("parity.resources")}</div>}
             <NavLink
               className="nav-item"
               to={to}
@@ -211,7 +215,7 @@ export function Sidebar({
             >
               <Icon size={16} />
               <span>{title}</span>
-            </NavLink>
+            </NavLink></Fragment>
           ))}
         </nav>
         <footer className="sidebar-footer">

@@ -26,6 +26,12 @@ export interface Project {
   createdAt: Timestamp;
 }
 
+export interface AgentPermissions { pushBranch: boolean; secrets: boolean; createSkills: boolean; updateSkills: boolean }
+export interface AgentMemory { id: string; agentId: string; content: string; source: "user" | "agent"; createdAt: string; updatedAt: string }
+export interface Skill { id: string; slug: string; name: string; description: string; source: Record<string, unknown>; createdAt: string; updatedAt: string; version: string }
+export interface SkillFile { path: string; content: string }
+export interface Secret { id: string; scope: "team" | "project"; projectId: string | null; name: string; updatedAt: string }
+
 export interface Agent {
   id: Id;
   name: string;
@@ -35,6 +41,9 @@ export interface Agent {
   reasoning: string | null;
   avatar: string | null;
   isChief: boolean;
+  permissions?: AgentPermissions;
+  defaultSkillIds?: string[];
+  updatedAt?: Timestamp;
   createdAt: Timestamp;
 }
 

@@ -7,7 +7,7 @@ import { errorText } from "../util.js";
 export class CodexRuntime implements Runtime {
   constructor(private command = "codex", private prefix: string[] = []) {}
   start(job: TurnJob, ctx: RuntimeContext): RunningTurn {
-    const process = new JsonProcess(this.command, [...this.prefix, "app-server"], ctx.cwd);
+    const process = new JsonProcess(this.command, [...this.prefix, "app-server"], ctx.cwd, job.env);
     let sequence = 0;
     const pending = new Map<number, { resolve(value: Wire): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
     let threadId = typeof job.sessionState?.threadId === "string" ? job.sessionState.threadId : "";
@@ -91,6 +91,7 @@ export class CodexRuntime implements Runtime {
       process.send({ method: "initialized" });
       if (stopped) { settle("stopped"); return; }
       const config: Wire = {
+        shell_environment_policy: { set: job.env ?? {} },
         // Trust only Muster's platform tools, independently of the filesystem
         // sandbox. `never` rejects MCP calls that would otherwise need approval.
         mcp_servers: { muster: { url: job.mcp.url, required: true, default_tools_approval_mode: "approve", http_headers: { Authorization: `Bearer ${job.mcp.token}` } } },

@@ -156,6 +156,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
               : type.startsWith("topic.")
                 ? "topics"
                 : null;
+      if (/^(agent|memory|skill|secret)\./.test(type)) for (const key of ["agent", "agents", "memories", "skill", "skills", "secrets"]) void client.invalidateQueries({ queryKey: [key] });
       if (entityKey) void client.invalidateQueries({ queryKey: [entityKey] });
       if (todoId && (type.startsWith("todo.") || type.startsWith("turn."))) {
         void client.invalidateQueries({ queryKey: ["todo", todoId] });

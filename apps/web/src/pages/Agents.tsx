@@ -1,7 +1,8 @@
+import { Link, useNavigate } from "react-router";
 import { useI18n } from "../i18n";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bot, Pencil, Plus } from "lucide-react";
+import { Bot, Plus } from "lucide-react";
 import { DEFAULT_MODELS, type Agent, type Runtime } from "@muster/shared";
 import { api, type AgentInput } from "../api/client";
 import { useAgents, useTodos } from "../api/queries";
@@ -15,6 +16,7 @@ function AgentDialog({
   onClose: () => void;
 }) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [input, setInput] = useState<AgentInput>({
     name: agent?.name ?? "",
     role: agent?.role ?? "",
@@ -34,9 +36,10 @@ function AgentDialog({
         },
         agent?.id,
       ),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       void client.invalidateQueries({ queryKey: ["agents"] });
       onClose();
+      navigate(`/agents/${saved.id}`);
     },
   });
   const submit = (event: FormEvent) => {
@@ -172,7 +175,7 @@ export function Agents() {
                     !["todo", "done", "closed"].includes(todo.phase),
                 ).length ?? 0;
               return (
-                <article className="agent-card" key={agent.id}>
+                <Link to={`/agents/${agent.id}`} className="agent-card" key={agent.id}>
                   <div className="agent-card-header">
                     <Avatar name={agent.name} />
                     <div>
@@ -182,13 +185,7 @@ export function Agents() {
                       </h3>
                       <span className="mono muted">{label("runtime", agent.runtime)}</span>
                     </div>
-                    <button
-                      className="icon-button"
-                      onClick={() => setEditing(agent)}
-                      aria-label={t("text.edit", { name: agent.name })}
-                    >
-                      <Pencil size={14} />
-                    </button>
+
                   </div>
                   <p className="agent-role">{agent.role}</p>
                   <div className="agent-model mono">
@@ -203,7 +200,7 @@ export function Agents() {
                       {t("count.active", { count: active })}
                     </span>
                   </div>
-                </article>
+                </Link>
               );
             })}
           </div>

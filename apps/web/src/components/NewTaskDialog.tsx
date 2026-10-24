@@ -1,3 +1,4 @@
+import { MentionInput } from "./MentionInput";
 import { useI18n } from "../i18n";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -115,12 +116,13 @@ export function NewTaskDialog({
             onChange={(event) => setTitle(event.target.value)}
             disabled={!!createdId}
           />
-          <textarea
+          <MentionInput
             aria-label={t("ui.taskDescription")}
             placeholder={t("ui.addADescriptionContextOrAFewAcceptanceCriteria")}
             rows={7}
             value={spec}
-            onChange={(event) => setSpec(event.target.value)}
+            onValue={setSpec}
+            onAgent={(id) => { if (!agentId) setAgentId(id); }}
             disabled={!!createdId}
           />
           <ErrorNotice error={create.error} />

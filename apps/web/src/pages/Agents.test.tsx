@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -14,7 +15,7 @@ it("explains why Create is disabled when Role is missing, using the schema's req
   Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
   Object.defineProperty(HTMLDialogElement.prototype, "close", { configurable: true, value: function (this: HTMLDialogElement) { this.open = false; } });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><Agents /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MemoryRouter><Agents /></MemoryRouter></QueryClientProvider>);
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "New agent" }));
   await user.type(screen.getByRole("textbox", { name: "Name (required)" }), "Mocky");

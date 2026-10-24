@@ -72,6 +72,8 @@ export class Worktrees {
     });
   }
 
+  async push(workspace: Workspace): Promise<void> { await git(workspace.cwd, "push", "origin", `HEAD:refs/heads/${workspace.branch}`); }
+
   async merge(workspace: Workspace): Promise<{ ok: boolean; headCommit?: string; error?: string }> {
     return this.mutex.run(workspace.project.id, async () => {
       const { repo, branch, project } = workspace;

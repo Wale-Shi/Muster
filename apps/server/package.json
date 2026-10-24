@@ -16,6 +16,7 @@
     "@modelcontextprotocol/sdk": "^1.32.0",
     "@muster/shared": "0.1.0",
     "hono": "^4.13.0",
+    "yaml": "^2.9.1",
     "zod": "^4.6.0"
   }
 }

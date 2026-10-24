@@ -9,7 +9,7 @@ export class ClaudeRuntime implements Runtime {
     const args = [...this.prefix, "-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", job.readOnly ? "plan" : "bypassPermissions", "--system-prompt-snapshot", "off", "--append-system-prompt", job.systemInstructions, "--model", job.agent.model,
       ...(job.agent.reasoning ? ["--effort", job.agent.reasoning] : []),
       ...(sessionId ? ["--resume", sessionId] : []), "--mcp-config", JSON.stringify({ mcpServers: { muster: { type: "http", url: job.mcp.url, headers: { Authorization: `Bearer ${job.mcp.token}` } } } })];
-    const process = new JsonProcess(this.command, args, ctx.cwd);
+    const process = new JsonProcess(this.command, args, ctx.cwd, job.env);
     let stopped = false;
     let finished = false;
     let text = "";

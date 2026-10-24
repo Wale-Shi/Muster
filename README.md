@@ -10,6 +10,15 @@ Muster is an open-source, self-hostable [todos.dev](https://todos.dev)-style wor
 ![Muster workspace: Chief on the left, Kanban on the right](docs/screenshot.png)
 
 
+## Agent resources
+
+- Agent profiles with editable duties, run defaults, default skills, permissions, and per-agent memory.
+- A skills library with folder/bulk uploads and public GitHub imports; review metadata before importing. Skills are cached per content hash on each daemon, outside task worktrees.
+- Encrypted, write-only team/project secrets, permission-gated delivery to runtime shells, output redaction, and Chief secure-input cards. Project values override matching team values; authorized plan turns also receive secrets.
+- Agent and skill mentions in Chief, task conversations, and new-task descriptions. English and Simplified Chinese UI.
+
+See [architecture and limits](docs/ARCHITECTURE.md#phase-a-agent-resources) for the local trust model, runtime verification, and import limits.
+
 ## Quick start
 
 Install Node.js 22 or newer (a current Node 22 release is recommended; see [.nvmrc](.nvmrc)), npm, and Git. Run these commands from the repository root:
@@ -126,9 +135,9 @@ Read [the spec](docs/PLAN.md), [architecture and API contracts](docs/ARCHITECTUR
 
 The MVP includes orchestration, Kanban, plan/review gates, worktrees, Codex/Claude runtimes, machine daemons, MCP, and basic usage reporting. Features deferred in [PLAN §1](docs/PLAN.md#1-调研结论todosdev-关键机制) include:
 
-- Agent memory, skills, and permission controls; additional runtimes and built-in pi.
+- Additional runtimes and built-in pi.
 - Teams, multiple users, and login.
-- Schedules, connections, secrets management, and AI review.
+- Schedules, connections, and AI review.
 - Mobile clients, cloud machines, and GitHub pull request integration.
 
 ## Contributing

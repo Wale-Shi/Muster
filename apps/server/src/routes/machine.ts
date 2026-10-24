@@ -22,6 +22,7 @@ export function machineRoutes(services: AppServices): Hono {
     const input = await body(c, enrollMachineSchema); return c.json(services.scheduler.enroll(input.name, input.runtimes, input.concurrency), 201);
   });
   app.use("/*", async (c, next) => { services.scheduler.authenticate(machineToken(c.req.header("authorization"))); await next(); });
+  app.get("/skills/:slug/archive", (c) => c.json(services.skills.archive(c.req.param("slug"), c.req.query("version"))));
   app.post("/heartbeat", async (c) => { const input = await body(c, heartbeatSchema); return c.json(services.scheduler.heartbeat(machineToken(c.req.header("authorization")), input.running)); });
   app.post("/claim", async (c) => {
     const token = machineToken(c.req.header("authorization"));

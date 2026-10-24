@@ -41,7 +41,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   method = "GET",
   body?: unknown,
@@ -52,8 +52,7 @@ async function request<T>(
     ...(body === undefined
       ? {}
       : {
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          ...(body instanceof FormData ? { body } : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
         }),
     ...(signal ? { signal } : {}),
   });

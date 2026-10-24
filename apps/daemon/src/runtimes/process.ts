@@ -14,8 +14,8 @@ export class JsonProcess {
   onFailure: (error: Error) => void = () => {};
   private intentional = false;
   private stopping: Promise<void> | undefined;
-  constructor(command: string, args: string[], cwd: string) {
-    this.child = spawn(command, args, { cwd, env: runtimeEnv(), stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
+  constructor(command: string, args: string[], cwd: string, env: Record<string, string> = {}) {
+    this.child = spawn(command, args, { cwd, env: runtimeEnv(process.env, env), stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
     const lines = createInterface({ input: this.child.stdout });
     lines.on("line", (line) => {
       try { this.onMessage(JSON.parse(line) as Wire); }

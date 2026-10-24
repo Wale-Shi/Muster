@@ -299,3 +299,59 @@ Web copy lives in `apps/web/src/i18n`: the nested English dictionary defines `Me
 System messages with `meta.todoId` and a known `meta.phase` render a translated notice. New notices include `todoNumber` and `todoTitle`; legacy structured notices retain their original task identity. Stored English content and Chief prompts remain unchanged; unstructured history, user/agent text, tools, unknown runtime diagnostics and unknown errors retain their source content. Known API error messages are mapped at render time, so switching languages also updates visible errors.
 
 The desktop has its own small dictionary in `apps/desktop/src/i18n.ts`; only locale codes and matching logic are shared through `@muster/shared`. Before the renderer reports, main uses `app.getPreferredSystemLanguages()`. The preload's `setLocale` invokes a validated IPC handler restricted to the trusted main frame and local origin; main then rebuilds menus and tray status immediately. Notifications use translated human phase names and retain the user's task title. Standard Electron menu roles remain native and follow the OS language.
+
+## Phase A: agent resources
+
+Migration 4 is forward-only from v3. `agents.role` remains the duty text (there is no description column); new columns are `permissions_json`, `default_skill_ids_json`, and `updated_at`. Permissions normalize to four booleans: `pushBranch`, `secrets`, `createSkills`, `updateSkills`, all false except Chief's initial create/update skills permissions. Existing duties and configuration survive migration. New tables:
+
+- `agent_memories(id, agent_id, content, source, created_at, updated_at)`, cascading on agent deletion; `source` is `user|agent`.
+- `skills(id, slug UNIQUE, name, description, source_json, created_at, updated_at)`; files live under the server data directory's `skills/<slug>/`.
+- `secrets(id, scope, project_id, name, ciphertext, iv, tag, created_at, updated_at)`. Scope/project consistency is checked. A partial unique index enforces team-name uniqueness despite SQLite's nullable composite-unique behavior.
+
+`createApp` accepts `dataDir` and an injectable `githubFetcher`. A file-backed database defaults resources to its parent directory; in-memory applications get isolated temporary directories. The normal server and desktop consequently use their existing data directory. Resource content is never written to global Codex/Claude configuration directories.
+
+### HTTP and MCP
+
+All UI routes use the usual `{data}` envelope:
+
+| Method | Route | Result / behavior |
+| --- | --- | --- |
+| GET/PATCH | `/api/agents/:id` | Shared Zod validation; GET includes `inProgress`, `memoryCount`, `skillCount` in the same response. PATCH validates referenced skill IDs. Runtime/model changes retain the existing session-reset comparison on the next claim. |
+| DELETE | `/api/agents/:id` | Chief and agents with queued/running work return 409. Otherwise clears todo assignments, preserves immutable historical snapshots and removes memories. |
+| GET/POST | `/api/agents/:id/memories` | Newest-first list / create with source `user`. |
+| PATCH/DELETE | `/api/agents/:id/memories/:memoryId` | Both IDs must match; content is trimmed and bounded. |
+| GET | `/api/skills` | Library metadata, including a SHA-256 content version. |
+| POST | `/api/skills/upload` | Multipart `files` retaining relative filenames, optional `bulk=true`; `?preview=true` returns editable metadata and copied file data. |
+| POST | `/api/skills/github` | `{url}` for a public GitHub repository or `/tree/<ref>/<path>`; supports the same preview query. |
+| POST | `/api/skills/import` | Saves reviewed names/descriptions and copied files; preflights conflicts and rolls back newly created skills on an import failure. |
+| GET/DELETE | `/api/skills/:slug` | Renderable SKILL.md, file list, source and default agents / delete and remove defaults. |
+| GET | `/api/machine/skills/:slug/archive?version=<hash>` | Machine bearer auth, JSON `{files:[{path,content}]}` with base64 content. A changed version returns 409 instead of delivering different content. |
+| GET | `/api/secrets?projectId=` | Metadata only; omitted filter lists all scopes, a project filter includes that project and team values. |
+| PUT | `/api/secrets` | `{scope,projectId?,name,value,requestId?}`; create/replace; response is metadata only. |
+| DELETE | `/api/secrets/:id` | Deletes the encrypted value. |
+
+MCP adds `list_memories` (read-only), `remember {content}`, `forget {memoryId}`, `list_skills` (read-only), `install_skill_from_github {url}`, `create_skill {name,description,instructions}`, `update_skill {slug,description?,instructions?}`, and `request_secret {name,scope,projectId?,reason}`. Memory ownership comes from the authenticated running turn's immutable agent snapshot, never from caller input. Skill creation/install and updates check the agent's current permissions on every call; unauthorized calls return MCP tool errors. `create_agent` cannot grant elevated permissions. Chief alone can request secure input; the tool returns `requested` immediately and instructs Chief to wait for the user.
+
+A secret request is a system message with `meta.secretRequest`. Its card calls PUT directly; the server validates request ID, name and scope before saving, then sets `meta.fulfilledAt`. The value never enters messages or SSE. Saving does not automatically enqueue another Chief turn; the user can continue the conversation after saving.
+
+### Delivery and runtime behavior
+
+`TurnJob` adds `skills: {slug,name,description,version}[]`, optional `env: Record<string,string>`, and `pushBranch`. At claim time the server unions agent defaults with exact `@skill-slug` mentions in the todo spec and conversation messages; Chief receives its defaults. Current memories are appended under `## Memory`, newest first, with a roughly 4k-character cap and truncation marker. Skill changes and newly installed skills take effect on subsequent claims, not by hot-loading an active runtime.
+
+The daemon downloads a skill once per hash into `<MUSTER_HOME>/skills-cache/<slug>@<hash>/`, verifies paths, size and hash, writes files through a temporary directory, and appends an `## Available skills` index with absolute SKILL.md paths and the read-before-use rule. Cache files are outside the worktree. Read-only turns additionally inline the SKILL.md body as a conservative fallback; supporting files remain in the cache. Cache versions are not pruned automatically. Archives currently serve the current library version; edits/deletes between claim and download fail explicitly and require retry.
+
+Secrets use AES-256-GCM, a fresh 12-byte IV and authenticated scope/project/name binding. `<data>/secret.key` is generated with exclusive creation and mode 0600, and must be backed up together with the database. Names follow `^[A-Z_][A-Z0-9_]{0,63}$`; PATH, HOME, MUSTER_*, CODEX_*, CLAUDE_*, ELECTRON_*, NODE_OPTIONS and NODE_ENV are reserved. Authorized agents receive team plus project secrets, with project overrides, **including plan turns**. Existing plan network restrictions still apply. The machine claim journal serializes the job before adding `env`; a replay rechecks current permission and decrypts current values. No secret value is persisted in `machine_claims.job_json`.
+
+Both CLI processes receive the granted environment. Codex also gets `config.shell_environment_policy.set` on every thread start/resume, explicitly empty when no grants exist. This selects granted variables without disabling the default filter for unrelated inherited credentials. Claude's child Bash inherits the process environment. The daemon redacts literal granted values of at least six characters throughout event payloads and completion payloads (messages, tool data, errors, plans, diffs and session metadata). Secret-bearing message/reasoning deltas are buffered until complete/end-of-turn so values split across chunks cannot evade redaction; other turns retain normal streaming. This is literal replacement, not detection of encoded/transformed secrets. It cannot scrub files committed by a runtime, CLI-local histories, external service logs, or unrelated machine credentials. Self-hosted runtimes execute as the daemon's OS user; these grants are delivery controls, not isolation from that user's existing credentials or the loopback API.
+
+When `pushBranch` is true, a successful writable runtime result is checkpointed and the task branch is pushed to the repository origin. Failed/stopped/plan turns never trigger this automatic push. This permission does not change the existing user-authorized merge-to-base flow, nor prevent a full-access runtime from invoking git itself.
+
+### Verified facts and limits
+
+Checked on the installed **codex-cli 0.162.1** with `app-server generate-ts` and `generate-json-schema`: `ThreadStartParams` and `ThreadResumeParams` accept a JSON `config`; `SandboxPolicy` has `readOnly {networkAccess:boolean}` and no additional read-root field. The [official config schema](https://developers.openai.com/codex/config-schema.json) defines `ShellEnvironmentPolicyToml.set` as a string map, and the [advanced configuration guide](https://learn.chatgpt.com/docs/config-file/config-advanced) describes the shell environment policy. Model-free protocol peers assert the actual adapter payload on new/resumed threads and the subprocess environment; a Claude peer launches a real `/bin/sh` child to verify inheritance. No paid model API is called.
+
+**Host limitation:** starting the installed Codex sandbox is rejected here with `sandbox-exec: sandbox_apply: Operation not permitted`. A direct installed app-server configuration-read attempt also fails because this task cannot initialize SQLite state under `/Users/wale/.codex`. Therefore actual 0.162.1 sandbox reads outside a worktree and real model-issued shell environment propagation are not claimed as verified. Plan SKILL.md inlining avoids depending on those reads; optional supporting-file access still needs validation on an unrestricted daemon host. Protocol-peer checks and generated types establish our wire contract, not full CLI execution acceptance.
+
+Skill imports reject absolute/traversing/backslash paths, duplicates, symlinks on server-read folders, non-regular files, more than 200 files and more than 5 MB. Multipart and reviewed imports also bound the entire upload (bulk shares this bound). Browser/desktop directory uploads contain only file bytes and relative paths; they cannot expose the original filesystem's symlink metadata. GitHub imports inspect the fetched filesystem, reject symlinks and use a temporary shallow sparse clone with disabled prompts/hooks; public access requires git/network access. Ref names containing `/` are ambiguous in GitHub tree URLs and are not supported; use a slash-free branch/tag. The clone itself can consume network/disk before the post-checkout 5 MB validation. Windows/macOS/Linux share the JSON archive format, but this change's tests run on this macOS host.
+
+UI routes are `/agents/:id` (Overview/Memory), `/skills`, `/skills/new`, `/skills/:slug`, and `/secrets`. Both renderer hosts use directory uploads; there is no new native IPC surface. Agent cards link to profiles; creation navigates to the new profile. Keyboard-navigable mentions are shared by Chief, todo and new-task composers; new-task agent mentions set an unselected assignee. All added copy and known API errors have English and Simplified Chinese translations. Visual review remains manual; no headless Chromium or desktop distribution build is used.

@@ -49,6 +49,14 @@ try {
   };
   const project = await api("/projects", { name: "E2E", repoUrl: repo });
   const agent = await api("/agents", { name: "Mock", role: "Build deterministic fixtures", runtime: "mock", model: "mock" });
+  const skillForm = new FormData();
+  skillForm.append("files", new Blob(["---\nname: E2E Skill\ndescription: Verify resource delivery\n---\nUse the deterministic mock runtime."]), "fixture/SKILL.md");
+  const skillResponse = await fetch(`${url}/api/skills/upload`, { method: "POST", body: skillForm });
+  assert.equal(skillResponse.status, 201);
+  const skill = (await skillResponse.json()).data[0];
+  await api(`/agents/${agent.id}`, { defaultSkillIds: [skill.id], permissions: { secrets: true } }, "PATCH");
+  await api(`/agents/${agent.id}/memories`, { content: "E2E persistent memory" });
+  await api("/secrets", { scope: "team", name: "SERVICE_TOKEN", value: "muster-e2e-private" }, "PUT");
   const chief = (await api("/agents")).find((item) => item.isChief);
   assert.equal(chief.model, "gpt-6.1-sol");
   await api(`/agents/${chief.id}`, { runtime: "mock", model: "mock" }, "PATCH");
@@ -75,8 +83,19 @@ try {
     }
     await complete(turnId, payload);
   };
+  class ResourceMock extends MockRuntime {
+    start(job, context) {
+      if (job.todoId) {
+        assert.equal(job.env.SERVICE_TOKEN, "muster-e2e-private");
+        assert(job.systemInstructions.includes("E2E persistent memory"));
+        assert(job.systemInstructions.includes("skills-cache"));
+        context.emit({ type: "tool.completed", tool: "resource-fixture", output: job.env.SERVICE_TOKEN });
+      }
+      return super.start(job, context);
+    }
+  }
   daemon = new Daemon({ client, workspacesDir: workspaces, log: (level, message, meta) => { if (level === "error") stderr += `${message}: ${JSON.stringify(meta)}\n`; },
-    runtimes: { mock: new MockRuntime(20) }, heartbeatMs: 100, inboxMs: 20, flushMs: 20 });
+    runtimes: { mock: new ResourceMock(20) }, heartbeatMs: 100, inboxMs: 20, flushMs: 20 });
   await daemon.start();
   const details = (id) => api(`/todos/${id}`);
   const phase = (id, target) => until(() => details(id), (todo) => todo.phase === target, `${id} → ${target}`);
@@ -84,6 +103,10 @@ try {
   const todo = await create("Plan and merge");
   await api(`/todos/${todo.id}/start`, { mode: "plan" });
   const planned = await phase(todo.id, "confirm");
+  const resourceMessages = JSON.stringify(await api(`/conversations/${planned.builds[0].id}/messages`));
+  assert(!resourceMessages.includes("muster-e2e-private"));
+  assert(resourceMessages.includes("[secret:SERVICE_TOKEN]"));
+  console.log("PASS agent memory + skill cache + permission-gated env + upload redaction");
   assert(planned.builds[0].documents.some((doc) => doc.kind === "plan"));
   await api(`/todos/${todo.id}/confirm`, {});
   await phase(todo.id, "building");
@@ -144,7 +167,7 @@ try {
   assert((await api("/usage")).entries.some((entry) => entry.topicId === topic.id && entry.tokensOut > 0));
   console.log("PASS Chief → authenticated MCP → two started todos → board + persisted activity/usage");
 
-  for (const path of ["/", "/agents", "/projects", "/machines", "/usage", `/todos/${todo.id}`]) {
+  for (const path of ["/", "/agents", `/agents/${agent.id}`, "/skills", "/skills/new", `/skills/${skill.slug}`, "/secrets", "/projects", "/machines", "/usage", `/todos/${todo.id}`]) {
     const response = await fetch(`${url}${path}`);
     assert.equal(response.status, 200); assert((await response.text()).includes('<div id="root">'));
   }

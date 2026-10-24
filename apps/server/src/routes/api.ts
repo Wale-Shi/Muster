@@ -1,3 +1,5 @@
+import { StateError } from "../orchestrator/state.js";
+import { resourceRoutes } from "./resources.js";
 import { Hono } from "hono";
 import {
   createAgentSchema, createProjectSchema, createTodoSchema, createTopicSchema, doneTodoSchema,
@@ -13,6 +15,7 @@ import { body } from "./helpers.js";
 export function apiRoutes(services: AppServices): Hono {
   const app = new Hono();
   const { db, orchestrator, events } = services;
+  const validateSkillIds = (ids?: string[]) => { if (ids?.some((id) => !db.row("SELECT id FROM skills WHERE id=?", id))) throw new StateError("Skill not found", 400); };
 
   app.get("/projects", (c) => c.json({ data: db.rows("SELECT * FROM projects ORDER BY created_at").map((row) => db.project(row)) }));
   app.post("/projects", async (c) => {
@@ -36,21 +39,24 @@ export function apiRoutes(services: AppServices): Hono {
     db.run("DELETE FROM projects WHERE id = ?", projectId); events.emit({ type: "project.deleted", payload: { id: projectId } }); return c.body(null, 204);
   });
 
+  app.route("/", resourceRoutes(services));
+
   app.get("/agents", (c) => c.json({ data: db.rows("SELECT * FROM agents ORDER BY is_chief DESC, created_at").map((row) => db.agent(row)) }));
   app.post("/agents", async (c) => {
-    const input = await body(c, createAgentSchema); const agentId = id();
-    db.run("INSERT INTO agents VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)", agentId, input.name, input.role, input.runtime, input.model, input.reasoning ?? null, input.avatar ?? null, now());
+    const input = await body(c, createAgentSchema); validateSkillIds(input.defaultSkillIds); const agentId = id();
+    db.run("INSERT INTO agents (id,name,role,runtime,model,reasoning,avatar,is_chief,created_at,updated_at,permissions_json,default_skill_ids_json) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)", agentId, input.name, input.role, input.runtime, input.model, input.reasoning ?? null, input.avatar ?? null, now(), now(), JSON.stringify(input.permissions ?? {}), JSON.stringify(input.defaultSkillIds ?? []));
     const agent = db.agent(db.row("SELECT * FROM agents WHERE id = ?", agentId)!); events.emit({ type: "agent.changed", payload: agent }); return c.json({ data: agent }, 201);
   });
-  app.get("/agents/:id", (c) => { const row = db.row("SELECT * FROM agents WHERE id = ?", c.req.param("id")); return row ? c.json({ data: db.agent(row) }) : c.json({ error: "Agent not found" }, 404); });
+  app.get("/agents/:id", (c) => { const row = db.row("SELECT * FROM agents WHERE id = ?", c.req.param("id")); return row ? c.json({ data: { ...db.agent(row), inProgress: db.rows("SELECT * FROM todos WHERE (agent_id=? OR plan_agent_id=?) AND phase NOT IN ('todo','done','closed') ORDER BY number DESC", row.id, row.id).map((r) => db.todo(r)), memoryCount: services.memories.list(String(row.id)).length, skillCount: db.agent(row).defaultSkillIds?.length ?? 0 } }) : c.json({ error: "Agent not found" }, 404); });
   app.patch("/agents/:id", async (c) => {
-    const input = await body(c, updateAgentSchema); const agentId = c.req.param("id"); const current = db.row("SELECT * FROM agents WHERE id = ?", agentId); if (!current) return c.json({ error: "Agent not found" }, 404);
-    db.run("UPDATE agents SET name = ?, role = ?, runtime = ?, model = ?, reasoning = ?, avatar = ? WHERE id = ?", input.name ?? current.name, input.role ?? current.role, input.runtime ?? current.runtime, input.model ?? current.model, input.reasoning === undefined ? current.reasoning : input.reasoning, input.avatar === undefined ? current.avatar : input.avatar, agentId);
+    const input = await body(c, updateAgentSchema); validateSkillIds(input.defaultSkillIds); const agentId = c.req.param("id"); const current = db.row("SELECT * FROM agents WHERE id = ?", agentId); if (!current) return c.json({ error: "Agent not found" }, 404);
+    db.run("UPDATE agents SET name = ?, role = ?, runtime = ?, model = ?, reasoning = ?, avatar = ?, permissions_json = ?, default_skill_ids_json = ?, updated_at = ? WHERE id = ?", input.name ?? current.name, input.role ?? current.role, input.runtime ?? current.runtime, input.model ?? current.model, input.reasoning === undefined ? current.reasoning : input.reasoning, input.avatar === undefined ? current.avatar : input.avatar, input.permissions ? JSON.stringify(input.permissions) : current.permissions_json, input.defaultSkillIds ? JSON.stringify(input.defaultSkillIds) : current.default_skill_ids_json, now(), agentId);
     const agent = db.agent(db.row("SELECT * FROM agents WHERE id = ?", agentId)!); events.emit({ type: "agent.changed", payload: agent }); return c.json({ data: agent });
   });
   app.delete("/agents/:id", (c) => {
     const agentId = c.req.param("id"); const current = db.row("SELECT is_chief FROM agents WHERE id = ?", agentId); if (!current) return c.json({ error: "Agent not found" }, 404); if (current.is_chief === 1) return c.json({ error: "Chief cannot be deleted" }, 409);
-    db.run("DELETE FROM agents WHERE id = ?", agentId); events.emit({ type: "agent.deleted", payload: { id: agentId } }); return c.body(null, 204);
+    if (db.row("SELECT t.id FROM turns t JOIN builds b ON b.id=t.build_id JOIN todos td ON td.id=b.todo_id WHERE t.status IN ('queued','running') AND (td.agent_id=? OR td.plan_agent_id=? OR json_extract(t.agent_snapshot_json,'$.id')=?)", agentId, agentId, agentId)) return c.json({ error: "Agent has running work" }, 409);
+    db.transaction(() => { db.run("UPDATE todos SET agent_id=NULL WHERE agent_id=?", agentId); db.run("UPDATE todos SET plan_agent_id=NULL WHERE plan_agent_id=?", agentId); db.run("DELETE FROM agents WHERE id = ?", agentId); }); events.emit({ type: "agent.deleted", payload: { id: agentId } }); return c.body(null, 204);
   });
 
   app.get("/machines", (c) => {

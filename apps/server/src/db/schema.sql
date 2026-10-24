@@ -8,7 +8,8 @@ CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL,
   runtime TEXT NOT NULL CHECK(runtime IN ('codex','claude','mock')),
   model TEXT NOT NULL, reasoning TEXT, avatar TEXT,
-  is_chief INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+  is_chief INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
+  permissions_json TEXT NOT NULL DEFAULT '{}', default_skill_ids_json TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS machines (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, token TEXT NOT NULL UNIQUE,
@@ -73,3 +74,9 @@ CREATE TABLE IF NOT EXISTS machine_claims (
 CREATE TABLE IF NOT EXISTS server_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_json TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS turns_build_status_idx ON turns(build_id, status);
 PRAGMA user_version = 3;
+
+CREATE TABLE IF NOT EXISTS agent_memories (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('user','agent')), created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS agent_memories_agent_idx ON agent_memories(agent_id, created_at);
+CREATE TABLE IF NOT EXISTS skills (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL, source_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS secrets (id TEXT PRIMARY KEY, scope TEXT NOT NULL CHECK(scope IN ('team','project')), project_id TEXT REFERENCES projects(id) ON DELETE CASCADE, name TEXT NOT NULL, ciphertext TEXT NOT NULL, iv TEXT NOT NULL, tag TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(scope, project_id, name), CHECK((scope='team' AND project_id IS NULL) OR (scope='project' AND project_id IS NOT NULL)));
+CREATE UNIQUE INDEX IF NOT EXISTS secrets_team_name ON secrets(name) WHERE scope='team';

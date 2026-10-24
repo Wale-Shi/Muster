@@ -1,3 +1,5 @@
+import { MentionInput } from "./MentionInput";
+import { SecretCard } from "../pages/Secrets";
 import { systemMessage } from "../i18n/system";
 import { useI18n } from "../i18n";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -123,7 +125,7 @@ function MessageStream({
       {groups.map((item) =>
         Array.isArray(item) ? (
           <ToolGroup key={item[0]?.id} messages={item} />
-        ) : item.role === "system" ? (
+        ) : item.meta.secretRequest ? <SecretCard key={item.id} message={item} /> : item.role === "system" ? (
           <div className="system-message" key={item.id}>
             <span className="system-line" />
             <Markdown>{systemMessage(item, t, label)}</Markdown>
@@ -385,7 +387,7 @@ export function Conversation({
               ))}
             </div>
           )}
-          <textarea
+          <MentionInput
             ref={textarea}
             aria-label={t("ui.message")}
             value={text}
@@ -394,7 +396,7 @@ export function Conversation({
               disabled ?? placeholder ?? t("ui.askChiefOrDropATaskHere")
             }
             disabled={!!disabled || !conversationId}
-            onChange={(event) => setText(event.target.value)}
+            onValue={setText}
             onKeyDown={keydown}
           />
           <div className="composer-footer">

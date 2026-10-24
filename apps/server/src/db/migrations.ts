@@ -29,4 +29,15 @@ export const migrations = [
   CREATE INDEX turns_build_status_idx ON turns(build_id, status);
   `,
   `ALTER TABLE turns ADD COLUMN not_before TEXT;`,
+  `
+  ALTER TABLE agents ADD COLUMN permissions_json TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE agents ADD COLUMN default_skill_ids_json TEXT NOT NULL DEFAULT '[]';
+  ALTER TABLE agents ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+  UPDATE agents SET updated_at=created_at, permissions_json=CASE WHEN is_chief=1 THEN '{"createSkills":true,"updateSkills":true}' ELSE '{}' END;
+  CREATE TABLE agent_memories (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE, content TEXT NOT NULL, source TEXT NOT NULL CHECK(source IN ('user','agent')), created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE INDEX agent_memories_agent_idx ON agent_memories(agent_id, created_at);
+  CREATE TABLE skills (id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL, source_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+  CREATE TABLE secrets (id TEXT PRIMARY KEY, scope TEXT NOT NULL CHECK(scope IN ('team','project')), project_id TEXT REFERENCES projects(id) ON DELETE CASCADE, name TEXT NOT NULL, ciphertext TEXT NOT NULL, iv TEXT NOT NULL, tag TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, UNIQUE(scope, project_id, name), CHECK((scope='team' AND project_id IS NULL) OR (scope='project' AND project_id IS NOT NULL)));
+  CREATE UNIQUE INDEX secrets_team_name ON secrets(name) WHERE scope='team';
+  `,
 ] as const;

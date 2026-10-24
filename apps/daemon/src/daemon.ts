@@ -1,3 +1,4 @@
+import { prepareSkills, redactor, secretEvents } from "./resources.js";
 import { access, mkdir, readFile, writeFile, rm, rename } from "node:fs/promises";
 import { constants } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
@@ -147,6 +148,8 @@ export class Daemon {
   private async run(job: TurnJob, active: Active): Promise<void> {
     const started = Date.now();
     const batch = new EventBatcher(this.options.client, job.turnId, (error) => this.options.log("error", "Event upload failed", { turnId: job.turnId, error: errorText(error) }), this.options.flushMs);
+    const redact = redactor(job.env);
+    const secured = secretEvents(job.env, batch.emit);
     let workspace: Workspace | undefined;
     const inboxAbort = new AbortController();
     const inboxSignal = AbortSignal.any([inboxAbort.signal, this.abort.signal]);
@@ -155,6 +158,7 @@ export class Daemon {
     this.options.log("info", "Turn started", { turnId: job.turnId, kind: job.kind, runtime: job.agent.runtime });
     try {
       if (active.stopped) { payload = { status: "stopped" }; return; }
+      job = await prepareSkills(job, this.options.client);
       let cwd: string;
       if (job.project) { workspace = await this.worktrees.prepare(job); cwd = workspace.cwd; }
       else {
@@ -168,7 +172,7 @@ export class Daemon {
         const merge = await this.worktrees.merge(workspace);
         payload = { status: merge.ok ? "done" : "failed", merge: { ok: merge.ok, ...(merge.error ? { error: merge.error } : {}) }, ...(merge.headCommit ? { headCommit: merge.headCommit } : {}) };
       } else {
-        const runtime = this.runtimes[job.agent.runtime].start(job, { cwd, emit: batch.emit });
+        const runtime = this.runtimes[job.agent.runtime].start(job, { cwd, emit: secured.emit });
         active.runtime = runtime;
         if (active.stopped) await runtime.interrupt();
         inboxTask = (async () => {
@@ -190,7 +194,7 @@ export class Daemon {
         const result = await runtime.result;
         payload = { status: active.stopped ? "stopped" : result.status, usage: { ...result.usage, durationMs: Date.now() - started }, sessionState: result.sessionState, ...(result.error ? { error: result.error } : {}) };
         if (job.readOnly) payload.plan = result.text;
-        else if (workspace) Object.assign(payload, await this.worktrees.checkpoint(workspace, await this.options.client.turnNumber(job)));
+        else if (workspace) { Object.assign(payload, await this.worktrees.checkpoint(workspace, await this.options.client.turnNumber(job))); if (result.status === "done" && !active.stopped && job.pushBranch) await this.worktrees.push(workspace); }
       }
     } catch (error) { payload = { ...payload, status: active.stopped ? "stopped" : "failed", error: errorText(error) }; }
     finally {
@@ -201,6 +205,8 @@ export class Daemon {
         try { await this.worktrees.reset(workspace); }
         catch (error) { payload.status = "failed"; payload.error = `Read-only cleanup failed: ${errorText(error)}`; }
       }
+      secured.flush();
+      payload = redact(payload);
       for (;;) {
         try { await batch.close(); break; }
         catch (error) {

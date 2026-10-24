@@ -81,3 +81,9 @@ describe("worktree lifecycle", () => {
     expect(trees[0]!.repo).toBe(trees[1]!.repo); expect(trees[0]!.cwd).not.toBe(trees[1]!.cwd);
   });
 });
+
+it("pushes the checkpointed task branch without changing the base branch", async () => {
+  const { manager, job, origin } = await setup(); const original = await git(origin, "rev-parse", "main"); const tree = await manager.prepare(job);
+  await writeFile(join(tree.cwd, "pushed.txt"), "task branch only\n"); const checkpoint = await manager.checkpoint(tree); await manager.push(tree);
+  expect(await git(origin, "rev-parse", tree.branch)).toBe(checkpoint.headCommit); expect(await git(origin, "rev-parse", "main")).toBe(original);
+});

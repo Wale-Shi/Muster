@@ -1,3 +1,6 @@
+import { AgentPage } from "./pages/Agent";
+import { SkillsPage, NewSkillPage, SkillPage } from "./pages/Skills";
+import { SecretsPage } from "./pages/Secrets";
 import { useI18n } from "./i18n";
 import { useEffect, useState } from "react";
 import { Link, Route, Routes, useLocation, useParams } from "react-router";
@@ -111,6 +114,11 @@ export function App() {
             path="/todos/:id"
             element={<TodoPage key={location.pathname} />}
           />
+          <Route path="/agents/:id" element={<AgentPage key={location.pathname} />} />
+          <Route path="/skills" element={<SkillsPage />} />
+          <Route path="/skills/new" element={<NewSkillPage />} />
+          <Route path="/skills/:slug" element={<SkillPage key={location.pathname} />} />
+          <Route path="/secrets" element={<SecretsPage />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/machines" element={<Machines />} />

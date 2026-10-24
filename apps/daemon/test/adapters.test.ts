@@ -23,7 +23,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  else if(m.method==='thread/start'||m.method==='thread/resume') {
   if(p.approvalPolicy!=='never'||p.developerInstructions!=='Follow the task'||p.config.mcp_servers.muster.http_headers.Authorization!=='Bearer test-only'||p.config.mcp_servers.muster.url!=='http://localhost:7420/mcp'||p.config.mcp_servers.muster.required!==true) throw Error('thread config');
   if(p.config.mcp_servers.muster.default_tools_approval_mode!=='approve') throw Error('Muster MCP approval');
-  if(JSON.stringify(Object.keys(p.config))!==JSON.stringify(['mcp_servers'])||JSON.stringify(Object.keys(p.config.mcp_servers))!==JSON.stringify(['muster'])) throw Error('MCP approval must be scoped to Muster');
+  if(JSON.stringify(Object.keys(p.config))!==JSON.stringify(['shell_environment_policy','mcp_servers'])||JSON.stringify(Object.keys(p.config.mcp_servers))!==JSON.stringify(['muster'])) throw Error('MCP approval must be scoped to Muster');
   if(p.sandbox!==${JSON.stringify(readOnly ? "read-only" : "danger-full-access")}) throw Error('sandbox');
   if(m.method==='thread/resume' && p.threadId!=='thread-test') throw Error('resume');
   reply({thread:{id:'thread-test'}});

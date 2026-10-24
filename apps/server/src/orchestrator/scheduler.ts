@@ -1,3 +1,6 @@
+import type { Memories } from "../resources/memories.js";
+import type { Secrets } from "../resources/secrets.js";
+import type { Skills } from "../resources/skills.js";
 import type { AgentEvent, Runtime, TurnCompletePayload, TurnJob, TurnKind } from "@muster/shared";
 import { id, MusterDb, now } from "../db/index.js";
 import type { EventBus } from "../events.js";
@@ -10,7 +13,7 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
 };
 
 export class Scheduler {
-  constructor(readonly db: MusterDb, readonly orchestrator: Orchestrator, readonly events: EventBus) {}
+  constructor(readonly db: MusterDb, readonly orchestrator: Orchestrator, readonly events: EventBus, readonly memories?: Memories, readonly secrets?: Secrets, readonly skills?: Skills) {}
 
   enroll(name: string, runtimes: Runtime[], concurrency: number): { machineId: string; token: string } {
     const machineId = id();
@@ -61,7 +64,7 @@ export class Scheduler {
         const saved = this.db.row("SELECT job_json FROM machine_claims WHERE machine_id=? AND request_id=?", machine.id, requestId);
         if (saved) {
           const job = JSON.parse(String(saved.job_json)) as TurnJob;
-          return this.db.row("SELECT id FROM turns WHERE id=? AND status='running'", job.turnId) ? job : null;
+          return this.db.row("SELECT id FROM turns WHERE id=? AND status='running'", job.turnId) ? this.withEnv(job) : null;
         }
       }
       const running = Number(this.db.row("SELECT count(*) AS count FROM turns WHERE machine_id=? AND status='running'", machine.id)?.count ?? 0);
@@ -93,6 +96,7 @@ export class Scheduler {
         reasoning: (isChief ? candidate.chief_reasoning : candidate.reasoning) as string | null,
         role: String(isChief ? candidate.chief_role : candidate.role),
       };
+      const profile = this.db.agent(this.db.row("SELECT * FROM agents WHERE id=?", agentId)!);
       const snapshot = { id: agentId, name: String(isChief ? candidate.chief_name : candidate.name), ...agent };
       this.db.run("UPDATE turns SET status='running', machine_id=?, started_at=?, last_reported_at=?, agent_snapshot_json=? WHERE id=?", machine.id, now(), now(), JSON.stringify(snapshot), candidate.id);
       this.db.run("UPDATE builds SET machine_id=? WHERE id=?", machine.id, candidate.actual_build_id);
@@ -110,14 +114,23 @@ export class Scheduler {
         kind: candidate.kind as TurnKind,
         project: isChief ? null : { id: String(candidate.project_id), repoUrl: String(candidate.repo_url), baseBranch: String(candidate.base_branch) },
         branch: isChief ? null : String(candidate.branch), agent, prompt: String(candidate.prompt),
-        systemInstructions: instructionsFor({ ...snapshot, isChief, createdAt: "", avatar: null }),
+        systemInstructions: instructionsFor(profile) + (this.memories?.instructions(agentId) ?? ""),
+        skills: this.skills?.list().filter((s) => profile.defaultSkillIds?.includes(s.id) || (!isChief && new RegExp(`@${s.slug}(?![a-zA-Z0-9_-])`).test(String(this.db.row("SELECT spec FROM todos WHERE id=?", candidate.todo_id)?.spec ?? "") + "\n" + this.db.rows("SELECT content FROM messages WHERE conversation_id=?", candidate.actual_build_id).map((r) => r.content).join("\n")))).map(({ slug, name, description, version }) => ({ slug, name, description, version })) ?? [],
+        pushBranch: profile.permissions?.pushBranch ?? false,
         sessionState: canResume ? parseJson(previous?.session_state_json, null) : null, readOnly,
         mcp: { url: `${this.orchestrator.publicUrl}/mcp`, token: mcpToken },
       };
       if (requestId) this.db.run("INSERT INTO machine_claims VALUES (?,?,?)", machine.id, requestId, JSON.stringify(job));
       this.events.emit({ type: "turn.started", ...(job.todoId ? { todoId: job.todoId } : {}), conversationId: topicId ?? job.buildId, payload: { turnId: job.turnId, machineId: machine.id } });
-      return job;
+      return this.withEnv(job);
     });
+  }
+
+  private withEnv(job: TurnJob): TurnJob {
+    const turn = this.db.row("SELECT agent_snapshot_json FROM turns WHERE id=?", job.turnId);
+    const snapshot = parseJson<{ id?: string }>(turn?.agent_snapshot_json, {});
+    const row = snapshot.id ? this.db.row("SELECT * FROM agents WHERE id=?", snapshot.id) : undefined;
+    return row && this.db.agent(row).permissions?.secrets ? { ...job, env: this.secrets?.env(job.project?.id ?? null) ?? {} } : job;
   }
 
   // Roll back only a still-running, undelivered claim. A completed turn must never be requeued.

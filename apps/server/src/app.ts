@@ -1,4 +1,9 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
+import { Memories } from "./resources/memories.js";
+import { Secrets } from "./resources/secrets.js";
+import { Skills, type GithubFetcher } from "./resources/skills.js";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -14,6 +19,8 @@ import { handleMcp } from "./mcp/server.js";
 import type { AppServices } from "./services.js";
 
 export interface CreateAppOptions {
+  dataDir?: string;
+  githubFetcher?: GithubFetcher;
   databasePath?: string;
   publicUrl?: string;
   enrollKey?: string | null;
@@ -26,8 +33,10 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
   const db = new MusterDb(options.databasePath ?? ":memory:");
   const events = new EventBus(db);
   const orchestrator = new Orchestrator(db, events, options.publicUrl ?? "http://127.0.0.1:7420", options.autoFollowUp ?? true);
-  const scheduler = new Scheduler(db, orchestrator, events);
-  const services: AppServices = { db, events, orchestrator, scheduler, enrollKey: options.enrollKey ?? null, claimWaitMs: options.claimWaitMs ?? 25_000 };
+  const dataDir = options.dataDir ?? (options.databasePath && options.databasePath !== ":memory:" ? dirname(options.databasePath) : mkdtempSync(join(tmpdir(), "muster-data-")));
+  const memories = new Memories(db); const secrets = new Secrets(db, dataDir); const skills = new Skills(db, join(dataDir, "skills"), options.githubFetcher);
+  const scheduler = new Scheduler(db, orchestrator, events, memories, secrets, skills);
+  const services: AppServices = { db, events, orchestrator, scheduler, memories, secrets, skills, enrollKey: options.enrollKey ?? null, claimWaitMs: options.claimWaitMs ?? 25_000 };
   const app = new Hono();
 
   app.onError((error, c) => {

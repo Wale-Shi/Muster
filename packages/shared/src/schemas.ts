@@ -13,6 +13,15 @@ export const createProjectSchema = z.object({
 });
 export const updateProjectSchema = createProjectSchema.partial();
 
+export const permissionsSchema = z.object({ pushBranch: z.boolean().default(false), secrets: z.boolean().default(false), createSkills: z.boolean().default(false), updateSkills: z.boolean().default(false) }).strict();
+export const memorySchema = z.object({ content: z.string().trim().min(1).max(16000) });
+export const secretNameSchema = z.string().regex(/^[A-Z_][A-Z0-9_]{0,63}$/).refine((name) => !/^(PATH|HOME)$|^(MUSTER_|CODEX_|CLAUDE_|ELECTRON_)/.test(name) && !["NODE_OPTIONS", "NODE_ENV"].includes(name), "Reserved environment variable");
+export const secretRequestSchema = z.object({ name: secretNameSchema, scope: z.enum(["team", "project"]), projectId: idSchema.optional(), reason: z.string().trim().min(1).max(2000) });
+export const putSecretSchema = secretRequestSchema.omit({ reason: true }).extend({ value: z.string().min(1).max(64000), requestId: idSchema.optional() }).refine((v) => v.scope === "project" ? !!v.projectId : !v.projectId, "Project scope requires projectId; team scope forbids it");
+export const createSkillSchema = z.object({ name: z.string().trim().min(1).max(100), description: z.string().trim().min(1).max(2000), instructions: z.string().trim().min(1).max(100000) });
+export const updateSkillSchema = createSkillSchema.omit({ name: true }).partial();
+export const githubSkillSchema = z.object({ url: z.string().url() });
+
 export const createAgentSchema = z.object({
   name: z.string().trim().min(1),
   role: z.string().trim().min(1),
@@ -20,6 +29,8 @@ export const createAgentSchema = z.object({
   model: z.string().trim().min(1),
   reasoning: z.string().trim().nullable().optional(),
   avatar: z.string().trim().nullable().optional(),
+  permissions: permissionsSchema.optional(),
+  defaultSkillIds: z.array(idSchema).max(200).optional(),
 });
 export const updateAgentSchema = createAgentSchema.partial();
 
