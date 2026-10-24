@@ -1,3 +1,5 @@
+import { SchedulesPage } from "./pages/Schedules";
+import { ConnectionsPage } from "./pages/Connections";
 import { AgentPage } from "./pages/Agent";
 import { SkillsPage, NewSkillPage, SkillPage } from "./pages/Skills";
 import { SecretsPage } from "./pages/Secrets";
@@ -118,6 +120,8 @@ export function App() {
           <Route path="/skills" element={<SkillsPage />} />
           <Route path="/skills/new" element={<NewSkillPage />} />
           <Route path="/skills/:slug" element={<SkillPage key={location.pathname} />} />
+          <Route path="/schedules" element={<SchedulesPage />} />
+          <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/secrets" element={<SecretsPage />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/projects" element={<Projects />} />

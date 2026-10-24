@@ -4,6 +4,8 @@ import { NavLink, useLocation, useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
+  Clock,
+  Plug,
   KeyRound,
   BarChart3,
   Bot,
@@ -84,10 +86,13 @@ export function Sidebar({
     return "idle";
   };
   const links = [
-    { to: "/agents", title: t("ui.agents"), icon: Bot },
+    { to: "/schedules", title: t("phaseB.schedules"), icon: Clock },
+    { to: "/connections", title: t("phaseB.connections"), icon: Plug },
     { to: "/skills", title: t("parity.skills"), icon: BookOpen },
-    { to: "/projects", title: t("ui.projects"), icon: FolderGit2 },
+
     { to: "/usage", title: t("ui.usage"), icon: BarChart3 },
+    { to: "/agents", title: t("ui.agents"), icon: Bot },
+    { to: "/projects", title: t("ui.projects"), icon: FolderGit2 },
     { to: "/machines", title: t("ui.machines"), icon: Monitor },
     { to: "/secrets", title: t("parity.secrets"), icon: KeyRound },
   ];

@@ -43,6 +43,7 @@ export interface Agent {
   isChief: boolean;
   permissions?: AgentPermissions;
   defaultSkillIds?: string[];
+  connectionIds?: string[];
   updatedAt?: Timestamp;
   createdAt: Timestamp;
 }

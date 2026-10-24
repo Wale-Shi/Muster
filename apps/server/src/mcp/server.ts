@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
-import { createAgentSchema, createTodoSchema, todoPhaseSchema, memorySchema, createSkillSchema, updateSkillSchema, githubSkillSchema, secretRequestSchema } from "@muster/shared";
+import { scheduleFields, createAgentSchema, createTodoSchema, todoPhaseSchema, memorySchema, createSkillSchema, updateSkillSchema, githubSkillSchema, secretRequestSchema } from "@muster/shared";
 import type { AppServices } from "../services.js";
 import { id, now } from "../db/index.js";
 
@@ -58,6 +58,12 @@ function createMcpServer(services: AppServices, topicId: string | null, agentId:
     const messageId = orchestrator.addMessage(topicId, turnId, "system", input.reason, { secretRequest: input });
     return result({ status: "requested", messageId, instruction: "Wait for the user to save the secret. Never request its value in chat." });
   });
+  const chief = () => { if (!topicId || !profile().isChief) throw new Error("Only Chief can manage schedules and grants"); };
+  server.registerTool("list_schedules", { description: "List schedules", annotations: { readOnlyHint: true }, inputSchema: { todoId: z.string().optional() } }, async ({ todoId }) => { chief(); return result(services.schedules.list(todoId)); });
+  server.registerTool("create_schedule", { description: "Repeat a task with a fresh build", inputSchema: scheduleFields.shape }, async (input) => { chief(); return result(services.schedules.save(input)); });
+  server.registerTool("delete_schedule", { description: "Delete a schedule", inputSchema: { scheduleId: z.string() } }, async ({ scheduleId }) => { chief(); services.schedules.delete(scheduleId); return result({ deleted: true }); });
+  server.registerTool("list_connections", { description: "List connections without credentials", annotations: { readOnlyHint: true } }, async () => result(services.connections.list()));
+  for (const action of ["grant", "revoke"] as const) server.registerTool(`${action}_connection`, { description: `${action} an agent connection`, inputSchema: { agentId: z.string(), connectionId: z.string() } }, async ({ agentId, connectionId }) => { chief(); services.connections.grant(agentId, connectionId, action === "grant"); return result({ ok: true }); });
   return server;
 }
 

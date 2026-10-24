@@ -355,3 +355,115 @@ Checked on the installed **codex-cli 0.162.1** with `app-server generate-ts` and
 Skill imports reject absolute/traversing/backslash paths, duplicates, symlinks on server-read folders, non-regular files, more than 200 files and more than 5 MB. Multipart and reviewed imports also bound the entire upload (bulk shares this bound). Browser/desktop directory uploads contain only file bytes and relative paths; they cannot expose the original filesystem's symlink metadata. GitHub imports inspect the fetched filesystem, reject symlinks and use a temporary shallow sparse clone with disabled prompts/hooks; public access requires git/network access. Ref names containing `/` are ambiguous in GitHub tree URLs and are not supported; use a slash-free branch/tag. The clone itself can consume network/disk before the post-checkout 5 MB validation. Windows/macOS/Linux share the JSON archive format, but this change's tests run on this macOS host.
 
 UI routes are `/agents/:id` (Overview/Memory), `/skills`, `/skills/new`, `/skills/:slug`, and `/secrets`. Both renderer hosts use directory uploads; there is no new native IPC surface. Agent cards link to profiles; creation navigates to the new profile. Keyboard-navigable mentions are shared by Chief, todo and new-task composers; new-task agent mentions set an unselected assignee. All added copy and known API errors have English and Simplified Chinese translations. Visual review remains manual; no headless Chromium or desktop distribution build is used.
+
+## Phase B: schedules and connections
+
+Migration 5 adds `schedules`, `connections`, `agents.connection_ids_json` and build-level
+`required_machine_id` / `scheduled_agent_id`. Schedule references survive restarts;
+foreign keys prevent deleting machines or agents still referenced by schedules/builds.
+Connection deletion removes agent grants in the same transaction. Identifiers are
+immutable, unique, match `^[a-z][a-z0-9_]{1,31}$`, and cannot be `muster`.
+
+### Schedules
+
+`nextRun(schedule, after)` in shared is pure, uses Intl/IANA wall-clock conversion,
+and returns the first occurrence strictly after `after`. Repeated DST times select
+only the first occurrence; missing times advance to the first valid minute. Hourly,
+daily and weekly rules use the saved zone; once uses an absolute UTC instant.
+Creating/updating a past once disables it. Browser creation captures its local zone;
+editing recurring rules preserves the saved zone. The once date input uses browser
+local time and converts to UTC.
+
+The server entry point runs a startup tick and an unref'ed 30-second interval, stopped
+on shutdown. Embedded `createApp` callers can invoke `services.schedules.tick()`;
+it deliberately does not start background timers. Each due schedule is rechecked
+inside an immediate SQLite transaction, advances to a future occurrence first, and
+starts at most one run. Busy phases or any queued/running turn produce `skipped_busy`.
+Other phases get a new branch/build with no session, old plan, or old conversation
+prompt. The task title/spec and selected mode determine the new prompt. The schedule's
+agent override is build-scoped, leaving task assignments intact. A machine requirement
+is separate from claimed worktree affinity and survives a released claim. Normal
+Confirm/Review gates remain in force. A system message carries `{scheduleId}` and SSE
+updates the conversation and schedules page. Once disables after an attempted firing,
+including run-now or busy skips. Run-now advances the cadence too; disabled recurring
+schedules stay disabled. Errors retain a generic diagnostic and the next occurrence.
+No missed-run queue is replayed.
+
+REST: GET/POST `/api/schedules`, optional GET `?todoId=`, GET/PATCH/DELETE
+`/api/schedules/:id`, POST `/api/schedules/:id/run`. Shared Zod validates full creates
+and merged patches. Chief MCP adds read-only `list_schedules`, `create_schedule`, and
+`delete_schedule`; mutating schedule tools and schedule listing require Chief identity.
+The `/schedules` page uses existing settings components; the task header's Repeat
+button opens the same editor. Enabled schedules appear as task chips.
+
+### Connections and credentials
+
+REST: GET/POST `/api/connections`, GET/PATCH/DELETE `/api/connections/:id`, POST
+`/api/connections/:id/test`. Metadata exposes credential **keys**, never values. A
+missing `secrets` patch preserves credentials; an explicit object replaces the entire
+map, with `{}` clearing it. AES-256-GCM uses Phase A's `secret.key` and a fresh IV,
+with connection ID and immutable identifier as authenticated binding. Back up that
+key and the database together. HTTP credentials are headers; stdio credentials are
+environment values. HTTP cannot be machine pinned. The UI requires an online machine
+for new stdio connections; the API also allows null to run on any claiming machine.
+Existing offline pins remain editable.
+
+Agents grant connections through their profile. Chief can `list_connections` (read-only,
+no credentials), `grant_connection`, and `revoke_connection`. Only Chief can mutate
+these grants through MCP. Claim and replay re-derive current grants and decrypt values
+into `TurnJob.connections` **after** writing the claim journal. Stdio pinned elsewhere
+is omitted and produces one system note per turn/connection name. Grant changes take
+effect on subsequent claims/replays, not an already running process. Instructions list
+each delivered `mcp__identifier__*` prefix.
+
+HTTP testing uses the official MCP SDK Client/StreamableHTTPClientTransport,
+initialize and paginated tools/list, with a shared 10-second abort deadline. Results
+are `{ok,toolCount,tools,error}`; tool names are capped at 50. Errors are generic to
+avoid reflecting credentials. Stdio tests never execute on the server: the UI says
+it will be tested by the machine on its next run. This is a deferred runtime startup,
+not a background machine test job.
+
+Codex receives `mcp_servers.<identifier>` beside `muster`, with `url/http_headers` or
+`command/args/env`. `default_tools_approval_mode: "approve"` honors the user's explicit
+agent grant: with Muster's `approvalPolicy: "never"`, calls must not hang waiting for
+an unavailable approval UI. This does **not** change plan turns' `read-only` thread
+sandbox or `{type:"readOnly",networkAccess:false}` turn policy. Filesystem sandboxing
+is not a read-only policy for external MCP services: a granted service may expose
+write tools, and local MCP processes run as the daemon OS user. Use appropriately
+scoped provider tokens. Claude receives matching entries in `--mcp-config`, retaining
+`plan` versus `bypassPermissions` modes. Inherited machine CLI configuration and
+credentials are not an isolation boundary.
+
+Daemon upload redaction includes connection headers/env and bare Bearer tokens;
+connection-bearing jobs redact nonempty short values too. Streaming splits, tool
+payloads and completion objects share the same credential set. This is literal
+replacement, not encoded-secret detection or scrubbing of runtime files/history.
+
+### Catalog and verified runtime facts
+
+The typed catalog has English/Chinese descriptions and capability bullets, local
+monogram/color tiles, and these entries, checked against official sources during
+Phase B (2026-10-25):
+
+| Entry | Transport / authentication | Official source |
+| --- | --- | --- |
+| Linear | `https://mcp.linear.app/mcp`, Bearer API key | https://linear.app/docs/mcp |
+| GitHub | `https://api.githubcopilot.com/mcp/`, Bearer PAT | https://github.com/github/github-mcp-server |
+| Notion | `https://mcp.notion.com/mcp`, OAuth only in this catalog | https://developers.notion.com/guides/mcp/get-started-with-mcp |
+| Playwright | stdio `npx -y @playwright/mcp@latest`, no token | https://github.com/microsoft/playwright-mcp |
+
+OAuth sign-in is **not implemented**: the Notion dialog explains this and offers no
+Connect action. No unverified provider endpoints are included. Custom HTTP/stdio
+connections remain available; catalog package versions using `@latest` can change.
+
+Verified locally: **codex-cli 0.162.1** `app-server generate-ts` accepts JSON config in
+ThreadStart/ThreadResume. Its `mcp get --json` parser accepted the exact HTTP headers
+and stdio command/args/env shapes using command-line overrides (no global config
+writes). The official [MCP reference](https://learn.chatgpt.com/docs/extend/mcp) and
+[configuration schema](https://developers.openai.com/codex/config-schema.json) describe
+the approval setting. **Claude Code 2.1.310** `mcp add-json --scope project` accepted
+both shapes in a temporary project with isolated CLI configuration; fixtures were
+removed afterwards. Process protocol peers assert exact HTTP/stdio maps, resumed
+Codex threads and unchanged plan sandboxes. These checks do not claim live provider
+authentication or real model tool execution. Tests use local fixtures and mock turns.
+Visual review remains manual; no screenshots or desktop distribution build is used.

@@ -4,8 +4,17 @@ import { join, dirname } from "node:path";
 import type { AgentEvent, SkillFile, TurnJob } from "@muster/shared";
 import type { MachineClient } from "./client.js";
 
-export function redactor(env: Record<string, string> = {}) {
-  const entries = Object.entries(env).filter(([, value]) => value.length >= 6).sort((a, b) => b[1].length - a[1].length);
+export function jobCredentials(job: TurnJob): Record<string, string> {
+  const values = { ...job.env };
+  for (const c of job.connections ?? []) for (const [key, value] of Object.entries(c.headers ?? c.env ?? {})) {
+    values[`${c.identifier}.${key}`] = value;
+    if (/^Bearer /i.test(value)) values[`${c.identifier}.${key}.token`] = value.slice(7);
+  }
+  return values;
+}
+
+export function redactor(env: Record<string, string> = {}, minimumLength = 6) {
+  const entries = Object.entries(env).filter(([, value]) => value.length >= minimumLength).sort((a, b) => b[1].length - a[1].length);
   const redact = <T>(value: T): T => {
     if (typeof value === "string") { let text: string = value; for (const [name, secret] of entries) text = text.split(secret).join(`[secret:${name}]`); return text as T; }
     if (Array.isArray(value)) return value.map(redact) as T;
@@ -17,9 +26,9 @@ export function redactor(env: Record<string, string> = {}) {
 
 // Streams deltas while holding back the last (longest secret - 1) characters, so a secret split across deltas
 // is always redacted before any part of it leaves the machine.
-export function secretEvents(env: Record<string, string> | undefined, emit: (event: AgentEvent) => void) {
-  const redact = redactor(env);
-  const hold = Math.max(0, ...Object.values(env ?? {}).filter((v) => v.length >= 6).map((v) => v.length)) - 1;
+export function secretEvents(env: Record<string, string> | undefined, emit: (event: AgentEvent) => void, minimumLength = 6) {
+  const redact = redactor(env, minimumLength);
+  const hold = Math.max(0, ...Object.values(env ?? {}).filter((v) => v.length >= minimumLength).map((v) => v.length)) - 1;
   let message = ""; let messagePending = ""; let reasoningPending = "";
   const stream = (pending: string, content: string, type: "message.delta" | "reasoning.delta") => {
     const text = redact(pending + content); const cut = Math.max(0, text.length - hold);
@@ -28,7 +37,7 @@ export function secretEvents(env: Record<string, string> | undefined, emit: (eve
   };
   return {
     emit(event: AgentEvent) {
-      if (hold <= 0) { emit(event); return; }
+      if (hold <= 0) { emit(redact(event)); return; }
       if (event.type === "message.delta") { message += event.content; messagePending = stream(messagePending, event.content, "message.delta"); return; }
       if (event.type === "reasoning.delta") { reasoningPending = stream(reasoningPending, event.content, "reasoning.delta"); return; }
       if (event.type === "message.completed") {

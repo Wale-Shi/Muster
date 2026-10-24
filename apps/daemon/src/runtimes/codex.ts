@@ -92,9 +92,9 @@ export class CodexRuntime implements Runtime {
       if (stopped) { settle("stopped"); return; }
       const config: Wire = {
         shell_environment_policy: { set: job.env ?? {} },
-        // Trust only Muster's platform tools, independently of the filesystem
+        // User-granted MCP tools are approved independently of the filesystem
         // sandbox. `never` rejects MCP calls that would otherwise need approval.
-        mcp_servers: { muster: { url: job.mcp.url, required: true, default_tools_approval_mode: "approve", http_headers: { Authorization: `Bearer ${job.mcp.token}` } } },
+        mcp_servers: { ...Object.fromEntries((job.connections ?? []).map((c) => [c.identifier, { default_tools_approval_mode: "approve", ...(c.transport === "http" ? { url: c.url, http_headers: c.headers ?? {} } : { command: c.command, args: c.args ?? [], env: c.env ?? {} }) }])), muster: { url: job.mcp.url, required: true, default_tools_approval_mode: "approve", http_headers: { Authorization: `Bearer ${job.mcp.token}` } } },
       };
       const params = { cwd: ctx.cwd, model: job.agent.model, developerInstructions: job.systemInstructions, approvalPolicy: "never", sandbox: job.readOnly ? "read-only" : "danger-full-access", config };
       const response = await rpc(threadId ? "thread/resume" : "thread/start", { ...params, ...(threadId ? { threadId } : {}) });

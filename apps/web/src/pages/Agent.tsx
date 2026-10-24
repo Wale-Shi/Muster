@@ -1,3 +1,4 @@
+import { useConnections } from "./Connections";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,6 +16,7 @@ export function AgentPage() {
   const { id = "" } = useParams(); const { t, formatDate, label } = useI18n(); const navigate = useNavigate(); const client = useQueryClient();
   const [tab, setTab] = useState<"overview" | "memory">("overview"); const [copied, setCopied] = useState(false);
   const agent = useQuery({ queryKey: ["agent", id], queryFn: () => request<Profile>(`/agents/${id}`) });
+  const connections = useConnections();
   const skills = useQuery({ queryKey: ["skills"], queryFn: () => request<Skill[]>("/skills") });
   const save = useMutation({ mutationFn: (value: Partial<Agent>) => request<Agent>(`/agents/${id}`, "PATCH", value), onSuccess: () => { void client.invalidateQueries({ queryKey: ["agent", id] }); void client.invalidateQueries({ queryKey: ["agents"] }); } });
   const remove = useMutation({ mutationFn: () => request(`/agents/${id}`, "DELETE"), onSuccess: () => { void client.invalidateQueries({ queryKey: ["agents"] }); navigate("/agents"); } });
@@ -65,6 +67,13 @@ export function AgentPage() {
                 {otherSkills.length > 0 ? <select className="chip-add" aria-label={t("parity.selectSkill")} value="" disabled={save.isPending} onChange={(e) => save.mutate({ defaultSkillIds: [...(a.defaultSkillIds ?? []), e.target.value] })}><option value="">{t("parity.selectSkill")}</option>{otherSkills.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
                   : !defaultSkills.length && <span className="muted">{skills.data?.length ? t("parity.allSkillsAdded") : <>{t("parity.noSkillsYet")} <Link className="link" to="/skills/new">{t("parity.newSkill")}</Link></>}</span>}
               </div>
+            </Section>
+            <Section title={t("phaseB.connections")} description={t("phaseB.grantHelp")}>
+              <div className="chip-list">
+                {connections.data?.filter((c) => a.connectionIds?.includes(c.id)).map((c) => <span className="chip" key={c.id}>{c.name}<button aria-label={`${t("parity.remove")} ${c.name}`} disabled={save.isPending} onClick={() => save.mutate({ connectionIds: a.connectionIds?.filter((id) => id !== c.id) ?? [] })}><X size={12} /></button></span>)}
+                <select className="chip-add" value="" aria-label={t("phaseB.addConnection")} disabled={save.isPending} onChange={(e) => save.mutate({ connectionIds: [...(a.connectionIds ?? []), e.target.value] })}><option value="">{t("phaseB.addConnection")}</option>{connections.data?.filter((c) => !a.connectionIds?.includes(c.id)).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+                {!connections.data?.length && <Link className="link" to="/connections">{t("phaseB.noConnections")}</Link>}
+              </div><ErrorNotice error={connections.error} />
             </Section>
             <Section title={t("parity.permissions")}>
               {permissionKeys.map((key) => <SettingRow key={key} label={t(key === "secrets" ? "parity.team" : `parity.${key}`)} help={t(`parity.${key}Help`)}><Switch label={t(key === "secrets" ? "parity.team" : `parity.${key}`)} checked={permissions[key]} disabled={save.isPending} onChange={(checked) => save.mutate({ permissions: { ...permissions, [key]: checked } })} /></SettingRow>)}

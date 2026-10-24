@@ -17,7 +17,7 @@ it("migrates v3 data forward and preserves duties with Chief permissions", () =>
   migrations.slice(0, 3).forEach((sql) => old.exec(sql)); old.exec("PRAGMA user_version=3"); old.prepare("INSERT INTO agents VALUES (?,?,?,?,?,?,?,?,?)").run("chief", "Chief", "Keep this duty", "mock", "mock", null, null, 1, "2026-01-01"); old.close();
   const db = new MusterDb(file); dbs.push(db); const chief = db.agent(db.row("SELECT * FROM agents WHERE id='chief'")!);
   expect(chief).toMatchObject({ role: "Keep this duty", permissions: { pushBranch: false, secrets: false, createSkills: true, updateSkills: true }, defaultSkillIds: [], updatedAt: "2026-01-01" });
-  expect(db.row("PRAGMA user_version")?.user_version).toBe(4);
+  expect(db.row("PRAGMA user_version")?.user_version).toBe(5);
 });
 it("validates profiles and scopes memories, with a bounded newest-first prompt", async () => {
   const { app, services } = setup(); const { agentId } = await seedProjectAndAgent(app);

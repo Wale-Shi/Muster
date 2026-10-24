@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { AgentEvent } from "@muster/shared";
-import { prepareSkills, redactor, secretEvents } from "../src/resources.js";
+import { prepareSkills, redactor, secretEvents, jobCredentials } from "../src/resources.js";
 import { MachineClient } from "../src/client.js";
 import { makeJob } from "./helpers.js";
 import { CodexRuntime } from "../src/runtimes/codex.js";
@@ -57,4 +57,12 @@ it("Claude child shell inherits granted secrets", async () => {
   const cwd = await home();
   const peer = `const rl=require('node:readline'); rl.createInterface({input:process.stdin}).on('line',()=>{ const value=require('node:child_process').execFileSync('/bin/sh',['-c','printf %s "$SERVICE_TOKEN"'],{encoding:'utf8'}); if(value!=='fixture-secret') throw Error('missing shell secret'); process.stdout.write(JSON.stringify({type:'result',subtype:'success',result:'ok',usage:{}})+'\\n'); });`;
   const result = await new ClaudeRuntime(process.execPath, ["-e", peer, "--"]).start(makeJob({ env: { SERVICE_TOKEN: "fixture-secret" } }), { cwd, emit: () => {} }).result; expect(result.status).toBe("done");
+});
+
+it("redacts connection header values, bearer tokens and short stdio env across chunks", () => {
+  const credentials = jobCredentials(makeJob({ connections: [{ identifier: "remote", transport: "http", headers: { Authorization: "Bearer fixture-credential" } }, { identifier: "local", transport: "stdio", env: { PIN: "xyz" } }] }));
+  const events: AgentEvent[] = []; const stream = secretEvents(credentials, (e) => events.push(e), 1);
+  for (const content of ["Bearer fixture-", "credential fixture-", "credential xyz"]) stream.emit({ type: "message.delta", content });
+  stream.emit({ type: "message.completed" }); stream.emit({ type: "tool.completed", tool: "fixture", callId: "test", output: { value: "xyz", header: "Bearer fixture-credential" } }); stream.flush();
+  expect(JSON.stringify(events)).not.toMatch(/fixture-credential|xyz/); expect(redactor(credentials, 1)({ diff: "+xyz", error: "fixture-credential" })).toEqual({ diff: "+[secret:local.PIN]", error: "[secret:remote.Authorization.token]" });
 });

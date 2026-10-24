@@ -149,3 +149,27 @@ it("Claude interruption terminates the child process", async () => {
   const running = new ClaudeRuntime(process.execPath, ["-e", "setInterval(()=>{},1000)", "--"]).start(makeJob(), ctx);
   await running.interrupt(); expect((await running.result).status).toBe("stopped");
 });
+
+const grantedConnections = [
+  { identifier: "linear", transport: "http" as const, url: "https://example.test/mcp", headers: { Authorization: "Bearer private-fixture" } },
+  { identifier: "local", transport: "stdio" as const, command: "fixture", args: ["--flag"], env: { TOKEN: "private-env-fixture" } },
+];
+it.each([false, true])("Codex delivers exact granted HTTP/stdio config, readOnly=%s", async (readOnly) => {
+  const ctx = await context(); const expected = {
+    linear: { default_tools_approval_mode: "approve", url: "https://example.test/mcp", http_headers: { Authorization: "Bearer private-fixture" } },
+    local: { default_tools_approval_mode: "approve", command: "fixture", args: ["--flag"], env: { TOKEN: "private-env-fixture" } },
+    muster: { url: "http://localhost:7420/mcp", required: true, default_tools_approval_mode: "approve", http_headers: { Authorization: "Bearer test-only" } },
+  };
+  const peer = codexPeer(readOnly).replace("if(JSON.stringify(Object.keys(p.config))", `if(JSON.stringify(p.config.mcp_servers)!==${JSON.stringify(JSON.stringify(expected))}) throw Error('exact connection config');\n if(JSON.stringify(Object.keys(p.config))`).replace("JSON.stringify(['muster'])", "JSON.stringify(['linear','local','muster'])");
+  const job = makeJob({ readOnly, connections: grantedConnections, sessionState: { threadId: "thread-test" }, agent: { runtime: "codex", model: "test-only", reasoning: "high", role: "test" } });
+  const running = new CodexRuntime(process.execPath, ["-e", peer, "--"]).start(job, ctx); await until(async () => ctx.events.length, (length) => length >= 5); await running.steer("More"); expect((await running.result).status).toBe("done");
+});
+it.each([false, true])("Claude delivers exact granted HTTP/stdio config, readOnly=%s", async (readOnly) => {
+  const ctx = await context(); const expected = { mcpServers: {
+    linear: { type: "http", url: "https://example.test/mcp", headers: { Authorization: "Bearer private-fixture" } },
+    local: { type: "stdio", command: "fixture", args: ["--flag"], env: { TOKEN: "private-env-fixture" } },
+    muster: { type: "http", url: "http://localhost:7420/mcp", headers: { Authorization: "Bearer test-only" } },
+  } };
+  const peer = `const assert=require('node:assert/strict'); const args=process.argv.slice(1); assert.deepEqual(JSON.parse(args[args.indexOf('--mcp-config')+1]),${JSON.stringify(expected)}); assert.equal(args[args.indexOf('--permission-mode')+1],${JSON.stringify(readOnly ? "plan" : "bypassPermissions")}); require('node:readline').createInterface({input:process.stdin}).on('line',()=>process.stdout.write(JSON.stringify({type:'result',subtype:'success',result:'Done',usage:{}})+'\\n'));`;
+  expect((await new ClaudeRuntime(process.execPath, ["-e", peer, "--"]).start(makeJob({ readOnly, connections: grantedConnections }), ctx).result).status).toBe("done");
+});

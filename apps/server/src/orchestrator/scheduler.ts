@@ -1,3 +1,4 @@
+import type { Connections } from "../resources/connections.js";
 import type { Memories } from "../resources/memories.js";
 import type { Secrets } from "../resources/secrets.js";
 import type { Skills } from "../resources/skills.js";
@@ -13,7 +14,7 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
 };
 
 export class Scheduler {
-  constructor(readonly db: MusterDb, readonly orchestrator: Orchestrator, readonly events: EventBus, readonly memories?: Memories, readonly secrets?: Secrets, readonly skills?: Skills) {}
+  constructor(readonly db: MusterDb, readonly orchestrator: Orchestrator, readonly events: EventBus, readonly memories?: Memories, readonly secrets?: Secrets, readonly skills?: Skills, readonly connections?: Connections) {}
 
   enroll(name: string, runtimes: Runtime[], concurrency: number): { machineId: string; token: string } {
     const machineId = id();
@@ -79,13 +80,14 @@ export class Scheduler {
                chief.reasoning AS chief_reasoning, chief.role AS chief_role
         FROM turns t JOIN builds b ON b.id=t.build_id
         LEFT JOIN todos td ON td.id=b.todo_id LEFT JOIN projects p ON p.id=td.project_id
-        LEFT JOIN agents a ON a.id=CASE WHEN t.kind='plan' OR (t.kind='revise' AND td.previous_gate='confirm') THEN COALESCE(td.plan_agent_id,td.agent_id) ELSE td.agent_id END
+        LEFT JOIN agents a ON a.id=COALESCE(b.scheduled_agent_id,CASE WHEN t.kind='plan' OR (t.kind='revise' AND td.previous_gate='confirm') THEN COALESCE(td.plan_agent_id,td.agent_id) ELSE td.agent_id END)
         LEFT JOIN agents chief ON chief.is_chief=1
         WHERE t.status='queued' AND b.status='active'
           AND (t.not_before IS NULL OR t.not_before<=?)
           AND (b.machine_id IS NULL OR b.machine_id=?)
+          AND (b.required_machine_id IS NULL OR b.required_machine_id=?)
           AND NOT EXISTS (SELECT 1 FROM turns active WHERE active.build_id=b.id AND active.status='running')
-        ORDER BY t.rowid`, now(), machine.id);
+        ORDER BY t.rowid`, now(), machine.id, machine.id);
       const candidate = candidates.find((row) => runtimes.includes((row.todo_id ? row.runtime : row.chief_runtime) as Runtime));
       if (!candidate) return null;
       const isChief = !candidate.todo_id;
@@ -127,10 +129,16 @@ export class Scheduler {
   }
 
   private withEnv(job: TurnJob): TurnJob {
-    const turn = this.db.row("SELECT agent_snapshot_json FROM turns WHERE id=?", job.turnId);
+    const turn = this.db.row("SELECT agent_snapshot_json,machine_id FROM turns WHERE id=?", job.turnId);
     const snapshot = parseJson<{ id?: string }>(turn?.agent_snapshot_json, {});
     const row = snapshot.id ? this.db.row("SELECT * FROM agents WHERE id=?", snapshot.id) : undefined;
-    return row && this.db.agent(row).permissions?.secrets ? { ...job, env: this.secrets?.env(job.project?.id ?? null) ?? {} } : job;
+    const profile = row ? this.db.agent(row) : undefined;
+    const delivery = this.connections?.delivery(profile?.connectionIds ?? [], String(turn?.machine_id)) ?? { connections: [], omitted: [] };
+    for (const name of delivery.omitted) {
+      const content = `Connection ${name} omitted: it runs on another machine.`;
+      if (!this.db.row("SELECT id FROM messages WHERE turn_id=? AND content=?", job.turnId, content)) this.orchestrator.addMessage(job.topicId ?? job.buildId, job.turnId, "system", content, { code: "connection_machine_mismatch", connectionName: name });
+    }
+    return { ...job, connections: delivery.connections, systemInstructions: job.systemInstructions + delivery.connections.map((c) => `\nTools from connection ${c.identifier} are available as mcp__${c.identifier}__*.`).join(""), ...(profile?.permissions?.secrets ? { env: this.secrets?.env(job.project?.id ?? null) ?? {} } : {}) };
   }
 
   // Roll back only a still-running, undelivered claim. A completed turn must never be requeued.

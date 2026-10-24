@@ -1,4 +1,4 @@
-import { prepareSkills, redactor, secretEvents } from "./resources.js";
+import { prepareSkills, redactor, secretEvents, jobCredentials } from "./resources.js";
 import { access, mkdir, readFile, writeFile, rm, rename } from "node:fs/promises";
 import { constants } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
@@ -148,8 +148,9 @@ export class Daemon {
   private async run(job: TurnJob, active: Active): Promise<void> {
     const started = Date.now();
     const batch = new EventBatcher(this.options.client, job.turnId, (error) => this.options.log("error", "Event upload failed", { turnId: job.turnId, error: errorText(error) }), this.options.flushMs);
-    const redact = redactor(job.env);
-    const secured = secretEvents(job.env, batch.emit);
+    const credentials = jobCredentials(job);
+    const redact = redactor(credentials, job.connections?.length ? 1 : 6);
+    const secured = secretEvents(credentials, batch.emit, job.connections?.length ? 1 : 6);
     let workspace: Workspace | undefined;
     const inboxAbort = new AbortController();
     const inboxSignal = AbortSignal.any([inboxAbort.signal, this.abort.signal]);

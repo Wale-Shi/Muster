@@ -1,3 +1,4 @@
+import { TodoSchedules } from "./Schedules";
 import { useI18n } from "../i18n";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
@@ -88,6 +89,7 @@ export function TodoPage() {
         </div>
         <div className="todo-metadata">
           <PhaseBadge phase={todo.phase} />
+          <TodoSchedules todoId={todo.id} />
           <span className="metadata-divider" />
           <span className="project-tag" title={project?.name}>
             <span className="project-square" />

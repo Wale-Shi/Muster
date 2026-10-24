@@ -1,0 +1,13 @@
+export type ConnectionCategory = "project" | "docs" | "comms" | "monitoring" | "database" | "cloud" | "payments" | "browser" | "desktop";
+export interface CatalogEntry {
+  id: string; name: string; category: ConnectionCategory; color: string;
+  transport: "http" | "stdio"; url?: string; command?: string; args?: string[]; docsUrl: string;
+  description: { en: string; "zh-CN": string }; capabilities: { en: string[]; "zh-CN": string[] };
+  auth: { kind: "header"; header: string; format: string; tokenHelpUrl: string } | { kind: "env"; name: string } | { kind: "none" | "oauth" };
+}
+export const connectionCatalog: CatalogEntry[] = [
+  { id: "linear", name: "Linear", category: "project", color: "#5e6ad2", transport: "http", url: "https://mcp.linear.app/mcp", docsUrl: "https://linear.app/docs/mcp", description: { en: "Work with issues and projects in Linear.", "zh-CN": "管理 Linear 中的工单与项目。" }, capabilities: { en: ["Find issues and projects", "Create and update issues and comments"], "zh-CN": ["查找工单与项目", "创建与更新工单和评论"] }, auth: { kind: "header", header: "Authorization", format: "Bearer {token}", tokenHelpUrl: "https://linear.app/docs/mcp" } },
+  { id: "github", name: "GitHub", category: "project", color: "#24292f", transport: "http", url: "https://api.githubcopilot.com/mcp/", docsUrl: "https://github.com/github/github-mcp-server", description: { en: "Connect repository context and collaboration tools.", "zh-CN": "连接代码仓库与协作工具。" }, capabilities: { en: ["Read repositories, issues and pull requests", "Manage issues and pull requests within token permissions"], "zh-CN": ["读取仓库、议题与拉取请求", "在令牌权限内管理议题与拉取请求"] }, auth: { kind: "header", header: "Authorization", format: "Bearer {token}", tokenHelpUrl: "https://github.com/settings/tokens" } },
+  { id: "notion", name: "Notion", category: "docs", color: "#333333", transport: "http", url: "https://mcp.notion.com/mcp", docsUrl: "https://developers.notion.com/guides/mcp/get-started-with-mcp", description: { en: "Bring workspace documents into agent conversations.", "zh-CN": "让 Agent 使用工作区里的文档。" }, capabilities: { en: ["Search workspace content", "Read and update pages"], "zh-CN": ["搜索工作区内容", "读取与更新页面"] }, auth: { kind: "oauth" } },
+  { id: "playwright", name: "Playwright", category: "browser", color: "#287b3e", transport: "stdio", command: "npx", args: ["-y", "@playwright/mcp@latest"], docsUrl: "https://github.com/microsoft/playwright-mcp", description: { en: "Automate a browser on a connected machine.", "zh-CN": "在已连接的机器上自动操作浏览器。" }, capabilities: { en: ["Navigate and inspect pages", "Interact with forms and capture browser state"], "zh-CN": ["浏览与检查网页", "操作表单并获取浏览器状态"] }, auth: { kind: "none" } },
+];

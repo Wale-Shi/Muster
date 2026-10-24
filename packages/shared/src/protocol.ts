@@ -3,6 +3,7 @@ import type { z } from "zod";
 import type { agentEventSchema, turnCompleteSchema, eventUploadSchema } from "./schemas.js";
 
 export interface TurnJob {
+  connections?: import("./connections.js").TurnConnection[];
   skills?: { slug: string; name: string; description: string; version: string }[];
   env?: Record<string, string>;
   pushBranch?: boolean;

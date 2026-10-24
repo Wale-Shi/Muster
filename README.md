@@ -19,6 +19,27 @@ Muster is an open-source, self-hostable [todos.dev](https://todos.dev)-style wor
 
 See [architecture and limits](docs/ARCHITECTURE.md#phase-a-agent-resources) for the local trust model, runtime verification, and import limits.
 
+## Schedules and connections
+
+- Repeat an existing task hourly, daily, weekly, or once from **Schedules** or the
+  task's **Repeat…** button. Each run starts a fresh build/branch from its title and
+  spec, with the usual Confirm/Review gates. Time zones and DST are respected; busy
+  tasks skip that occurrence and missed runs collapse into one.
+- **Connections** includes Linear, GitHub, Notion (OAuth unavailable), Playwright,
+  and custom HTTP/stdio MCP servers. Connect a service, then grant it on an agent's
+  profile. Header/env values are encrypted and write-only; decrypted values never
+  enter claim journals and are redacted from daemon uploads.
+- Local stdio connections are pinned to a selected machine in the UI. They are
+  omitted on other machines. HTTP tests initialize MCP and list tools; stdio starts
+  on the next agent run. OAuth sign-in is not supported yet.
+- Codex marks user-granted MCP tools `approve`; plan turns retain their read-only
+  filesystem sandbox. MCP services can still expose write actions, so scope provider
+  tokens appropriately. CLI and provider credentials remain under the daemon user's
+  trust boundary.
+
+See [Phase B architecture](docs/ARCHITECTURE.md#phase-b-schedules-and-connections) for
+API contracts, catalog source URLs, verified CLI versions and limits.
+
 ## Quick start
 
 Install Node.js 22 or newer (a current Node 22 release is recommended; see [.nvmrc](.nvmrc)), npm, and Git. Run these commands from the repository root:
@@ -137,7 +158,7 @@ The MVP includes orchestration, Kanban, plan/review gates, worktrees, Codex/Clau
 
 - Additional runtimes and built-in pi.
 - Teams, multiple users, and login.
-- Schedules, connections, and AI review.
+- AI review and OAuth sign-in for connections.
 - Mobile clients, cloud machines, and GitHub pull request integration.
 
 ## Contributing

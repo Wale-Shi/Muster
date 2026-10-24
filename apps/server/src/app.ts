@@ -1,3 +1,5 @@
+import { Connections } from "./resources/connections.js";
+import { Schedules } from "./resources/schedules.js";
 import { existsSync, mkdtempSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
@@ -35,8 +37,9 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
   const orchestrator = new Orchestrator(db, events, options.publicUrl ?? "http://127.0.0.1:7420", options.autoFollowUp ?? true);
   const dataDir = options.dataDir ?? (options.databasePath && options.databasePath !== ":memory:" ? dirname(options.databasePath) : mkdtempSync(join(tmpdir(), "muster-data-")));
   const memories = new Memories(db); const secrets = new Secrets(db, dataDir); const skills = new Skills(db, join(dataDir, "skills"), options.githubFetcher);
-  const scheduler = new Scheduler(db, orchestrator, events, memories, secrets, skills);
-  const services: AppServices = { db, events, orchestrator, scheduler, memories, secrets, skills, enrollKey: options.enrollKey ?? null, claimWaitMs: options.claimWaitMs ?? 25_000 };
+  const connections = new Connections(db, secrets, events); const schedules = new Schedules(db, orchestrator);
+  const scheduler = new Scheduler(db, orchestrator, events, memories, secrets, skills, connections);
+  const services: AppServices = { db, events, orchestrator, scheduler, memories, secrets, skills, connections, schedules, enrollKey: options.enrollKey ?? null, claimWaitMs: options.claimWaitMs ?? 25_000 };
   const app = new Hono();
 
   app.onError((error, c) => {

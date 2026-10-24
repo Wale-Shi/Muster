@@ -31,6 +31,7 @@ export const createAgentSchema = z.object({
   avatar: z.string().trim().nullable().optional(),
   permissions: permissionsSchema.optional(),
   defaultSkillIds: z.array(idSchema).max(200).optional(),
+  connectionIds: z.array(idSchema).max(200).optional(),
 });
 export const updateAgentSchema = createAgentSchema.partial();
 

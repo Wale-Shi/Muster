@@ -92,6 +92,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       }
       const { type, conversationId, todoId } = event;
       const payload = record(event.payload);
+      if (type.startsWith("schedule.")) void client.invalidateQueries({ queryKey: ["schedules"] });
+      if (type.startsWith("connection.")) void client.invalidateQueries({ queryKey: ["connections"] });
       if (conversationId) {
         client.setQueryData<Message[]>(
           ["stream-buffer", conversationId],

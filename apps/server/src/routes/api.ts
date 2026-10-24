@@ -1,3 +1,4 @@
+import { parityRoutes } from "./parity.js";
 import { StateError } from "../orchestrator/state.js";
 import { resourceRoutes } from "./resources.js";
 import { Hono } from "hono";
@@ -40,17 +41,20 @@ export function apiRoutes(services: AppServices): Hono {
   });
 
   app.route("/", resourceRoutes(services));
+  app.route("/", parityRoutes(services));
 
   app.get("/agents", (c) => c.json({ data: db.rows("SELECT * FROM agents ORDER BY is_chief DESC, created_at").map((row) => db.agent(row)) }));
   app.post("/agents", async (c) => {
-    const input = await body(c, createAgentSchema); validateSkillIds(input.defaultSkillIds); const agentId = id();
+    const input = await body(c, createAgentSchema); validateSkillIds(input.defaultSkillIds); if (input.connectionIds?.some((id) => !db.row("SELECT id FROM connections WHERE id=?", id))) throw new StateError("Connection not found", 400); const agentId = id();
     db.run("INSERT INTO agents (id,name,role,runtime,model,reasoning,avatar,is_chief,created_at,updated_at,permissions_json,default_skill_ids_json) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)", agentId, input.name, input.role, input.runtime, input.model, input.reasoning ?? null, input.avatar ?? null, now(), now(), JSON.stringify(input.permissions ?? {}), JSON.stringify(input.defaultSkillIds ?? []));
+    if (input.connectionIds) db.run("UPDATE agents SET connection_ids_json=? WHERE id=?", JSON.stringify(input.connectionIds), agentId);
     const agent = db.agent(db.row("SELECT * FROM agents WHERE id = ?", agentId)!); events.emit({ type: "agent.changed", payload: agent }); return c.json({ data: agent }, 201);
   });
   app.get("/agents/:id", (c) => { const row = db.row("SELECT * FROM agents WHERE id = ?", c.req.param("id")); return row ? c.json({ data: { ...db.agent(row), inProgress: db.rows("SELECT * FROM todos WHERE (agent_id=? OR plan_agent_id=?) AND phase NOT IN ('todo','done','closed') ORDER BY number DESC", row.id, row.id).map((r) => db.todo(r)), memoryCount: services.memories.list(String(row.id)).length, skillCount: db.agent(row).defaultSkillIds?.length ?? 0 } }) : c.json({ error: "Agent not found" }, 404); });
   app.patch("/agents/:id", async (c) => {
-    const input = await body(c, updateAgentSchema); validateSkillIds(input.defaultSkillIds); const agentId = c.req.param("id"); const current = db.row("SELECT * FROM agents WHERE id = ?", agentId); if (!current) return c.json({ error: "Agent not found" }, 404);
+    const input = await body(c, updateAgentSchema); validateSkillIds(input.defaultSkillIds); if (input.connectionIds?.some((id) => !db.row("SELECT id FROM connections WHERE id=?", id))) throw new StateError("Connection not found", 400); const agentId = c.req.param("id"); const current = db.row("SELECT * FROM agents WHERE id = ?", agentId); if (!current) return c.json({ error: "Agent not found" }, 404);
     db.run("UPDATE agents SET name = ?, role = ?, runtime = ?, model = ?, reasoning = ?, avatar = ?, permissions_json = ?, default_skill_ids_json = ?, updated_at = ? WHERE id = ?", input.name ?? current.name, input.role ?? current.role, input.runtime ?? current.runtime, input.model ?? current.model, input.reasoning === undefined ? current.reasoning : input.reasoning, input.avatar === undefined ? current.avatar : input.avatar, input.permissions ? JSON.stringify(input.permissions) : current.permissions_json, input.defaultSkillIds ? JSON.stringify(input.defaultSkillIds) : current.default_skill_ids_json, now(), agentId);
+    if (input.connectionIds) db.run("UPDATE agents SET connection_ids_json=? WHERE id=?", JSON.stringify(input.connectionIds), agentId);
     const agent = db.agent(db.row("SELECT * FROM agents WHERE id = ?", agentId)!); events.emit({ type: "agent.changed", payload: agent }); return c.json({ data: agent });
   });
   app.delete("/agents/:id", (c) => {

@@ -13,6 +13,16 @@ export class Secrets {
     catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
     const key = readFileSync(path); if (key.length !== 32) throw new Error("Invalid secret key"); return key;
   }
+  encrypt(value: string, binding: string): { ciphertext: string; iv: string; tag: string } {
+    const iv = randomBytes(12); const cipher = createCipheriv("aes-256-gcm", this.key(), iv);
+    cipher.setAAD(Buffer.from(binding));
+    return { ciphertext: Buffer.concat([cipher.update(value, "utf8"), cipher.final()]).toString("base64"), iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64") };
+  }
+  decrypt(value: { ciphertext: string; iv: string; tag: string }, binding: string): string {
+    const decipher = createDecipheriv("aes-256-gcm", this.key(), Buffer.from(value.iv, "base64"));
+    decipher.setAAD(Buffer.from(binding)); decipher.setAuthTag(Buffer.from(value.tag, "base64"));
+    return Buffer.concat([decipher.update(Buffer.from(value.ciphertext, "base64")), decipher.final()]).toString("utf8");
+  }
   list(projectId?: string): Secret[] {
     return this.db.rows(`SELECT id,scope,project_id,name,updated_at FROM secrets ${projectId ? "WHERE scope='team' OR project_id=?" : ""} ORDER BY scope,name`, ...(projectId ? [projectId] : [])).map((r) => ({ id: String(r.id), scope: r.scope as Secret["scope"], projectId: r.project_id as string | null, name: String(r.name), updatedAt: String(r.updated_at) }));
   }

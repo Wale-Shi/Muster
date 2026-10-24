@@ -27,7 +27,7 @@ export class Orchestrator {
 
   private createBuild(todoId: string): string {
     const buildId = id();
-    this.db.run("INSERT INTO builds VALUES (?, ?, ?, NULL, 'active', NULL, NULL, 0, 0, 0, ?)", buildId, todoId, `muster/conv-${buildId}`, now());
+    this.db.run("INSERT INTO builds (id,todo_id,branch,machine_id,status,base_commit,head_commit,tokens_in,tokens_out,duration_ms,created_at) VALUES (?, ?, ?, NULL, 'active', NULL, NULL, 0, 0, 0, ?)", buildId, todoId, `muster/conv-${buildId}`, now());
     return buildId;
   }
 
@@ -46,7 +46,7 @@ export class Orchestrator {
     const turnId = id();
     let prompt = buildPrompt(kind, todo, agent, feedback).prompt;
     const plan = this.db.row("SELECT d.content FROM documents d JOIN builds b ON b.id=d.build_id WHERE b.todo_id=? AND d.kind='plan' ORDER BY d.rowid DESC LIMIT 1", todo.id);
-    if (plan && (kind === "build" || kind === "revise")) prompt += `\n\nCurrent plan:\n${String(plan.content)}`;
+    if (!newBuild && plan && (kind === "build" || kind === "revise")) prompt += `\n\nCurrent plan:\n${String(plan.content)}`;
     this.db.run("INSERT INTO turns (id, build_id, kind, status, prompt, tokens_in, tokens_out) VALUES (?, ?, ?, 'queued', ?, 0, 0)", turnId, buildId, kind, prompt);
     this.db.run("UPDATE todos SET phase = 'queued', updated_at = ? WHERE id = ?", now(), todo.id);
     this.changed(todo.id, buildId, "turn.queued", { turnId, kind });
@@ -59,6 +59,15 @@ export class Orchestrator {
     if (agentId) this.db.run("UPDATE todos SET agent_id = ?, mode = ? WHERE id = ?", agentId, mode, todoId);
     else this.db.run("UPDATE todos SET mode = ? WHERE id = ?", mode, todoId);
     return this.enqueue(this.getTodo(todoId), mode === "plan" ? "plan" : "build");
+  }
+
+  scheduledRestart(todoId: string, mode: "plan" | "run", agentId: string | null, machineId: string | null): string {
+    const todo = this.getTodo(todoId);
+    this.db.run("UPDATE todos SET mode=?,done_at=NULL,previous_gate=NULL WHERE id=?", mode, todoId);
+    const fresh = { ...todo, mode, previousGate: null, ...(agentId ? { agentId, planAgentId: agentId } : {}) };
+    const turnId = this.enqueue(fresh, mode === "plan" ? "plan" : "build", undefined, true);
+    this.db.run("UPDATE builds SET required_machine_id=?,scheduled_agent_id=? WHERE id=(SELECT build_id FROM turns WHERE id=?)", machineId, agentId, turnId);
+    return turnId;
   }
 
   confirm(todoId: string): string {
@@ -169,7 +178,7 @@ export class Orchestrator {
     let build = this.db.row("SELECT id FROM builds WHERE todo_id IS NULL AND branch = ? LIMIT 1", `chief:${topicId}`);
     if (!build) {
       const buildId = id();
-      this.db.run("INSERT INTO builds VALUES (?, NULL, ?, NULL, 'active', NULL, NULL, 0, 0, 0, ?)", buildId, `chief:${topicId}`, now());
+      this.db.run("INSERT INTO builds (id,todo_id,branch,machine_id,status,base_commit,head_commit,tokens_in,tokens_out,duration_ms,created_at) VALUES (?, NULL, ?, NULL, 'active', NULL, NULL, 0, 0, 0, ?)", buildId, `chief:${topicId}`, now());
       build = { id: buildId };
     }
     const turnId = id();
