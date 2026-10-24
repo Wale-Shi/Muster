@@ -20,6 +20,9 @@ describe("MCP server", () => {
     const initialized = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } } });
     expect(initialized.response.status).toBe(200);
     await mcp({ jsonrpc: "2.0", method: "notifications/initialized" });
+    const catalog = await mcp({ jsonrpc: "2.0", id: 4, method: "tools/list" });
+    const tools = catalog.json.result.tools as Array<{ name: string; annotations?: { readOnlyHint?: boolean } }>;
+    expect(tools.filter((tool) => tool.annotations?.readOnlyHint).map((tool) => tool.name).sort()).toEqual(["get_todo", "list_agents", "list_projects", "list_todos"]);
     const created = await mcp({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "create_todo", arguments: { projectId, title: "From Chief", spec: "MCP-created", agentId, mode: "plan" } } });
     expect(created.response.status).toBe(200);
     const createdTodo = JSON.parse(created.json.result.content[0].text);

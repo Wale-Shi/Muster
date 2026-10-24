@@ -14,13 +14,13 @@ function createMcpServer(services: AppServices, topicId: string | null): McpServ
   const { db, orchestrator } = services;
   const server = new McpServer({ name: "muster", version: "0.1.0" });
 
-  server.registerTool("list_projects", { description: "List Muster projects" }, async () => result(db.rows("SELECT * FROM projects ORDER BY created_at").map((row) => db.project(row))));
-  server.registerTool("list_agents", { description: "List available agents" }, async () => result(db.rows("SELECT * FROM agents ORDER BY is_chief DESC, created_at").map((row) => db.agent(row))));
-  server.registerTool("list_todos", { description: "List todos, optionally filtered by phase", inputSchema: { phase: todoPhaseSchema.optional() } }, async ({ phase }) => {
+  server.registerTool("list_projects", { description: "List Muster projects", annotations: { readOnlyHint: true } }, async () => result(db.rows("SELECT * FROM projects ORDER BY created_at").map((row) => db.project(row))));
+  server.registerTool("list_agents", { description: "List available agents", annotations: { readOnlyHint: true } }, async () => result(db.rows("SELECT * FROM agents ORDER BY is_chief DESC, created_at").map((row) => db.agent(row))));
+  server.registerTool("list_todos", { description: "List todos, optionally filtered by phase", annotations: { readOnlyHint: true }, inputSchema: { phase: todoPhaseSchema.optional() } }, async ({ phase }) => {
     const rows = phase ? db.rows("SELECT * FROM todos WHERE phase = ? ORDER BY number DESC", phase) : db.rows("SELECT * FROM todos ORDER BY number DESC");
     return result(rows.map((row) => db.todo(row)));
   });
-  server.registerTool("get_todo", { description: "Get a todo and its builds, turns, and documents", inputSchema: { todoId: z.string() } }, async ({ todoId }) => {
+  server.registerTool("get_todo", { description: "Get a todo and its builds, turns, and documents", annotations: { readOnlyHint: true }, inputSchema: { todoId: z.string() } }, async ({ todoId }) => {
     const todo = orchestrator.getTodo(todoId); const builds = db.rows("SELECT * FROM builds WHERE todo_id=? ORDER BY created_at", todoId).map((row) => { const build = db.build(row); return { ...build, turns: db.rows("SELECT * FROM turns WHERE build_id=? ORDER BY rowid", build.id).map((item) => db.turn(item)), documents: db.rows("SELECT * FROM documents WHERE build_id=? ORDER BY kind,version", build.id).map((item) => db.document(item)) }; });
     return result({ ...todo, builds });
   });

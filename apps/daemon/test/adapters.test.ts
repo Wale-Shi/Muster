@@ -22,6 +22,8 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  else if(m.method==='initialized') {}
  else if(m.method==='thread/start'||m.method==='thread/resume') {
   if(p.approvalPolicy!=='never'||p.developerInstructions!=='Follow the task'||p.config.mcp_servers.muster.http_headers.Authorization!=='Bearer test-only'||p.config.mcp_servers.muster.url!=='http://localhost:7420/mcp'||p.config.mcp_servers.muster.required!==true) throw Error('thread config');
+  if(p.config.mcp_servers.muster.default_tools_approval_mode!=='approve') throw Error('Muster MCP approval');
+  if(JSON.stringify(Object.keys(p.config))!==JSON.stringify(['mcp_servers'])||JSON.stringify(Object.keys(p.config.mcp_servers))!==JSON.stringify(['muster'])) throw Error('MCP approval must be scoped to Muster');
   if(p.sandbox!==${JSON.stringify(readOnly ? "read-only" : "danger-full-access")}) throw Error('sandbox');
   if(m.method==='thread/resume' && p.threadId!=='thread-test') throw Error('resume');
   reply({thread:{id:'thread-test'}});
@@ -68,10 +70,18 @@ it("Codex starts a new thread and interrupts the active turn", async () => {
   await until(async () => ctx.events.length, (length) => length >= 5);
   await running.interrupt(); expect((await running.result).status).toBe("stopped");
 });
-it.each([false, true])("Codex sets a writable per-turn sandbox (resumed: %s)", async (resume) => {
+const codexPhases = [
+  { kind: "plan", readOnly: true },
+  { kind: "build", readOnly: false },
+  { kind: "revise", readOnly: true },
+  { kind: "revise", readOnly: false },
+  { kind: "merge", readOnly: false },
+  { kind: "chief", readOnly: false },
+] as const;
+it.each(codexPhases.flatMap((phase) => [false, true].map((resume) => ({ ...phase, resume }))))("Codex approves only Muster MCP tools and preserves the phase sandbox ($kind, readOnly: $readOnly, resumed: $resume)", async ({ kind, readOnly, resume }) => {
   const ctx = await context();
-  const job = makeJob({ sessionState: resume ? { threadId: "thread-test" } : null, agent: { runtime: "codex", model: "test-only", reasoning: "high", role: "test" } });
-  const running = new CodexRuntime(process.execPath, ["-e", codexPeer(false), "--"]).start(job, ctx);
+  const job = makeJob({ kind, readOnly, sessionState: resume ? { threadId: "thread-test" } : null, agent: { runtime: "codex", model: "test-only", reasoning: "high", role: "test" } });
+  const running = new CodexRuntime(process.execPath, ["-e", codexPeer(readOnly), "--"]).start(job, ctx);
   await until(async () => ctx.events.length, (length) => length >= 5);
   await running.steer("More");
   expect(await running.result).toMatchObject({ status: "done", sessionState: { threadId: "thread-test" } });

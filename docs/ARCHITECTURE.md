@@ -228,7 +228,7 @@ Tool results contain a JSON text content item and `{result: value}` structured c
 
 ## Runtime integration and remaining limits
 
-Codex uses `codex app-server` with fresh per-thread `config.mcp_servers.muster.{url,required:true,http_headers:{Authorization}}` on both start and resume. Required MCP initialization fails the thread if the board is unavailable. Phase-agnostic `systemInstructions` are passed as `developerInstructions` on start/resume. Every `turn/start` explicitly sets `approvalPolicy:"never"` and `sandboxPolicy`: `{type:"readOnly",networkAccess:false}` for plan/Confirm revisions, `{type:"dangerFullAccess"}` otherwise. Start/resume also set the corresponding `sandbox` string (`read-only` or `danger-full-access`). Thus a resumed thread receives the current sandbox instead of relying on inherited defaults.
+Codex uses `codex app-server` with fresh per-thread `config.mcp_servers.muster.{url,required:true,default_tools_approval_mode:"approve",http_headers:{Authorization}}` on both start and resume. Required MCP initialization fails the thread if the board is unavailable. Phase-agnostic `systemInstructions` are passed as `developerInstructions` on start/resume. Every `turn/start` explicitly sets `approvalPolicy:"never"` and `sandboxPolicy`: `{type:"readOnly",networkAccess:false}` for plan/Confirm revisions, `{type:"dangerFullAccess"}` otherwise. Start/resume also set the corresponding `sandbox` string (`read-only` or `danger-full-access`). Thus a resumed thread receives the current sandbox instead of relying on inherited defaults.
 
 Protocol facts checked locally with `codex-cli 0.162.1`, using `codex app-server generate-ts --out <temporary-dir>` (and a separate `--experimental` generation):
 
@@ -238,6 +238,26 @@ Protocol facts checked locally with `codex-cli 0.162.1`, using `codex app-server
 - Experimental `turn/start.collaborationMode.settings.developer_instructions` exists and takes precedence over model/effort/developer instructions. Muster does not depend on this experimental mode or raw history injection.
 
 The [official App Server turn documentation](https://learn.chatgpt.com/docs/app-server#turns) confirms per-turn sandbox overrides and their persistence into subsequent turns. Generated types from the installed CLI determine the exact wire shape (newer online docs can differ). HTTP headers follow the [official MCP configuration](https://learn.chatgpt.com/docs/extend/mcp).
+
+MCP tool approval is separate from filesystem sandboxing. Under `approvalPolicy:"never"`, a tool that needs approval is rejected, not implicitly approved. This caused real plan turns to fail Muster context lookups: the tools had no read-only annotations. Muster now auto-approves only its own authenticated platform server using `mcp_servers.muster.default_tools_approval_mode:"approve"`. This covers every turn kind, including state-changing platform tools, without changing plan turns' filesystem or network sandbox, other MCP servers' approval defaults, or the server's per-turn token checks. No global approval/reviewer setting is relaxed.
+
+Approval findings checked with `codex-cli 0.162.1`:
+
+- Generated `ThreadStartParams` and `ThreadResumeParams` accept the JSON `config` override; `TurnStartParams` has no MCP config field. The daemon therefore supplies the Muster server policy on every start/resume and retains explicit sandbox/approval overrides on every turn.
+- Generated TS `v2/AppToolApproval.ts` and JSON Schema `v2/ConfigReadResponse.json` enumerate `auto|prompt|writes|approve`. The [official config schema](https://developers.openai.com/codex/config-schema.json), `RawMcpServerConfig`, places `default_tools_approval_mode` under each MCP server and per-tool overrides under `tools.<name>.approval_mode`. The installed parser independently confirms these values: `codex -c 'mcp_servers.muster={url="http://127.0.0.1:1/mcp",default_tools_approval_mode="invalid"}' debug prompt-input` rejects the value and lists the four accepted modes before executing anything.
+- A local Responses fixture drove synthetic tool calls through the installed app-server and a local MCP fixture, with no real model API calls. With a read-only thread/turn and `approvalPolicy:"never"`, the results were:
+
+  | Server approval mode | Unannotated tool | Tool with `annotations:{readOnlyHint:true}` |
+  |---|---|---|
+  | omitted / `auto` | rejected: `MCP tool call requires approval, but approval policy is never` | executes |
+  | `writes` | rejected with the same error | executes |
+  | `prompt` | rejected with the same error | rejected with the same error |
+  | `approve` | executes | executes |
+
+  This is a model-free approval-path check, not a live `gpt-6.1-sol` acceptance run. The thread response retained `{type:"readOnly",networkAccess:false}` with `approve`. Direct client `mcpServer/tool/call` requests do not exercise the model's approval gate and cannot establish this behavior by themselves.
+- `enabled_tools` is a tool-catalog allowlist, not approval. `writes` plus read-only annotations would still reject platform mutations. Generated `AskForApproval` granular settings control categories of approval requests (including MCP elicitation), not server-specific automatic tool approval. A server-local `approve` default is the narrowest setting covering all Muster platform tools; per-tool overrides remain available for exceptions. See the [official MCP options](https://learn.chatgpt.com/docs/extend/mcp#other-configuration-options).
+
+The server advertises `annotations:{readOnlyHint:true}` only on `list_projects`, `list_agents`, `list_todos`, and `get_todo`. Mutating tools are not marked read-only. The annotation is honored by Codex's default/`writes` approval paths, but is not a substitute for the explicit Muster server policy. Model-free daemon protocol-peer tests assert that policy is scoped to Muster on both new/resumed threads for plan, build, both revision gates, merge, and Chief; they also assert the unchanged thread/turn sandbox and `never` policy. The server catalog test verifies the read-only annotations over MCP.
 
 Claude uses `--mcp-config` with `{mcpServers:{muster:{type:"http",url,headers:{Authorization}}}}` on each process, plus stream-json input/output and partial messages. `--append-system-prompt` receives the same phase-agnostic instructions across a todo's turns, and the current phase rules arrive in each user message, avoiding the same stale-instruction hazard with `--resume`. `--system-prompt-snapshot off` remains enabled. Plan turns use permission mode `plan`; writable turns use `bypassPermissions`. Optional reasoning is passed as `--effort`. CLI flags were checked against local Claude Code 2.1.310. Protocol-peer tests assert the actual URL and bearer header for both adapters and the Codex turn sandbox policies on new/resumed threads without calling a real model API.
 
