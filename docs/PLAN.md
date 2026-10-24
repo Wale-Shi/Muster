@@ -143,11 +143,11 @@ Runtime 驱动：
 | 阶段 | 内容 | Codex 模型 | 理由 |
 |---|---|---|---|
 | M0 | 仓库脚手架、本方案、AGENTS.md | Claude（指挥） | — |
-| M1 | packages/shared + apps/server（DB、状态机、REST、SSE、machine 协议、MCP）+ 测试 | gpt-5.6-sol · high | 核心架构，正确性要求最高 |
-| M2 | apps/daemon（worktree、codex/claude/mock runtime）+ 测试 | gpt-5.6-sol · high | 进程/协议/git 细节多 |
-| M3 | apps/web 全部 UI | gpt-5.6-terra · high | 量大但直接，平衡型模型 |
-| M4 | 端到端联调（mock runtime 全流程 + Chief）、修 bug | gpt-5.6-sol · high | 跨模块排错 |
-| M5 | README、文档、CI（GitHub Actions）、lint 修整 | gpt-5.6-luna · medium | 简单高效 |
+| M1 | packages/shared + apps/server（DB、状态机、REST、SSE、machine 协议、MCP）+ 测试 | gpt-5.6-sol · high（已启动，M4 由 gpt-6.1-sol 复核） | 核心架构，正确性要求最高 |
+| M2 | apps/daemon（worktree、codex/claude/mock runtime）+ 测试 | gpt-6.1-sol · high | 进程/协议/git 细节多 |
+| M3 | apps/web 全部 UI | gpt-6.1-sol · high | 最新主力模型，保证体验还原度 |
+| M4 | 端到端联调（mock runtime 全流程 + Chief）、修 bug，复核 M1 | gpt-6.1-sol · high | 跨模块排错 |
+| M5 | README、文档、CI（GitHub Actions）、lint 修整 | gpt-6.1-sol · medium | 统一使用最新模型 |
 
 M2、M3 在 M1 完成后并行（目录互不重叠）。每阶段由 Claude 验收（构建、测试、走查）后提交。
 

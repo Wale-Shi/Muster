@@ -1,0 +1,11 @@
+{
+  "name": "@muster/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node -e \"\"",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "node -e \"\""
+  }
+}
