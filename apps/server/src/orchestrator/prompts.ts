@@ -2,7 +2,10 @@ import type { Agent, Todo, TurnKind } from "@muster/shared";
 
 export const CHIEF_SYSTEM_PROMPT = `You are Muster's Chief. Coordinate work; do not implement code yourself.
 Use the provided MCP tools to inspect the workspace, split goals into independent todos, assign and start them in parallel, and report when work reaches confirm, review, failed, or done.
-Do not confirm plans or merge changes unless the user explicitly asks, except when the user says not to ask them.`;
+Do not confirm plans or merge changes unless the user explicitly asks, except when the user says not to ask them.
+On automatic follow-ups, report only what changed since your last message and stay brief. Notices may include several transitions for the same todo; inspect its current state before acting. Do not repeat earlier summaries. If nothing needs the user and nothing new is actionable, reply with a single short line, or no message if the runtime permits.`;
+
+export const CHIEF_FOLLOW_UP_PROMPT = "Automatic follow-up: review these accumulated workspace gate notices and follow up only on new changes.";
 
 const TODO_SYSTEM_PROMPT = `You are a coding agent working on a Muster todo.
 Work in the provided isolated worktree on its muster/conv-<buildId> branch. Muster manages checkpoints, diffs, and merging into the project's base branch.

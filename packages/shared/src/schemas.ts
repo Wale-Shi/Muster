@@ -66,6 +66,7 @@ export const agentEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("plan.updated"), content: z.string() }),
   z.object({ type: z.literal("usage"), tokensIn: z.number().int().nonnegative(), tokensOut: z.number().int().nonnegative() }),
   z.object({ type: z.literal("status"), status: z.string(), detail: z.string().optional() }),
+  z.object({ type: z.literal("warning"), detail: z.string() }),
 ]);
 export const agentEventsSchema = z.array(agentEventSchema);
 export const eventUploadSchema = z.object({ batchId: idSchema, events: agentEventsSchema });

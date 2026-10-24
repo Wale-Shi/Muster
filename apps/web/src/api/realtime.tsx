@@ -13,13 +13,15 @@ type Activity = {
   status: "queued" | "running" | "idle";
   unread: boolean;
   detail?: string;
+  warning?: { detail: string; turnId: string | undefined } | undefined;
 };
 const idle: Activity = { status: "idle", unread: false };
 const RealtimeContext = createContext<{
   connected: boolean;
   activity: Record<string, Activity>;
   markRead: (id: string) => void;
-}>({ connected: false, activity: {}, markRead: () => {} });
+  dismissWarning: (id: string) => void;
+}>({ connected: false, activity: {}, markRead: () => {}, dismissWarning: () => {} });
 export const useRealtime = () => useContext(RealtimeContext);
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -58,6 +60,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const client = useQueryClient();
   const [connected, setConnected] = useState(false);
   const [activity, setActivity] = useState<Record<string, Activity>>({});
+  const dismissWarning = useCallback((id: string) => {
+    setActivity((prior) => prior[id]?.warning ? { ...prior, [id]: { ...prior[id], warning: undefined } } : prior);
+  }, []);
   const markRead = useCallback(
     (id: string) =>
       setActivity((prior) =>
@@ -103,6 +108,12 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         }
         setActivity((prior) => {
           const current = prior[conversationId] ?? idle;
+          const output = ["message.delta", "reasoning.delta"].includes(type)
+            ? typeof payload.content === "string" && payload.content.length > 0
+            : ["message.completed", "tool.started", "tool.completed", "plan.updated"].includes(type);
+          const warningTurn = current.warning?.turnId;
+          const clearsWarning = (output && (!warningTurn || warningTurn === event.turnId)) ||
+            (type === "turn.completed" && (!warningTurn || warningTurn === payload.turnId));
           const status =
             type === "turn.queued"
               ? "queued"
@@ -116,11 +127,15 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
             [conversationId]: {
               ...current,
               status,
+              warning: type === "warning" && typeof payload.detail === "string"
+                ? { detail: payload.detail, turnId: event.turnId }
+                : clearsWarning ? undefined : current.warning,
               unread:
                 current.unread ||
                 (type === "message.created" && payload.role !== "user"),
               ...(type === "status" && typeof payload.detail === "string"
                 ? { detail: payload.detail }
+                : output || type === "turn.started" || type === "turn.completed" ? { detail: "" }
                 : {}),
             },
           };
@@ -164,7 +179,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     return () => source.close();
   }, [client]);
   return (
-    <RealtimeContext value={{ connected, activity, markRead }}>
+    <RealtimeContext value={{ connected, activity, markRead, dismissWarning }}>
       {children}
     </RealtimeContext>
   );

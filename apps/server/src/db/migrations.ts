@@ -28,4 +28,5 @@ export const migrations = [
   CREATE TABLE server_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_json TEXT NOT NULL);
   CREATE INDEX turns_build_status_idx ON turns(build_id, status);
   `,
+  `ALTER TABLE turns ADD COLUMN not_before TEXT;`,
 ] as const;

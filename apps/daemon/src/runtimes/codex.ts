@@ -77,8 +77,11 @@ export class CodexRuntime implements Runtime {
           ctx.emit({ type: "usage", ...usage });
         }
       } else if (method === "error") {
-        ctx.emit({ type: "status", status: "error", detail: String(p.error?.message ?? "Codex error") });
-        if (!p.willRetry) settle("failed", String(p.error?.message ?? "Codex error"));
+        const detail = String(p.error?.message ?? "Codex error");
+        if (p.willRetry) ctx.emit({ type: "warning", detail });
+        else settle("failed", detail);
+      } else if (method === "warning") {
+        ctx.emit({ type: "warning", detail: String(p.message) });
       } else if (method === "turn/completed") {
         settle(p.turn.status === "completed" ? "done" : p.turn.status === "interrupted" ? "stopped" : "failed", p.turn.error?.message);
       }

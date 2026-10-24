@@ -4,6 +4,7 @@ import { useDroppable } from "@dnd-kit/core";
 import {
   ArrowDown,
   ArrowUp,
+  AlertTriangle,
   ChevronRight,
   Command,
   Sparkles,
@@ -339,6 +340,13 @@ export function Conversation({
       )}
       <div className="composer-wrap">
         <QueuedMessages conversationId={conversationId} />
+        {activity?.warning && (
+          <div className="runtime-warning" role="alert">
+            <AlertTriangle size={14} />
+            <span>{activity.warning.detail}</span>
+            <button className="icon-button" aria-label="Dismiss runtime warning" onClick={() => realtime.dismissWarning(conversationId)}><X size={13} /></button>
+          </div>
+        )}
         <ErrorNotice error={send.error} />
         <div
           ref={setNodeRef}

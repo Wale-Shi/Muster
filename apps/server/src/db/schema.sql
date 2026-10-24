@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS turns (
   status TEXT NOT NULL, machine_id TEXT REFERENCES machines(id), prompt TEXT NOT NULL,
   started_at TEXT, ended_at TEXT, error TEXT, tokens_in INTEGER NOT NULL DEFAULT 0,
   tokens_out INTEGER NOT NULL DEFAULT 0, session_state_json TEXT, stop_requested INTEGER NOT NULL DEFAULT 0,
-  agent_snapshot_json TEXT, completion_json TEXT, duration_ms INTEGER NOT NULL DEFAULT 0, last_reported_at TEXT
+  agent_snapshot_json TEXT, completion_json TEXT, duration_ms INTEGER NOT NULL DEFAULT 0, last_reported_at TEXT,
+  not_before TEXT
 );
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, turn_id TEXT REFERENCES turns(id),
@@ -71,4 +72,4 @@ CREATE TABLE IF NOT EXISTS machine_claims (
 );
 CREATE TABLE IF NOT EXISTS server_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_json TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS turns_build_status_idx ON turns(build_id, status);
-PRAGMA user_version = 2;
+PRAGMA user_version = 3;

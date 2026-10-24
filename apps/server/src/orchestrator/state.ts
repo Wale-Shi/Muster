@@ -1,7 +1,7 @@
 import { activePhaseForTurn, completedPhaseForTurn, type Agent, type Todo, type TurnKind } from "@muster/shared";
 import { EventBus } from "../events.js";
 import { id, MusterDb, now } from "../db/index.js";
-import { buildPrompt } from "./prompts.js";
+import { buildPrompt, CHIEF_FOLLOW_UP_PROMPT } from "./prompts.js";
 
 export class StateError extends Error {
   constructor(message: string, readonly status = 409) { super(message); }
@@ -150,9 +150,21 @@ export class Orchestrator {
     this.changed(todoId, null, "turn.stop_requested", { turnId: result.id });
   }
 
-  enqueueChief(topicId: string, prompt: string): string {
+  enqueueChief(topicId: string, prompt: string, automatic = false): string {
     const topic = this.db.row("SELECT * FROM topics WHERE id = ?", topicId);
     if (!topic) throw new StateError("Topic not found", 404);
+    const notBefore = automatic ? new Date(Date.now() + 3000).toISOString() : null;
+    if (automatic) {
+      // Reuse the next queued turn, including a user-requested turn, without
+      // changing a running prompt or delaying an explicit user request.
+      const queued = this.db.row("SELECT t.id, t.prompt, t.not_before FROM turns t JOIN builds b ON b.id=t.build_id WHERE b.branch=? AND t.status='queued' ORDER BY t.rowid LIMIT 1", `chief:${topicId}`);
+      if (queued) {
+        this.db.run("UPDATE turns SET prompt=?, not_before=? WHERE id=?", `${String(queued.prompt)}\n${prompt}`, queued.not_before ? notBefore : null, queued.id);
+        this.db.run("UPDATE topics SET updated_at=? WHERE id=?", now(), topicId);
+        return String(queued.id);
+      }
+      prompt = `${CHIEF_FOLLOW_UP_PROMPT}\n\n${prompt}`;
+    }
     const agent = this.getAgent(null, "chief");
     let build = this.db.row("SELECT id FROM builds WHERE todo_id IS NULL AND branch = ? LIMIT 1", `chief:${topicId}`);
     if (!build) {
@@ -161,7 +173,7 @@ export class Orchestrator {
       build = { id: buildId };
     }
     const turnId = id();
-    this.db.run("INSERT INTO turns (id, build_id, kind, status, prompt, tokens_in, tokens_out) VALUES (?, ?, 'chief', 'queued', ?, 0, 0)", turnId, build.id, buildPrompt("chief", null, agent, prompt).prompt);
+    this.db.run("INSERT INTO turns (id, build_id, kind, status, prompt, tokens_in, tokens_out, not_before) VALUES (?, ?, 'chief', 'queued', ?, 0, 0, ?)", turnId, build.id, buildPrompt("chief", null, agent, prompt).prompt, notBefore);
     this.db.run("UPDATE topics SET updated_at=? WHERE id=?", now(), topicId);
     this.changed(null, topicId, "turn.queued", { turnId, kind: "chief" });
     return turnId;
@@ -181,7 +193,7 @@ export class Orchestrator {
     const topicId = String(topicRow.id);
     const content = `Todo #${todo.number} ${todo.title} entered ${phase}.`;
     this.addMessage(topicId, null, "system", content, { todoId: todo.id, phase });
-    if (this.autoFollowUp && todo.createdBy === "chief") this.enqueueChief(topicId, content);
+    if (this.autoFollowUp && todo.createdBy === "chief") this.enqueueChief(topicId, content, true);
   }
 
   addMessage(conversationId: string, turnId: string | null, role: "user" | "agent" | "system" | "tool", content: string, meta: Record<string, unknown>): string {

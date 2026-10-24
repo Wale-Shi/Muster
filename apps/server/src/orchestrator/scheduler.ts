@@ -79,9 +79,10 @@ export class Scheduler {
         LEFT JOIN agents a ON a.id=CASE WHEN t.kind='plan' OR (t.kind='revise' AND td.previous_gate='confirm') THEN COALESCE(td.plan_agent_id,td.agent_id) ELSE td.agent_id END
         LEFT JOIN agents chief ON chief.is_chief=1
         WHERE t.status='queued' AND b.status='active'
+          AND (t.not_before IS NULL OR t.not_before<=?)
           AND (b.machine_id IS NULL OR b.machine_id=?)
           AND NOT EXISTS (SELECT 1 FROM turns active WHERE active.build_id=b.id AND active.status='running')
-        ORDER BY t.rowid`, machine.id);
+        ORDER BY t.rowid`, now(), machine.id);
       const candidate = candidates.find((row) => runtimes.includes((row.todo_id ? row.runtime : row.chief_runtime) as Runtime));
       if (!candidate) return null;
       const isChief = !candidate.todo_id;

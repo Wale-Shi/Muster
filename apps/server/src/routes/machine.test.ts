@@ -7,6 +7,27 @@ const databases: Array<ReturnType<typeof createApp>["services"]["db"]> = [];
 afterEach(() => { while (databases.length) databases.pop()?.close(); });
 
 describe("machine protocol", () => {
+  it("accepts and broadcasts warnings without turning them into status or conversation messages", async () => {
+    const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
+    const { projectId, agentId } = await seedProjectAndAgent(app);
+    const todoId = await createTodo(app, projectId, agentId); const machine = await enroll(app);
+    services.orchestrator.start(todoId, "plan");
+    const job = services.scheduler.claim(machine.token)!;
+    const warning = { type: "warning", detail: "Selected model is at capacity." };
+    const body = { batchId: "warning-batch", events: [warning] };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await requestJson(app, `/api/machine/turns/${job.turnId}/events`, "POST", body, machine.token);
+      expect(response.response.status).toBe(200);
+      expect(response.json).toEqual({ accepted: 1 });
+    }
+    const events = services.events.replay("0");
+    expect(events.filter((event) => event.type === "warning")).toEqual([
+      expect.objectContaining({ conversationId: job.buildId, turnId: job.turnId, payload: warning }),
+    ]);
+    expect(events.some((event) => event.type === "status")).toBe(false);
+    expect(services.db.rows("SELECT * FROM messages WHERE conversation_id=?", job.buildId)).toHaveLength(0);
+    expect(services.db.row("SELECT status FROM turns WHERE id=?", job.turnId)?.status).toBe("running");
+  });
   it("enrolls, claims, persists events, completes and advances phase", async () => {
     const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
     const { projectId, agentId } = await seedProjectAndAgent(app); const todoId = await createTodo(app, projectId, agentId); const machine = await enroll(app);

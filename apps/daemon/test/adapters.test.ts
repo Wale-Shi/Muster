@@ -11,7 +11,7 @@ const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 async function context() { const cwd = await mkdtemp(join(tmpdir(), "muster-adapter-")); roots.push(cwd); const events: AgentEvent[] = []; return { cwd, events, emit: (event: AgentEvent) => { events.push(event); } }; }
 // Local protocol peers exercise the real process/stdio adapters, never model APIs.
-const codexPeer = (readOnly = true) => `
+const codexPeer = (readOnly = true, notifications = "") => `
 const readline = require('node:readline');
 const send = x => process.stdout.write(JSON.stringify(x)+'\\n');
 const notify = (method, params) => send({method,params});
@@ -34,6 +34,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
   if('developerInstructions' in p) throw Error('unsupported turn instructions');
   reply({turn:{id:'active-turn'}});
   notify('turn/started',{threadId:'thread-test',turn:{id:'active-turn'}});
+  ${notifications}
   notify('item/agentMessage/delta',{threadId:'thread-test',delta:'Hello '});
   notify('item/reasoning/summaryTextDelta',{threadId:'thread-test',delta:'Thinking'});
   notify('item/started',{threadId:'thread-test',item:{type:'commandExecution',id:'call',command:'pwd'}});
@@ -69,6 +70,29 @@ it("Codex starts a new thread and interrupts the active turn", async () => {
   const running = new CodexRuntime(process.execPath, ["-e", codexPeer(), "--"]).start(makeJob({ readOnly: true, agent: { runtime: "codex", model: "test-only", reasoning: "high", role: "test" } }), ctx);
   await until(async () => ctx.events.length, (length) => length >= 5);
   await running.interrupt(); expect((await running.result).status).toBe("stopped");
+});
+it("Codex maps retry and warning notifications separately from status and continues the turn", async () => {
+  const ctx = await context();
+  const peer = codexPeer(true, `
+  notify('error',{threadId:'thread-test',turnId:'active-turn',willRetry:true,error:{message:'Selected model is at capacity. Please try a different model.'}});
+  notify('warning',{threadId:'other-thread',message:'Wrong thread'});
+  notify('warning',{threadId:'thread-test',message:'Runtime warning'});`);
+  const running = new CodexRuntime(process.execPath, ["-e", peer, "--"]).start(makeJob({ readOnly: true, agent: { runtime: "codex", model: "test-only", reasoning: "high", role: "test" } }), ctx);
+  await until(async () => ctx.events.length, (length) => length >= 7);
+  expect(ctx.events.filter((event) => event.type === "warning")).toEqual([
+    { type: "warning", detail: "Selected model is at capacity. Please try a different model." },
+    { type: "warning", detail: "Runtime warning" },
+  ]);
+  expect(ctx.events.some((event) => event.type === "status")).toBe(false);
+  await running.steer("More");
+  expect((await running.result).status).toBe("done");
+});
+it("Codex still fails on a non-retryable runtime error", async () => {
+  const ctx = await context();
+  const peer = codexPeer(true, "notify('error',{threadId:'thread-test',turnId:'active-turn',willRetry:false,error:{message:'Fatal runtime error'}});");
+  const running = new CodexRuntime(process.execPath, ["-e", peer, "--"]).start(makeJob({ readOnly: true, agent: { runtime: "codex", model: "test-only", reasoning: "high", role: "test" } }), ctx);
+  expect(await running.result).toMatchObject({ status: "failed", error: "Fatal runtime error" });
+  expect(ctx.events.some((event) => event.type === "warning")).toBe(false);
 });
 const codexPhases = [
   { kind: "plan", readOnly: true },

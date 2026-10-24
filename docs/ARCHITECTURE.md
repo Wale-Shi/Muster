@@ -131,7 +131,9 @@ Starting creates an active build and a queued `plan` or `build` turn. Claim atom
 
 Failed/stopped turns enter `failed`, except a merge conflict/error or offline merge returns the todo to `review`. A merge requires explicit `{merge:{ok:true}}` confirmation before Done. Completing a turn after its todo was closed does not reopen it. `rerun:continue` keeps the active build/session lineage; `rerun:restart` creates a new build and branch with no runtime session. Both retain the failed request, including revision feedback. Accepted plan text is included explicitly in build prompts, including when plan/build use different agents or a restart creates a new conversation. Merge-free Done immediately marks the active build done.
 
-When a todo enters `confirm`, `review`, `failed`, or `done`, the server appends a system message to its associated topic or the oldest/default topic. With auto-follow-up enabled, a Chief-created todo also queues a Chief turn.
+When a todo enters `confirm`, `review`, `failed`, or `done`, the server appends a system message to its associated topic or the oldest/default topic. With auto-follow-up enabled, a Chief-created todo also queues a Chief turn. Automatic follow-ups merge notices into the next queued Chief turn per topic instead of adding turns for each gate. An automatic turn becomes claimable after three seconds without new notices; migration 3 stores this deadline in `turns.not_before`, so pending batches survive restarts. A running Chief turn is never modified: new notices accumulate in at most one queued successor, which waits for that turn to finish. Notices can also join an existing user-requested turn without delaying it. Explicit user messages continue to request their own turns.
+
+Automatic follow-up prompts identify the accumulated notices. Chief is instructed to inspect current todo states and report only changes since its last message, briefly; when nothing needs the user and nothing new is actionable, it uses one short line (or silence if supported by the runtime).
 
 Todo `systemInstructions` contain only the agent role and platform conventions: isolated worktrees/branches, checkpoint ownership, MCP tools, asking the user (`ask_user` when available), and the Confirm/Review gates. They explicitly delegate phase permissions to the current turn's message, which overrides earlier phase instructions. They never contain phase-specific read-only or implementation rules, because runtime sessions can retain the first turn's developer/system instructions.
 
@@ -190,6 +192,9 @@ Session state is resolved at claim time from the immediate preceding terminal tu
 - `{type:"plan.updated", content}`
 - `{type:"usage", tokensIn, tokensOut}`
 - `{type:"status", status, detail?}`
+- `{type:"warning", detail}`
+
+Codex retryable `error` notifications (`willRetry:true`) and `warning` notifications emit `warning` events while the turn continues; non-retryable errors still fail the turn. The web keeps warnings separate from working status in a dismissible amber composer chip. Resumed message, reasoning, tool or plan output clears the warning for that turn, as does completion (done, failed or stopped). Usage and empty message-start deltas do not clear it. Warnings are transient activity, not persisted conversation messages; their SSE events retain the usual replay and batch deduplication behavior.
 
 `TurnCompletePayload = {status:"done"|"failed"|"stopped", headCommit?, baseCommit?, diff?, plan?, usage?:{tokensIn,tokensOut,durationMs}, error?, sessionState?, merge?:{ok,error?}}`. `plan` creates the next plan document version; a supplied `diff` (including an empty string) creates the next changes document version. Usage is accumulated exactly once on the build, with an immutable per-turn breakdown. `baseCommit` is recorded on the first completion that supplies it. Runtime state is used by later turns and also copied to the topic for Chief.
 
