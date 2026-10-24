@@ -87,7 +87,7 @@ export function DiffView({ content }: { content: string }) {
 }
 
 export function DocumentsPanel({ todo }: { todo: TodoDetail }) {
-  const [tab, setTab] = useState<DocumentKind>("plan");
+  const [chosenTab, setTab] = useState<DocumentKind | null>(null);
   const [selection, setSelection] = useState<Record<DocumentKind, string>>({
     plan: "",
     changes: "",
@@ -96,8 +96,11 @@ export function DocumentsPanel({ todo }: { todo: TodoDetail }) {
     queryKey: ["documents", todo.id],
     queryFn: () => api.documents(todo.id),
   });
+  const available = documents.data ?? todo.builds.flatMap((build) => build.documents);
+  const tab = chosenTab ?? (available.some((document) => document.kind === "plan")
+    ? "plan" : available.some((document) => document.kind === "changes") ? "changes" : "plan");
   const buildOrder = new Map(todo.builds.map((build, i) => [build.id, i]));
-  const versions = (documents.data ?? [])
+  const versions = available
     .filter((document) => document.kind === tab)
     .sort(
       (a, b) =>

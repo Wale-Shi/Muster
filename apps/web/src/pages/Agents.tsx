@@ -39,14 +39,16 @@ function AgentDialog({
   });
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (missing.length || save.isPending) return;
     save.mutate();
   };
+  const missing = (["name", "role", "model"] as const).filter((field) => !input[field].trim());
   return (
     <Dialog title={agent ? "Edit agent" : "Create agent"} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="dialog-body form-stack">
           <label>
-            Name
+            Name (required)
             <input
               autoFocus
               required
@@ -58,7 +60,7 @@ function AgentDialog({
             />
           </label>
           <label>
-            Role
+            Role (required)
             <textarea
               required
               rows={3}
@@ -71,8 +73,9 @@ function AgentDialog({
           </label>
           <div className="form-row">
             <label>
-              Runtime
+              Runtime (required)
               <select
+                required
                 value={input.runtime}
                 onChange={(event) =>
                   setInput({ ...input, runtime: event.target.value as Runtime, model: DEFAULT_MODELS[event.target.value as Runtime] })
@@ -84,7 +87,7 @@ function AgentDialog({
               </select>
             </label>
             <label>
-              Model
+              Model (required)
               <input
                 required
                 value={input.model}
@@ -108,6 +111,11 @@ function AgentDialog({
             />
           </label>
           <ErrorNotice error={save.error} />
+          {missing.length > 0 && (
+            <p className="hint" id="agent-required" role="status">
+              Enter {missing.join(", ")} to {agent ? "save changes" : "create an agent"}.
+            </p>
+          )}
         </div>
         <div className="dialog-footer">
           <button type="button" className="button" onClick={onClose}>
@@ -115,12 +123,8 @@ function AgentDialog({
           </button>
           <button
             className="button primary"
-            disabled={
-              save.isPending ||
-              !input.name.trim() ||
-              !input.role.trim() ||
-              !input.model.trim()
-            }
+            disabled={save.isPending || missing.length > 0}
+            aria-describedby={missing.length ? "agent-required" : undefined}
           >
             {save.isPending
               ? "Saving…"

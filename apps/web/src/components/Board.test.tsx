@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { DndContext } from "@dnd-kit/core";
 import { describe, expect, it } from "vitest";
@@ -65,6 +65,7 @@ describe("board", () => {
       within(column!).getByRole("link", { name: task.title }),
     ).toHaveAttribute("href", "/todos/one");
     expect(within(column!).getByText("#7")).toBeInTheDocument();
+    expect(within(column!).getByText("Review")).toHaveClass("card-gate", "review");
     expect(within(column!).getByTitle("Atlas")).toBeInTheDocument();
     expect(screen.getByText("Nothing waiting to start")).toBeInTheDocument();
     expect(screen.getByText("Nothing in progress")).toBeInTheDocument();
@@ -72,5 +73,19 @@ describe("board", () => {
     expect(
       screen.queryByText("Nothing waiting on you"),
     ).not.toBeInTheDocument();
+  });
+
+  it("labels all decision gates and opens mobile paging on Needs you without moving the user's chosen page on refresh", () => {
+    const tasks = [task, { ...task, id: "confirm", phase: "confirm" as const }, { ...task, id: "failed", phase: "failed" as const }];
+    const board = (todos: Todo[]) => <MemoryRouter><DndContext><Board todos={todos} projects={[]} agents={[]} onNew={() => {}} /></DndContext></MemoryRouter>;
+    const { rerender } = render(board([]));
+    rerender(board(tasks)); // Tasks may arrive after the board mounts.
+    const paging = within(screen.getByRole("navigation", { name: "Board columns" }));
+    expect(paging.getByRole("button", { name: "Needs you 3" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByText("Confirm")).toHaveClass("confirm");
+    expect(screen.getByText("Failed")).toHaveClass("failed");
+    fireEvent.click(paging.getByRole("button", { name: "Backlog 0" }));
+    rerender(board([...tasks, { ...task, id: "another" }]));
+    expect(paging.getByRole("button", { name: "Backlog 0" })).toHaveAttribute("aria-current", "true");
   });
 });

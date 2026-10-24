@@ -18,6 +18,55 @@ async function fixture(concurrency = 3) {
 }
 
 describe("M4 state regression checks", () => {
+  it.each(["run", "plan"] as const)("promotes late %s feedback into exactly one gate revision, including unacknowledged inbox delivery", async (mode) => {
+    const f = await fixture(); f.start(mode); const job = f.claim();
+    const queue = `/api/conversations/${job.buildId}/queued-messages`;
+    const history = `/api/conversations/${job.buildId}/messages`;
+    // Successfully accepted feedback must not be repeated in the next prompt.
+    f.services.orchestrator.message(f.todoId, "Already delivered");
+    const [accepted] = f.services.scheduler.inbox(f.machine.token, job.turnId);
+    f.services.scheduler.ackInbox(f.machine.token, job.turnId, [accepted!.id]);
+    f.services.orchestrator.message(f.todoId, "Reserved but not acknowledged");
+    const [reserved] = f.services.scheduler.inbox(f.machine.token, job.turnId);
+    f.services.orchestrator.message(f.todoId, "Arrived after the final inbox poll");
+    const originals = (await f.api(history)).json.data;
+    expect((await f.api(queue)).json.data).toHaveLength(2);
+    const completion = { status: "done" as const, sessionState: { thread: "continue" } };
+    f.finish(job.turnId, completion); f.finish(job.turnId, completion); // lost completion response
+    expect(f.services.orchestrator.getTodo(f.todoId)).toMatchObject({ phase: "queued", previousGate: mode === "plan" ? "confirm" : "review" });
+    expect((await f.api(queue)).json.data).toEqual([]);
+    expect(() => f.services.scheduler.ackInbox(f.machine.token, job.turnId, [reserved!.id])).toThrow("Turn is done");
+    const revision = f.claim();
+    expect(revision).toMatchObject({ buildId: job.buildId, kind: "revise", readOnly: mode === "plan", sessionState: { thread: "continue" } });
+    expect(revision.prompt).toContain("Reserved but not acknowledged\n\nArrived after the final inbox poll");
+    expect(revision.prompt).not.toContain("Already delivered");
+    const messages = (await f.api(history)).json.data;
+    expect(messages.map((message: { id: string }) => message.id)).toEqual(originals.map((message: { id: string }) => message.id));
+    expect(messages.slice(1).every((message: { turnId: string }) => message.turnId === revision.turnId)).toBe(true);
+    expect(f.services.scheduler.inbox(f.machine.token, revision.turnId)).toEqual([]);
+    // The same boundary can be hit again during a revise turn.
+    f.services.orchestrator.message(f.todoId, "Late revision feedback");
+    f.finish(revision.turnId);
+    const next = f.claim(); expect(next.kind).toBe("revise"); expect(next.prompt).toContain("Late revision feedback");
+    f.finish(next.turnId);
+    expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe(mode === "plan" ? "confirm" : "review");
+    expect(f.services.scheduler.claim(f.machine.token)).toBeNull();
+    expect(f.services.events.replay("0")).toContainEqual(expect.objectContaining({ type: "message.queue_changed", conversationId: job.buildId }));
+  });
+
+  it("keeps pending feedback without automatically restarting failed or closed work", async () => {
+    for (const closed of [false, true]) {
+      const f = await fixture(); f.start(); const job = f.claim();
+      f.services.orchestrator.message(f.todoId, "Keep this feedback");
+      f.services.scheduler.inbox(f.machine.token, job.turnId);
+      if (closed) f.services.orchestrator.close(f.todoId);
+      f.finish(job.turnId, { status: closed ? "done" : "failed" });
+      expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe(closed ? "closed" : "failed");
+      expect(f.services.scheduler.claim(f.machine.token)).toBeNull();
+      expect((await f.api(`/api/conversations/${job.buildId}/queued-messages`)).json.data).toMatchObject([{ content: "Keep this feedback", delivering: false }]);
+    }
+  });
+
   it("rejects invalid feedback without creating messages or builds", async () => {
     const f = await fixture();
     expect((await f.api(`/api/todos/${f.todoId}/message`, { content: "invalid" })).response.status).toBe(409);

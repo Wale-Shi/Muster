@@ -39,7 +39,7 @@ export function Resizable({
           !touch ||
           !start ||
           (event.target instanceof HTMLElement &&
-            event.target.closest("textarea, input, pre, button"))
+            event.target.closest("textarea, input, pre, button, .board-columns"))
         )
           return;
         if (

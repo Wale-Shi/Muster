@@ -84,7 +84,9 @@ export class Orchestrator {
     }
     if (todo.phase === "confirm" || todo.phase === "review") {
       this.db.run("UPDATE todos SET previous_gate = ? WHERE id = ?", todo.phase, todoId);
-      return { queued: false, turnId: this.enqueue(this.getTodo(todoId), "revise", content) };
+      const turnId = this.enqueue(this.getTodo(todoId), "revise", content);
+      this.assignMessage(sourceMessageId, turnId);
+      return { queued: false, turnId };
     }
     throw new StateError(`Messages can only steer a running turn or revise at a gate (current: ${todo.phase})`);
   }
@@ -189,6 +191,28 @@ export class Orchestrator {
     return messageId;
   }
 
+  private assignMessage(messageId: string, turnId: string): void {
+    this.db.run("UPDATE messages SET turn_id=?, meta_json=json_set(meta_json, '$.revision', COALESCE(json_extract(meta_json, '$.revision'),0)+1) WHERE id=?", turnId, messageId);
+    const row = this.db.row("SELECT * FROM messages WHERE id=?", messageId);
+    if (row) this.events.emit({ type: "message.updated", conversationId: String(row.conversation_id), message: this.db.message(row), payload: {} });
+  }
+
+  private revisePending(todo: Todo, buildId: string, gate: "confirm" | "review"): boolean {
+    const pending = this.db.rows("SELECT * FROM queued_messages WHERE conversation_id=? AND delivered_at IS NULL ORDER BY rowid", buildId);
+    if (!pending.length) return false;
+    // Completion and ACK are serialized by the server. Anything without an ACK
+    // belongs in the next prompt, including an inbox reservation racing completion.
+    this.db.run("UPDATE todos SET previous_gate=? WHERE id=?", gate, todo.id);
+    const turnId = this.enqueue(this.getTodo(todo.id), "revise", pending.map((message) => String(message.content)).join("\n\n"));
+    for (const message of pending) {
+      if (message.source_message_id) this.assignMessage(String(message.source_message_id), turnId);
+      else this.addMessage(buildId, turnId, "user", String(message.content), {});
+      this.db.run("UPDATE queued_messages SET delivered_at=?, delivery_turn_id=NULL WHERE id=?", now(), message.id);
+    }
+    this.changed(todo.id, buildId, "message.queue_changed", { turnId });
+    return true;
+  }
+
   completeTurn(turnId: string, status: "done" | "failed" | "stopped", error?: string): void {
     const row = this.db.row("SELECT t.*, b.todo_id, b.branch FROM turns t JOIN builds b ON b.id = t.build_id WHERE t.id = ?", turnId);
     if (!row) throw new StateError("Turn not found", 404);
@@ -205,6 +229,7 @@ export class Orchestrator {
     if (todo.phase === "closed") return;
     if (status !== "done") { this.setPhase(todo, row.kind === "merge" ? "review" : "failed"); return; }
     const next = completedPhaseForTurn(row.kind as TurnKind, todo.previousGate);
+    if ((next === "confirm" || next === "review") && this.revisePending(todo, String(row.build_id), next)) return;
     if (next) this.setPhase(todo, next);
     if (next === "done") this.db.run("UPDATE builds SET status = 'done' WHERE id = ?", row.build_id);
   }

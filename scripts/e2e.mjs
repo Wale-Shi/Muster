@@ -53,6 +53,28 @@ try {
   assert.equal(chief.model, "gpt-6.1-sol");
   await api(`/agents/${chief.id}`, { runtime: "mock", model: "mock" }, "PATCH");
   const client = new MachineClient({ server: url, home: join(root, "daemon"), name: "e2e", concurrency: 3, runtimes: ["mock"] });
+  let lateTodoId;
+  let lateTurnId;
+  const complete = client.complete.bind(client);
+  client.complete = async (turnId, payload) => {
+    if (lateTodoId) {
+      const target = await api(`/todos/${lateTodoId}`);
+      if (target.builds.some((build) => build.turns.some((turn) => turn.id === turnId))) {
+        const todoId = lateTodoId;
+        lateTodoId = undefined;
+        lateTurnId = turnId;
+        // The runtime and inbox loop have finished. Queue at the completion
+        // boundary, without relying on a sleep landing between two polls.
+        assert.equal(target.phase, "building");
+        assert.equal((await api(`/todos/${todoId}/message`, { content: "LATE_COMPLETION_STEER" })).queued, true);
+        const build = target.builds.at(-1);
+        assert.equal((await api(`/conversations/${build.id}/queued-messages`)).length, 1);
+        // Also exercise an in-flight delivery that never receives an ACK.
+        assert.equal((await client.inbox(turnId)).length, 1);
+      }
+    }
+    await complete(turnId, payload);
+  };
   daemon = new Daemon({ client, workspacesDir: workspaces, log: (level, message, meta) => { if (level === "error") stderr += `${message}: ${JSON.stringify(meta)}\n`; },
     runtimes: { mock: new MockRuntime(20) }, heartbeatMs: 100, inboxMs: 20, flushMs: 20 });
   await daemon.start();
@@ -77,6 +99,25 @@ try {
   assert((await readFile(join(repo, "MUSTER_MOCK.md"), "utf8")).includes("Plan and merge"));
   assert.equal(await git(repo, "status", "--porcelain"), "");
   console.log("PASS plan → confirm → build + steer → review → merge → done");
+
+  const late = await create("Late completion steer");
+  lateTodoId = late.id;
+  await api(`/todos/${late.id}/start`, { mode: "run" });
+  const lateReviewed = await phase(late.id, "review");
+  const lateBuild = lateReviewed.builds[0];
+  assert(lateTurnId, "completion boundary hook ran");
+  assert.equal(lateBuild.turns.length, 2);
+  assert.equal(lateBuild.turns[0].id, lateTurnId);
+  assert.equal(lateBuild.turns[1].kind, "revise");
+  assert.equal(lateBuild.turns[1].status, "done");
+  assert(lateBuild.turns[1].prompt.includes("LATE_COMPLETION_STEER"));
+  assert.equal((await api(`/conversations/${lateBuild.id}/queued-messages`)).length, 0);
+  const lateHistory = await api(`/conversations/${lateBuild.id}/messages`);
+  const opening = lateHistory.filter((message) => message.role === "user" && message.content === "LATE_COMPLETION_STEER");
+  assert.equal(opening.length, 1);
+  assert.equal(opening[0].turnId, lateBuild.turns[1].id);
+  assert(lateHistory.some((message) => message.role === "agent" && message.turnId === lateBuild.turns[1].id && message.content.includes("LATE_COMPLETION_STEER")));
+  console.log("PASS steer queued at completion → automatic revise → review, empty queue and persisted conversation");
 
   const one = await create("ISOLATED_ONE"); const two = await create("ISOLATED_TWO");
   await Promise.all([one, two].map((item) => api(`/todos/${item.id}/start`, { mode: "run" })));
