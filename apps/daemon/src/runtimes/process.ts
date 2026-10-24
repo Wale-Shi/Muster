@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { errorText } from "../util.js";
+import { runtimeEnv } from "./env.js";
 
 // JSON protocol envelopes differ by CLI; validate/map them at the adapter boundary.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -14,7 +15,7 @@ export class JsonProcess {
   private intentional = false;
   private stopping: Promise<void> | undefined;
   constructor(command: string, args: string[], cwd: string) {
-    this.child = spawn(command, args, { cwd, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
+    this.child = spawn(command, args, { cwd, env: runtimeEnv(), stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
     const lines = createInterface({ input: this.child.stdout });
     lines.on("line", (line) => {
       try { this.onMessage(JSON.parse(line) as Wire); }

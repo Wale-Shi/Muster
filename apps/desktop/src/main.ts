@@ -118,13 +118,13 @@ async function refreshStatus() {
 }
 
 async function launch() {
-  const env = { ...process.env, PATH: await resolvePath(), NODE_ENV: "production", MUSTER_DATA_DIR: data, MUSTER_HOME: data };
+  const env = { ...process.env, PATH: await resolvePath(), MUSTER_DATA_DIR: data, MUSTER_HOME: data };
   // Retry discovery when another application wins the bind race.
   for (let attempt = 0; attempt < 5; attempt++) {
     const target = await chooseServer(Number(process.env.MUSTER_DESKTOP_PORT ?? 7420));
     origin = `http://127.0.0.1:${target.port}`;
     if (target.attach) { log(`Attached to ${origin}`); break; }
-    server = new Worker(join(runtime, "apps/server/dist/index.js"), [], { ...env, HOST: "127.0.0.1", PORT: String(target.port), MUSTER_PUBLIC_URL: origin }, logs, "server");
+    server = new Worker(join(runtime, "apps/server/dist/index.js"), [], { ...env, NODE_ENV: "production", HOST: "127.0.0.1", PORT: String(target.port), MUSTER_PUBLIC_URL: origin }, logs, "server");
     try { await waitForServer(origin, server); log(`Started ${origin}`); break; }
     catch (error) { await server.stop(); server = undefined; if (attempt === 4) throw error; }
   }
