@@ -1,13 +1,24 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { rmSync } from "node:fs";
+import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 import assert from "node:assert/strict";
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const workersOnly = process.argv.includes("--workers-only");
-const executable = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? (process.platform === "darwin" ? join(desktop, `release/mac${process.arch === "arm64" ? "-arm64" : ""}/Muster.app/Contents/MacOS/Muster`) : process.platform === "win32" ? join(desktop, "release/win-unpacked/Muster.exe") : join(desktop, "release/linux-unpacked/muster"));
+const built = process.argv.slice(2).find((arg) => !arg.startsWith("--")) ?? (process.platform === "darwin" ? join(desktop, `release/mac${process.arch === "arm64" ? "-arm64" : ""}/Muster.app/Contents/MacOS/Muster`) : process.platform === "win32" ? join(desktop, "release/win-unpacked/Muster.exe") : join(desktop, "release/linux-unpacked/muster"));
+// Run a copy outside the checkout: inside it, Node can resolve missing runtime dependencies from the repository's node_modules.
+const bundle = process.platform === "darwin" ? resolve(built, "../../..") : dirname(built);
+// macOS silently refuses to run an app copied into the system temp directory as Node, so use the user's caches there.
+const copies = process.platform === "darwin" ? join(homedir(), "Library/Caches/Muster") : tmpdir();
+await mkdir(copies, { recursive: true });
+const copy = await mkdtemp(join(copies, "smoke-app-"));
+const outside = join(copy, basename(bundle));
+await cp(bundle, outside, { recursive: true, verbatimSymlinks: true });
+process.once("exit", () => rmSync(copy, { recursive: true, force: true }));
+const executable = join(outside, relative(bundle, built));
 const runtime = process.platform === "darwin" ? resolve(executable, "../../Resources/runtime") : resolve(dirname(executable), "resources/runtime");
 const home = await mkdtemp(join(tmpdir(), "muster-desktop-smoke-"));
 let child: ChildProcess | undefined;

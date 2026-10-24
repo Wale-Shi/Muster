@@ -41,7 +41,8 @@ await build({
     appId: "dev.muster.desktop", productName: "Muster", electronVersion: JSON.parse(await readFile(join(root, "node_modules/electron/package.json"), "utf8")).version as string,
     directories: { output: "release", buildResources: "assets" },
     files: ["dist/src/**/*", "package.json"],
-    extraResources: [{ from: stage, to: "runtime", filter: ["**/*", "!package-lock.json"] }, { from: "assets", to: "assets", filter: ["*.png"] }],
+    // electron-builder always drops node_modules nested inside an extraResources source, so copy it as its own entry.
+    extraResources: [{ from: stage, to: "runtime", filter: ["**/*", "!package-lock.json"] }, { from: join(stage, "node_modules"), to: "runtime/node_modules", filter: ["**/*"] }, { from: "assets", to: "assets", filter: ["*.png"] }],
     asar: true, npmRebuild: false, electronDist: join(root, "node_modules/electron/dist"),
     mac: { target: ["dir", "dmg"], icon: "assets/icon.icns", category: "public.app-category.developer-tools", identity: "-", hardenedRuntime: false },
     win: { icon: "assets/icon.ico" }, linux: { icon: "assets/icon.png", category: "Development" },
