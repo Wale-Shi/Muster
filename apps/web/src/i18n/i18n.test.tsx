@@ -42,6 +42,7 @@ describe("dictionaries", () => {
 
 it("switches sidebar and board instantly, persists language and informs desktop", () => {
   vi.spyOn(api, "topics").mockResolvedValue([]);
+  vi.spyOn(api, "machines").mockResolvedValue([]);
   vi.spyOn(api, "todos").mockResolvedValue([]);
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
   const setLocale = vi.fn().mockResolvedValue(undefined);
@@ -53,12 +54,20 @@ it("switches sidebar and board instantly, persists language and informs desktop"
   </MemoryRouter></QueryClientProvider></I18nProvider>);
   expect(screen.getByRole("heading", { name: "Backlog" })).toBeVisible();
   expect(document.documentElement.lang).toBe("en");
-  fireEvent.change(screen.getByRole("combobox", { name: "Language" }), { target: { value: "zh-CN" } });
+  const settings = screen.getByRole("button", { name: "Appearance settings" });
+  expect(settings).toHaveAttribute("popovertarget", "workspace-settings");
+  expect(document.getElementById("workspace-settings")).toHaveAttribute("popover", "auto");
+  // jsdom does not implement native popover toggling; exercise the controls by label.
+  fireEvent.click(settings);
+  fireEvent.change(screen.getByLabelText("Appearance"), { target: { value: "light" } });
+  expect(document.documentElement.dataset.theme).toBe("light");
+  expect(localStorage.getItem("muster.theme")).toBe("light");
+  fireEvent.change(screen.getByLabelText("Language"), { target: { value: "zh-CN" } });
   expect(screen.getByRole("heading", { name: "待办" })).toBeVisible();
   expect(screen.getByRole("link", { name: "工作区" })).toBeVisible();
   expect(screen.getByText("暂无待办任务")).toBeVisible();
   expect(document.documentElement.lang).toBe("zh-CN");
-  expect(document.title).toBe("Muster — 工作区");
+  expect(document.title).toBe("Muster");
   expect(localStorage.getItem("muster.locale")).toBe("zh-CN");
   expect(setLocale).toHaveBeenLastCalledWith("zh-CN");
 });
@@ -82,7 +91,8 @@ it("uses saved preference, ignores invalid storage and tolerates unavailable sto
 it("translates structured notices and known errors while preserving stored content", () => {
   const { t, label } = createI18n("zh-CN");
   const message: Message = { id: "m", conversationId: "c", turnId: null, role: "system", content: "Todo #1 Keep Title entered confirm.", createdAt: "2026-01-01", meta: { todoId: "t", phase: "confirm" } };
-  expect(systemMessage(message, t, label)).toBe("任务 #1 Keep Title 已进入确认阶段。");
+  expect(systemMessage(message, t, label)).toBe("任务 #1 Keep Title 的计划已就绪，等待你确认。");
+  expect(systemMessage({ ...message, meta: { todoId: "t", phase: "building" } }, t, label)).toBe("任务 #1 Keep Title 已进入构建中阶段。");
   expect(systemMessage({ ...message, meta: {} }, t, label)).toBe(message.content);
   expect(systemMessage({ ...message, meta: { code: "no_file_changes" } }, t, label)).toBe("本次构建没有文件变更");
   expect(message.content).toBe("Todo #1 Keep Title entered confirm.");
@@ -90,4 +100,13 @@ it("translates structured notices and known errors while preserving stored conte
   expect(displayError(new Error("Cannot start todo from review"), t, label)).toContain("评审");
   expect(displayError(new Error("external error text"), t, label)).toBe("external error text");
   expect(label("runtime", "claude")).toBe("Claude Code");
+  const english = createI18n("en");
+  expect(systemMessage(message, english.t, english.label)).toBe("Task #1 Keep Title has a plan ready for your confirmation.");
+  expect(systemMessage({ ...message, meta: { todoId: "t", phase: "review" } }, english.t, english.label)).toBe("Task #1 Keep Title is ready for your review.");
+});
+it("formats compact card ages in both languages", () => {
+  const now = Date.parse("2026-01-01T12:00:00Z");
+  expect(createI18n("en").formatAge(now - 57 * 60_000, now)).toBe("57m");
+  expect(createI18n("en").formatAge(now - 3 * 3_600_000, now)).toBe("3h");
+  expect(createI18n("zh-CN").formatAge(now - 57 * 60_000, now)).toBe("57分钟");
 });

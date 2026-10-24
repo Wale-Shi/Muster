@@ -25,7 +25,7 @@ export function TaskCard({
   agent?: Agent | undefined;
   overlay?: boolean;
 }) {
-  const { t, label, formatRelative, formatDate } = useI18n();
+  const { t, label, formatAge, formatDate } = useI18n();
   const drag = useDraggable({ id: todo.id, data: { todo }, disabled: overlay });
   return (
     <article
@@ -41,10 +41,10 @@ export function TaskCard({
         <PhaseDot phase={todo.phase} />
         <span className="mono dim">#{todo.number}</span>
         {["confirm", "review", "failed"].includes(todo.phase) && (
-          <span className={`card-gate ${todo.phase}`}>{label("phase", todo.phase)}</span>
+          <span title={label("phase", todo.phase)} className={`card-gate ${todo.phase}`}>{label("phase", todo.phase)}</span>
         )}
         <span className="card-time" title={`${t("ui.timeSinceLastUpdate")}: ${formatDate(todo.updatedAt)}`}>
-          {formatRelative(todo.updatedAt)}
+          {formatAge(todo.updatedAt)}
         </span>
       </div>
       <Link
@@ -57,7 +57,7 @@ export function TaskCard({
         {todo.title}
       </Link>
       <div className="card-footer">
-        <span className="project-tag">
+        <span className="project-tag" title={project?.name}>
           <span className="project-square" />
           {project?.name ?? t("ui.project")}
         </span>
@@ -99,8 +99,9 @@ function Column({
     >
       <div className="column-header">
         <span className={`column-dot ${id}`} />
-        <h3>{title}</h3>
+        <h3 title={title}>{title}</h3>
         <span className="column-count">{formatNumber(todos.length)}</span>
+        {id === "done" && <span className="column-subtitle">{t("ui.last7Days")}</span>}
         {id === "backlog" && (
           <button
             className="icon-button"
@@ -111,7 +112,6 @@ function Column({
           </button>
         )}
       </div>
-      {id === "done" && <div className="column-subtitle">{t("ui.last7Days")}</div>}
       <div className="column-cards">
         {todos.map((todo) => (
           <TaskCard

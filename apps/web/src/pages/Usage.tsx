@@ -84,7 +84,7 @@ export function Usage() {
     <div className="management-page">
       <header className="page-header">
         <h1>{t("ui.usage")}</h1>
-        <span className="badge">{t("ui.allTime")}</span>
+        <span className="muted">{t("ui.allTime")}</span>
       </header>
       <div className="page-content usage-page">
         <div className="page-intro">

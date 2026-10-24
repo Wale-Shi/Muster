@@ -44,7 +44,7 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
       : undefined);
   const [boardVisible, setBoardVisible] = useStored("board-visible", true);
   const [maximized, setMaximized] = useState(false);
-  const [mobileSide, setMobileSide] = useState<"left" | "right">("left");
+  const [mobileSide, setMobileSide] = useState<"left" | "right">(() => window.matchMedia("(min-width: 768px) and (max-width: 1050px)").matches ? "right" : "left");
   const [dragging, setDragging] = useState<Todo | null>(null);
   const [reference, setReference] = useState<Todo | null>(null);
   const [done, setDone] = useState<Todo | null>(null);
@@ -89,7 +89,7 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
         <div className="breadcrumb">
           <span className="dim">{t("ui.workspace")}</span>
           <span className="dim">/</span>
-          <span>{topic?.title ?? t("ui.topicNotFound")}</span>
+          <span title={topic?.title}>{topic?.title ?? t("ui.topicNotFound")}</span>
         </div>
         <div className="row">
           <div className="mobile-panel-tabs">

@@ -11,10 +11,15 @@ it("receives native new-task and notification navigation commands and unsubscrib
   window.muster = { desktop: true, setLocale: vi.fn().mockResolvedValue(undefined), platform: "darwin", chooseFolder: vi.fn(), openPath: vi.fn(), onCommand: (listener) => { callback = listener; return unsubscribe; } };
   function Location() { return <div>{useLocation().pathname}</div>; }
   const view = render(<MemoryRouter><DesktopIntegration onNewTask={onNewTask} /><Location /></MemoryRouter>);
+  act(() => callback({ type: "fullscreen", fullscreen: true }));
+  expect(document.documentElement).toHaveClass("muster-fullscreen");
+  act(() => callback({ type: "fullscreen", fullscreen: false }));
+  expect(document.documentElement).not.toHaveClass("muster-fullscreen");
+  act(() => callback({ type: "fullscreen", fullscreen: true }));
   act(() => callback({ type: "new-task" })); expect(onNewTask).toHaveBeenCalledOnce();
   act(() => callback({ type: "open-todo", id: "todo-123" })); expect(screen.getByText("/todos/todo-123")).toBeInTheDocument();
   const priorCleanupCount = unsubscribe.mock.calls.length;
-  view.unmount(); expect(unsubscribe).toHaveBeenCalledTimes(priorCleanupCount + 1);
+  view.unmount(); expect(document.documentElement).not.toHaveClass("muster-fullscreen"); expect(unsubscribe).toHaveBeenCalledTimes(priorCleanupCount + 1);
 });
 it("opens absolute conversation paths through the desktop bridge", async () => {
   const openPath = vi.fn().mockResolvedValue("");

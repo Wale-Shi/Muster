@@ -29,8 +29,14 @@ export function createI18n(locale: Locale) {
     const unit = (value: number, name: string) => formatNumber(value, { style: "unit", unit: name, unitDisplay: "narrow" });
     return seconds < 60 ? unit(seconds, "second") : seconds < 3600 ? unit(Math.floor(seconds / 60), "minute") : `${unit(Math.floor(seconds / 3600), "hour")} ${unit(Math.floor(seconds % 3600 / 60), "minute")}`;
   };
+  // Compact elapsed time for dense cards ("57m", "57分钟"); full date goes in the tooltip.
+  const formatAge = (date: string | number | Date, now = Date.now()) => {
+    const seconds = Math.max(0, (now - new Date(date).getTime()) / 1000);
+    const [unit, scale] = seconds < 60 ? ["second", 1] : seconds < 3600 ? ["minute", 60] : seconds < 86400 ? ["hour", 3600] : ["day", 86400];
+    return formatNumber(Math.floor(seconds / scale), { style: "unit", unit, unitDisplay: "narrow" });
+  };
   const label = (group: "phase" | "runtime" | "status", code: string) => Object.hasOwn(en[group], code) ? t(`${group}.${code}` as MessageKey) : code;
-  return { locale, t, formatDate, formatRelative, formatNumber, formatDuration, label };
+  return { locale, t, formatDate, formatRelative, formatAge, formatNumber, formatDuration, label };
 }
 function initialLocale(): Locale {
   try { const saved = localStorage.getItem("muster.locale"); if (isLocale(saved)) return saved; } catch { /* storage unavailable */ }

@@ -13,21 +13,25 @@ import {
   LoaderCircle,
   MessageSquare,
   Monitor,
-  Moon,
+  Settings,
   PanelLeftClose,
   Plus,
   Search,
-  Sun,
-  SunMoon,
   X,
 } from "lucide-react";
 import type { Topic } from "@muster/shared";
 import { api } from "../api/client";
-import { useTodos, useTopics } from "../api/queries";
+import { useTodos, useTopics, useMachines } from "../api/queries";
 import { useRealtime } from "../api/realtime";
 import { useTheme } from "../hooks/usePreferences";
 import { isRunning } from "../lib/board";
-import { Avatar, Dialog, ErrorNotice } from "./ui";
+import { Dialog, ErrorNotice } from "./ui";
+
+export function connectionStatus(connected: boolean, onlineCount: number | undefined) {
+  if (!connected) return "connecting";
+  if (onlineCount === undefined) return "unknown";
+  return onlineCount > 0 ? "online" : "offline";
+}
 
 export function Sidebar({
   collapsed,
@@ -46,9 +50,12 @@ export function Sidebar({
 }) {
   const { t, locale, setLocale, label } = useI18n();
   const topics = useTopics();
+  const machines = useMachines();
   const todos = useTodos();
   const realtime = useRealtime();
   const theme = useTheme();
+  const onlineCount = machines.data?.filter((machine) => machine.online).length;
+  const connection = connectionStatus(realtime.connected, machines.isError ? undefined : onlineCount);
   const location = useLocation();
   const [expanded, setExpanded] = useState(true);
   const [newTopic, setNewTopic] = useState(false);
@@ -208,11 +215,8 @@ export function Sidebar({
           ))}
         </nav>
         <footer className="sidebar-footer">
-          <select className="language-picker" aria-label={t("text.language")} value={locale} onChange={(event) => setLocale(event.target.value as typeof locale)}>
-            {Object.entries(languageNames).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-          </select>
           <div
-            className="connection-label"
+            className={`connection-label ${connection === "offline" ? "warning" : ""}`}
             title={
               realtime.connected
                 ? t("ui.realtimeConnectionEstablished")
@@ -220,34 +224,36 @@ export function Sidebar({
             }
           >
             <span
-              className={`status-dot ${realtime.connected ? "online" : ""}`}
+              className={`status-dot ${connection === "online" ? "online" : ""}`}
             />
             <span>
-              {realtime.connected
-                ? t("ui.allSystemsConnected")
-                : t("ui.connectingToServer")}
+              {connection === "connecting" ? t("ui.connectingToServer")
+                : connection === "unknown" ? t("ui.machineStatusUnavailable")
+                : connection === "offline" ? t("ui.noMachinesOnline")
+                : t("count.online", { count: onlineCount ?? 0 })}
             </span>
           </div>
           <div className="user-row">
-            <Avatar name={t("ui.localUser")} small />
+            <span className="avatar small" aria-hidden="true"><Command size={13} /></span>
             <div>
-              <strong>{t("ui.localWorkspace")}</strong>
+              <strong title={t("ui.localWorkspace")}>{t("ui.localWorkspace")}</strong>
               <span>{t("ui.selfhostedPersonal")}</span>
             </div>
-            <button
-              className="icon-button"
-              aria-label={t("text.themeChange", { name: t(`theme.${theme.theme}`) })}
-              title={t("text.theme", { name: t(`theme.${theme.theme}`) })}
-              onClick={theme.cycle}
-            >
-              {theme.theme === "system" ? (
-                <SunMoon size={15} />
-              ) : theme.theme === "dark" ? (
-                <Moon size={15} />
-              ) : (
-                <Sun size={15} />
-              )}
+            <button className="icon-button" popoverTarget="workspace-settings" aria-label={t("ui.appearanceSettings")} title={t("ui.appearanceSettings")}>
+              <Settings size={14} />
             </button>
+          </div>
+          <div id="workspace-settings" popover="auto" className="settings-popover">
+            <label>{t("text.language")}
+              <select value={locale} onChange={(event) => setLocale(event.target.value as typeof locale)}>
+                {Object.entries(languageNames).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+              </select>
+            </label>
+            <label>{t("ui.appearance")}
+              <select value={theme.theme} onChange={(event) => theme.setTheme(event.target.value as typeof theme.theme)}>
+                {(["system", "light", "dark"] as const).map((value) => <option key={value} value={value}>{t(`theme.${value}`)}</option>)}
+              </select>
+            </label>
           </div>
         </footer>
       </aside>

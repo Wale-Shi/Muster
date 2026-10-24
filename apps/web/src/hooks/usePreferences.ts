@@ -53,6 +53,7 @@ export function useTheme() {
   }, [theme]);
   return {
     theme,
+    setTheme,
     cycle: () =>
       setTheme((current) =>
         current === "system" ? "dark" : current === "dark" ? "light" : "system",

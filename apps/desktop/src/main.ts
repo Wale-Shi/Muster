@@ -1,4 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, screen, shell, Tray } from "electron";
+import { viewMenuRoles } from "./menu.js";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, screen, shell, systemPreferences, Tray } from "electron";
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -55,6 +56,9 @@ function createWindow() {
     if ([saved.x, saved.y, saved.width, saved.height].every(Number.isFinite) && saved.width >= 850 && saved.height >= 600 && screen.getAllDisplays().some(({ workArea: a }) => saved.x < a.x + a.width && saved.y < a.y + a.height && saved.x + saved.width > a.x && saved.y + saved.height > a.y)) bounds = saved;
   } catch { /* first launch */ }
   window = new BrowserWindow({ ...bounds, minWidth: 850, minHeight: 600, show: false, backgroundColor: "#18181b", title: "Muster", ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 18 } } : {}), webPreferences: { preload: join(here, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  const fullscreenChanged = () => window?.webContents.send("muster:command", { type: "fullscreen", fullscreen: window.isFullScreen() } satisfies DesktopCommand);
+  window.on("enter-full-screen", fullscreenChanged);
+  window.on("leave-full-screen", fullscreenChanged);
   window.on("close", (event) => {
     if (window && !window.isFullScreen()) writeFileSync(join(data, "desktop-window.json"), JSON.stringify(window.getNormalBounds()));
     if (quitting) return;
@@ -75,6 +79,10 @@ function createWindow() {
 
 function integrations() {
   const trusted = (event: Electron.IpcMainInvokeEvent) => event.sender === window?.webContents && event.senderFrame === window.webContents.mainFrame && new URL(event.senderFrame.url).origin === origin;
+  ipcMain.handle("muster:get-fullscreen", (event) => {
+    if (!trusted(event)) throw new Error(t("untrusted"));
+    return window?.isFullScreen() ?? false;
+  });
   ipcMain.handle("muster:set-locale", (event, value: unknown) => {
     if (!trusted(event)) throw new Error(t("untrusted"));
     if (!isLocale(value)) throw new Error(t("invalidLocale"));
@@ -99,6 +107,7 @@ function integrations() {
 }
 
 function rebuildMenu() {
+  if (process.platform === "darwin") systemPreferences.setUserDefault("NSFullScreenMenuItemEverywhere", "boolean", false);
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
     { label: t("file"), submenu: [
@@ -106,7 +115,7 @@ function rebuildMenu() {
       { label: t("browser"), click: () => { void shell.openExternal(origin); } },
       { label: t("logs"), click: () => { void shell.openPath(logs); } },
       { type: "separator" }, process.platform === "darwin" ? { role: "close" as const } : { role: "quit" as const },
-    ] }, { role: "editMenu", label: t("edit") }, { role: "viewMenu", label: t("view") }, { role: "windowMenu", label: t("window") },
+    ] }, { role: "editMenu", label: t("edit") }, { label: t("view"), submenu: viewMenuRoles(app.isPackaged).map((role) => ({ role })) }, { role: "windowMenu", label: t("window") },
   ]));
 }
 function rebuildTray() {

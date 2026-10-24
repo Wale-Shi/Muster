@@ -26,6 +26,11 @@ export const messages: Messages = {
     "delivering": "消息已开始发送，无法再修改"
   },
   "ui": {
+    "appearanceSettings": "外观设置",
+    "appearance": "外观",
+    "noMachinesOnline": "没有在线机器",
+    "machineStatusUnavailable": "无法获取机器状态",
+
     "openNavigation": "打开导航",
     "expandSidebar": "展开侧栏",
     "pageNotFound": "页面不存在",
@@ -279,7 +284,7 @@ export const messages: Messages = {
   },
   "text": {
     "language": "语言",
-    "title": "Muster — 工作区",
+    "title": "Muster",
     "theme": "主题：{name}",
     "themeChange": "主题：{name}。点击切换",
     "drag": "拖动任务 #{number}：{title}",
@@ -313,6 +318,12 @@ export const messages: Messages = {
     "dragOutside": "已离开放置区域。",
     "dragEnd": "已放下任务。",
     "dragCancel": "已取消拖动。"
+  },
+  "system": {
+    "confirm": "任务 {task} 的计划已就绪，等待你确认。",
+    "review": "任务 {task} 已完成构建，等待你评审。",
+    "failed": "任务 {task} 执行失败。",
+    "done": "任务 {task} 已完成。"
   },
   "count": {
     "active": {

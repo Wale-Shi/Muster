@@ -89,7 +89,7 @@ export function TodoPage() {
         <div className="todo-metadata">
           <PhaseBadge phase={todo.phase} />
           <span className="metadata-divider" />
-          <span className="project-tag">
+          <span className="project-tag" title={project?.name}>
             <span className="project-square" />
             {project?.name ?? t("ui.project")}
           </span>

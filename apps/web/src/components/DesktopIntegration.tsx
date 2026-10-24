@@ -3,9 +3,16 @@ import { useNavigate } from "react-router";
 
 export function DesktopIntegration({ onNewTask }: { onNewTask: () => void }) {
   const navigate = useNavigate();
-  useEffect(() => window.muster?.onCommand((command) => {
-    if (command.type === "new-task") onNewTask();
-    else if (command.type === "open-todo") navigate(`/todos/${encodeURIComponent(command.id)}`);
-  }), [navigate, onNewTask]);
+  useEffect(() => {
+    const unsubscribe = window.muster?.onCommand((command) => {
+      if (command.type === "fullscreen") document.documentElement.classList.toggle("muster-fullscreen", command.fullscreen);
+      else if (command.type === "new-task") onNewTask();
+      else if (command.type === "open-todo") navigate(`/todos/${encodeURIComponent(command.id)}`);
+    });
+    return () => {
+      unsubscribe?.();
+      document.documentElement.classList.remove("muster-fullscreen");
+    };
+  }, [navigate, onNewTask]);
   return null;
 }

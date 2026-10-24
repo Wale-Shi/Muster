@@ -1,8 +1,9 @@
 import { useI18n } from "../i18n";
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Cpu, Monitor, Server } from "lucide-react";
 import type { Machine } from "@muster/shared";
+import { useMachines } from "../api/queries";
 import { api } from "../api/client";
 import { Empty, ErrorNotice, Loading } from "../components/ui";
 
@@ -27,15 +28,17 @@ function MachineCard({ machine }: { machine: Machine }) {
           <Monitor size={21} />
         </span>
         <div>
-          <h3>{machine.name}</h3>
-          <span className="muted">
-            <span className={`status-dot ${machine.online ? "online" : ""}`} />
-            {machine.online ? t("ui.online") : t("ui.offline")}
-          </span>
+          <h3 title={machine.name}>{machine.name}</h3>
+          <div className="machine-status">
+            <span className="muted">
+              <span className={`status-dot ${machine.online ? "online" : ""}`} />
+              {machine.online ? t("ui.online") : t("ui.offline")}
+            </span>
+            <span className="badge mono">
+              {t("count.running", { count: machine.running ?? 0 })}
+            </span>
+          </div>
         </div>
-        <span className="badge mono">
-          {t("count.running", { count: machine.running ?? 0 })}
-        </span>
       </div>
       <div className="machine-runtimes">
         {machine.runtimes.map((runtime) => (
@@ -82,11 +85,7 @@ function MachineCard({ machine }: { machine: Machine }) {
 }
 export function Machines() {
   const { t } = useI18n();
-  const machines = useQuery({
-    queryKey: ["machines"],
-    queryFn: api.machines,
-    refetchInterval: 10_000,
-  });
+  const machines = useMachines();
   return (
     <div className="management-page">
       <header className="page-header">

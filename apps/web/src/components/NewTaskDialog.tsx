@@ -141,6 +141,7 @@ export function NewTaskDialog({
             {t("ui.saveToBacklog")}
           </button>
           <div className="row">
+            <button type="button" className="button ghost" onClick={onClose}>{t("ui.cancel")}</button>
             <button
               type="button"
               className="button"

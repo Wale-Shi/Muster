@@ -25,6 +25,11 @@ export const en = {
     "delivering": "Message is already being delivered"
   },
   "ui": {
+    "appearanceSettings": "Appearance settings",
+    "appearance": "Appearance",
+    "noMachinesOnline": "No machines online",
+    "machineStatusUnavailable": "Machine status unavailable",
+
     "openNavigation": "Open navigation",
     "expandSidebar": "Expand sidebar",
     "pageNotFound": "Page not found",
@@ -278,7 +283,7 @@ export const en = {
   },
   "text": {
     "language": "Language",
-    "title": "Muster — Workspace",
+    "title": "Muster",
     "theme": "Theme: {name}",
     "themeChange": "Theme: {name}. Click to change",
     "drag": "Drag task #{number}: {title}",
@@ -312,6 +317,12 @@ export const en = {
     "dragOutside": "Task is outside a drop target.",
     "dragEnd": "Task dropped.",
     "dragCancel": "Drag cancelled."
+  },
+  "system": {
+    "confirm": "Task {task} has a plan ready for your confirmation.",
+    "review": "Task {task} is ready for your review.",
+    "failed": "Task {task} failed.",
+    "done": "Task {task} is done."
   },
   "count": {
     "active": {

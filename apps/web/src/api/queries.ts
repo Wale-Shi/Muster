@@ -32,3 +32,6 @@ export function useMessages(id: string) {
     staleTime: Infinity,
   });
 }
+
+export const useMachines = () =>
+  useQuery({ queryKey: ["machines"], queryFn: api.machines, refetchInterval: 10_000 });
