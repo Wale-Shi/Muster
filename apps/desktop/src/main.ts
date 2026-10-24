@@ -52,7 +52,12 @@ function createWindow() {
   window = new BrowserWindow({ ...bounds, minWidth: 850, minHeight: 600, show: false, backgroundColor: "#18181b", title: "Muster", ...(process.platform === "darwin" ? { titleBarStyle: "hiddenInset" as const, trafficLightPosition: { x: 14, y: 18 } } : {}), webPreferences: { preload: join(here, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true } });
   window.on("close", (event) => {
     if (window && !window.isFullScreen()) writeFileSync(join(data, "desktop-window.json"), JSON.stringify(window.getNormalBounds()));
-    if (!quitting) { event.preventDefault(); app.quit(); }
+    if (quitting) return;
+    event.preventDefault();
+    if (process.platform !== "darwin") { app.quit(); return; }
+    // macOS convention: closing the window keeps Muster running; the Dock icon and tray reopen it.
+    if (window?.isFullScreen()) { window.once("leave-full-screen", () => window?.hide()); window.setFullScreen(false); }
+    else window?.hide();
   });
   window.once("ready-to-show", () => { if (!smoke) show(); });
   const openExternal = (url: string) => { if (["https:", "http:"].includes(new URL(url).protocol)) void shell.openExternal(url); };
@@ -80,7 +85,7 @@ function integrations() {
       { label: "New task", accelerator: "CmdOrCtrl+N", click: () => command({ type: "new-task" }) },
       { label: "Open in browser", click: () => { void shell.openExternal(origin); } },
       { label: "Show logs", click: () => { void shell.openPath(logs); } },
-      { type: "separator" }, { role: "quit" },
+      { type: "separator" }, process.platform === "darwin" ? { role: "close" as const } : { role: "quit" as const },
     ] }, { role: "editMenu" }, { role: "viewMenu" }, { role: "windowMenu" },
   ]));
   const assets = app.isPackaged ? join(process.resourcesPath, "assets") : join(root, "apps/desktop/assets");
@@ -94,6 +99,7 @@ function integrations() {
 
 interface TodoStatus { id: string; title: string; phase: string; updatedAt: string }
 let polling = false;
+let badge = -1;
 const eventsAbort = new AbortController();
 async function refreshStatus() {
   if (polling || quitting) return;
@@ -103,8 +109,11 @@ async function refreshStatus() {
     if (!response.ok) throw new Error(`Status HTTP ${response.status}`);
     const { data: todos } = await response.json() as { data: TodoStatus[] };
     const needs = todos.filter((todo) => ["confirm", "review", "failed"].includes(todo.phase));
-    app.setBadgeCount(needs.length);
-    app.dock?.setBadge(needs.length ? String(needs.length) : "");
+    if (needs.length !== badge) {
+      badge = needs.length;
+      // macOS only draws the badge once Muster may post notifications.
+      if (!app.setBadgeCount(badge)) log(`Dock badge ${badge} not shown (notification permission missing?)`);
+    }
     const machinesResponse = await fetch(`${origin}/api/machines`, { signal: AbortSignal.timeout(3000) });
     const { data: machines } = await machinesResponse.json() as { data: { id: string; online: boolean; running: number }[] };
     let machineId: string | undefined;
@@ -143,6 +152,7 @@ async function launch() {
     const { data: todo } = await response.json() as { data: TodoStatus };
     const notification = new Notification({ title: `${event.payload?.phase} · Muster`, body: todo.title });
     notification.on("click", () => command({ type: "open-todo", id: todo.id }));
+    notification.on("failed", (_event, error) => log(`Notification failed: ${error}`));
     notification.show();
   });
   integrations();

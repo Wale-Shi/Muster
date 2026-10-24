@@ -7,7 +7,7 @@
     <title>Muster — your agents, in sync</title>
     <script>
       try {
-        const t = localStorage.getItem("muster.theme") || "system";
+        const t = localStorage.getItem("muster.theme") || (window.muster?.desktop ? "dark" : "system");
         document.documentElement.dataset.theme =
           t === "system"
             ? matchMedia("(prefers-color-scheme: dark)").matches

@@ -27,10 +27,12 @@ export function useStored<T>(key: string, fallback: T) {
 }
 export function useTheme() {
   const [theme, setTheme] = useState(() => {
+    // The desktop window starts dark; browsers follow the system appearance.
+    const fallback = window.muster?.desktop ? "dark" : "system";
     try {
-      return localStorage.getItem("muster.theme") ?? "system";
+      return localStorage.getItem("muster.theme") ?? fallback;
     } catch {
-      return "system";
+      return fallback;
     }
   });
   useEffect(() => {
