@@ -80,7 +80,8 @@ describe("M4 state regression checks", () => {
     f.services.orchestrator.message(f.todoId, "Add edge cases");
     const revised = f.claim();
     expect(revised).toMatchObject({ kind: "revise", readOnly: true, sessionState: { step: 1 } });
-    expect(revised.systemInstructions).toContain("Do not modify");
+    expect(revised.prompt).toContain("Do not modify");
+    expect(revised.systemInstructions).not.toContain("Do not modify");
     f.finish(revised.turnId, { status: "done", plan: "Accepted plan with edge cases" });
     expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe("confirm");
     f.services.orchestrator.confirm(f.todoId);

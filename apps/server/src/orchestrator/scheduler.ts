@@ -109,7 +109,7 @@ export class Scheduler {
         kind: candidate.kind as TurnKind,
         project: isChief ? null : { id: String(candidate.project_id), repoUrl: String(candidate.repo_url), baseBranch: String(candidate.base_branch) },
         branch: isChief ? null : String(candidate.branch), agent, prompt: String(candidate.prompt),
-        systemInstructions: instructionsFor(readOnly ? "plan" : candidate.kind as TurnKind, { ...snapshot, isChief, createdAt: "", avatar: null }),
+        systemInstructions: instructionsFor({ ...snapshot, isChief, createdAt: "", avatar: null }),
         sessionState: canResume ? parseJson(previous?.session_state_json, null) : null, readOnly,
         mcp: { url: `${this.orchestrator.publicUrl}/mcp`, token: mcpToken },
       };
@@ -186,6 +186,10 @@ export class Scheduler {
       if (!turn.todo_id) this.db.run("UPDATE topics SET runtime_session_json=?, updated_at=? WHERE id=?", payload.sessionState ? JSON.stringify(payload.sessionState) : null, now(), this.conversation(turn));
       if (payload.plan !== undefined) this.storeDocument(String(turn.build_id), "plan", payload.plan);
       if (payload.diff !== undefined) this.storeDocument(String(turn.build_id), "changes", payload.diff);
+      const isBuild = turn.kind === "build" || (turn.kind === "revise" && turn.todo_id && this.orchestrator.getTodo(String(turn.todo_id)).previousGate === "review");
+      if (payload.status === "done" && payload.diff === "" && isBuild) {
+        this.orchestrator.addMessage(String(turn.build_id), turnId, "system", "No file changes in this build", {});
+      }
       const failedMerge = turn.kind === "merge" && (payload.merge?.ok !== true || payload.status !== "done");
       const error = failedMerge ? payload.merge?.error ?? payload.error ?? "Merge failed: daemon did not confirm publication" : payload.error;
       this.orchestrator.completeTurn(turnId, failedMerge ? "failed" : payload.status, error);

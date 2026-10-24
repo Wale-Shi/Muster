@@ -11,7 +11,7 @@ const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 async function context() { const cwd = await mkdtemp(join(tmpdir(), "muster-adapter-")); roots.push(cwd); const events: AgentEvent[] = []; return { cwd, events, emit: (event: AgentEvent) => { events.push(event); } }; }
 // Local protocol peers exercise the real process/stdio adapters, never model APIs.
-const codexPeer = `
+const codexPeer = (readOnly = true) => `
 const readline = require('node:readline');
 const send = x => process.stdout.write(JSON.stringify(x)+'\\n');
 const notify = (method, params) => send({method,params});
@@ -22,12 +22,14 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  else if(m.method==='initialized') {}
  else if(m.method==='thread/start'||m.method==='thread/resume') {
   if(p.approvalPolicy!=='never'||p.developerInstructions!=='Follow the task'||p.config.mcp_servers.muster.http_headers.Authorization!=='Bearer test-only'||p.config.mcp_servers.muster.url!=='http://localhost:7420/mcp'||p.config.mcp_servers.muster.required!==true) throw Error('thread config');
-  if(p.sandbox!=='read-only') throw Error('sandbox');
+  if(p.sandbox!==${JSON.stringify(readOnly ? "read-only" : "danger-full-access")}) throw Error('sandbox');
   if(m.method==='thread/resume' && p.threadId!=='thread-test') throw Error('resume');
   reply({thread:{id:'thread-test'}});
  }
  else if(m.method==='turn/start') {
   if(p.input[0].text_elements.length!==0||p.effort!=='high') throw Error('turn input');
+  if(p.approvalPolicy!=='never'||JSON.stringify(p.sandboxPolicy)!==${JSON.stringify(JSON.stringify(readOnly ? { type: "readOnly", networkAccess: false } : { type: "dangerFullAccess" }))}) throw Error('turn sandbox policy');
+  if('developerInstructions' in p) throw Error('unsupported turn instructions');
   reply({turn:{id:'active-turn'}});
   notify('turn/started',{threadId:'thread-test',turn:{id:'active-turn'}});
   notify('item/agentMessage/delta',{threadId:'thread-test',delta:'Hello '});
@@ -52,7 +54,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
 it("Codex initializes, resumes, maps notifications, steers and counts only this turn's usage", async () => {
   const ctx = await context();
   const job = makeJob({ readOnly: true, sessionState: { threadId: "thread-test", tokensIn: 100, tokensOut: 30 }, agent: { runtime: "codex", model: "test-only", reasoning: "high", role: "test" } });
-  const running = new CodexRuntime(process.execPath, ["-e", codexPeer, "--"]).start(job, ctx);
+  const running = new CodexRuntime(process.execPath, ["-e", codexPeer(), "--"]).start(job, ctx);
   await until(async () => ctx.events.length, (length) => length >= 5);
   await running.steer("More");
   const result = await running.result;
@@ -62,9 +64,17 @@ it("Codex initializes, resumes, maps notifications, steers and counts only this 
 });
 it("Codex starts a new thread and interrupts the active turn", async () => {
   const ctx = await context();
-  const running = new CodexRuntime(process.execPath, ["-e", codexPeer, "--"]).start(makeJob({ readOnly: true, agent: { runtime: "codex", model: "test-only", reasoning: "high", role: "test" } }), ctx);
+  const running = new CodexRuntime(process.execPath, ["-e", codexPeer(), "--"]).start(makeJob({ readOnly: true, agent: { runtime: "codex", model: "test-only", reasoning: "high", role: "test" } }), ctx);
   await until(async () => ctx.events.length, (length) => length >= 5);
   await running.interrupt(); expect((await running.result).status).toBe("stopped");
+});
+it.each([false, true])("Codex sets a writable per-turn sandbox (resumed: %s)", async (resume) => {
+  const ctx = await context();
+  const job = makeJob({ sessionState: resume ? { threadId: "thread-test" } : null, agent: { runtime: "codex", model: "test-only", reasoning: "high", role: "test" } });
+  const running = new CodexRuntime(process.execPath, ["-e", codexPeer(false), "--"]).start(job, ctx);
+  await until(async () => ctx.events.length, (length) => length >= 5);
+  await running.steer("More");
+  expect(await running.result).toMatchObject({ status: "done", sessionState: { threadId: "thread-test" } });
 });
 it("Codex reports early child failure instead of hanging RPC requests", async () => {
   const ctx = await context();

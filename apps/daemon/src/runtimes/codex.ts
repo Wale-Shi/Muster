@@ -94,7 +94,10 @@ export class CodexRuntime implements Runtime {
       const response = await rpc(threadId ? "thread/resume" : "thread/start", { ...params, ...(threadId ? { threadId } : {}) });
       threadId = String(response.thread.id);
       if (stopped) { settle("stopped"); return; }
-      const started = await rpc("turn/start", { threadId, input: [{ type: "text", text: job.prompt, text_elements: [] }], ...(job.agent.reasoning ? { effort: job.agent.reasoning } : {}) });
+      // TurnStartParams accepts sandboxPolicy, not developerInstructions. Set it
+      // on every turn: resumed threads must not inherit the planning sandbox.
+      const sandboxPolicy = job.readOnly ? { type: "readOnly", networkAccess: false } : { type: "dangerFullAccess" };
+      const started = await rpc("turn/start", { threadId, approvalPolicy: "never", sandboxPolicy, input: [{ type: "text", text: job.prompt, text_elements: [] }], ...(job.agent.reasoning ? { effort: job.agent.reasoning } : {}) });
       turnId = String(started.turn.id);
       if (stopped && !finished) await rpc("turn/interrupt", { threadId, turnId });
     })().catch((error: unknown) => { settle(stopped ? "stopped" : "failed", errorText(error)); });
