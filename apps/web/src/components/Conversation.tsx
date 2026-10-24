@@ -6,7 +6,6 @@ import {
   ArrowUp,
   ChevronRight,
   Command,
-  MessageSquare,
   Sparkles,
   Terminal,
   X,
@@ -14,6 +13,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Message, Todo } from "@muster/shared";
+import { QueuedMessages } from "./QueuedMessages";
 import { api } from "../api/client";
 import { useMessages } from "../api/queries";
 import { useRealtime } from "../api/realtime";
@@ -321,20 +321,7 @@ export function Conversation({
         </button>
       )}
       <div className="composer-wrap">
-        {!!activity?.queued.length && (
-          <div className="queued-tray">
-            <div>
-              <MessageSquare size={12} />
-              <strong>Queued for this run</strong>
-            </div>
-            {activity.queued.map((content, index) => (
-              <p key={`${index}-${content}`}>{content}</p>
-            ))}
-            <span className="hint">
-              Delivery status is unavailable from the server.
-            </span>
-          </div>
-        )}
+        <QueuedMessages conversationId={conversationId} />
         <ErrorNotice error={send.error} />
         <div
           ref={setNodeRef}

@@ -31,14 +31,14 @@ Each project has `<workspaces>/<projectId>/repo`; each build has
 worktrees are reused without resetting writable work. Git metadata operations
 are serialized per project; different builds execute models concurrently.
 Checkpoint commits use `muster: turn <n>`, where the daemon obtains the actual
-turn ordinal from M1's todo detail endpoint. Diffs include all build changes
+turn ordinal from the shared todo detail endpoint. Diffs include all build changes
 relative to the merge base with the fetched base branch.
 
 Plan turns restore their initial HEAD with `reset --hard` and `clean -fd`,
 including when the runtime fails or stops. Merge turns fetch the latest base,
 checkout the base branch in the daemon's clone, merge with `--no-ff`, then push.
 Conflicts abort the merge and report `{status:"failed", merge:{ok:false,error}}`,
-which M1 returns to Review.
+which the server returns to Review.
 
 For local repositories with the base branch checked out (including linked
 worktrees), the daemon refuses a dirty checkout, fetches its merged base into
@@ -69,9 +69,9 @@ Relevant generated types: `InitializeParams`, `ThreadStartParams`,
   with `clientInfo` and `capabilities:null`, then an `initialized` notification.
 - `thread/start` and `thread/resume` accept cwd, model, developer instructions,
   approval policy, sandbox, and per-thread JSON `config`. Resume uses `threadId`.
-  Muster passes `approvalPolicy:"never"`, `workspace-write` for plan turns and
+  Muster passes `approvalPolicy:"never"`, `read-only` for plan turns and
   `danger-full-access` for writable turns. The MCP URL and bearer header are
-  passed in `config.mcp_servers.muster.{url,http_headers}` on both start/resume,
+  passed in `config.mcp_servers.muster.{url,required:true,http_headers}` on both start/resume,
   refreshing the per-turn token. No global config is written.
 - `turn/start` uses `input:[{type:"text",text,text_elements:[]}]`; reasoning is
   the optional `effort` field. Responses contain `thread.id` or `turn.id`.
@@ -95,29 +95,15 @@ to stdin; queued steering waits for subsequent results before the adapter
 finishes. `session_id` resumes through `--resume`. MCP is configured through
 `--mcp-config` with an HTTP server and bearer header. Runtime processes are
 terminated on completion/cancellation, with a bounded force-kill fallback.
-Mock streams a deterministic plan or appends the prompt to `MUSTER_MOCK.md`.
+Claude refreshes instructions on resume with `--system-prompt-snapshot off`, uses plan permission mode for read-only turns, and forwards reasoning via `--effort`. Mock streams a deterministic plan or appends the prompt to `MUSTER_MOCK.md`. A mock Chief `/split <goal>` calls authenticated MCP to create and start two todos.
 
-## M1 gaps and limits
+## Integrated protocol (M4)
 
-- Chief jobs have neither `topicId` nor their `chief:<topicId>` branch. The
-  daemon emits an empty agent delta, then finds that turn's conversation via
-  `/api/topics` and `/api/conversations/:id/messages`. This creates no visible
-  message text and selects the correct directory even with multiple topics.
-- M1 can claim multiple turns from the same build concurrently. The daemon
-  serializes them locally to protect its worktree. Cross-machine serialization
-  and refreshing a session captured before a preceding turn finished require a
-  server change; queue subsequent turns after completion for reliable resume.
-- Events have no idempotency key, and inbox GET marks messages delivered before
-  the runtime acknowledges them. Uploads retry transient errors with backoff,
-  and inbox messages remain queued locally until the runtime accepts them.
-  A lost response can still duplicate event ingestion or lose an inbox batch.
-  Exactly-once delivery needs server support.
-- Claim/enrollment are not idempotent, so ambiguous requests are not replayed
-  inside the HTTP client. A lost claim response (or a crash before journaling
-  its ID) cannot be recovered through M1's machine API. Normal graceful shutdown
-  avoids introducing this window by draining the pending request. The server
-  must eventually expire lost assignments; its current expiry depends on the
-  whole machine going offline, not an individual turn lease.
+Chief jobs provide `topicId` directly. The server serializes each build/topic across machines and selects fresh resume state only at claim time, using immutable agent/model snapshots. Builds remain pinned to their worktree machine; restarting a failed build creates a fresh branch that another machine can claim.
+
+Claims use `requestId`, event batches use `batchId`, and completion retries are idempotent. Inbox GET reserves messages without consuming them; the daemon ACKs after runtime acceptance and retains accepted IDs while retrying an ACK. A machine/turn heartbeat lease recovers lost assignments within 30 seconds. Final event uploads drain before completion reporting, including after transient network outages.
+
+Exactly-once steer injection across a process crash is not guaranteed: a crash between runtime acceptance and server ACK can redeliver feedback. Enrollment remains non-idempotent and is not retried after ambiguous failures. See [architecture](../../docs/ARCHITECTURE.md) for schemas and limits. Real model APIs are never called by tests.
 
 ## Validation
 
@@ -129,7 +115,7 @@ npm test --workspace @muster/daemon
 Tests cover temp Git repository lifecycles, origin merge publication and
 conflicts, read-only cleanup, mock streaming/steer/interrupt, local protocol
 peers for both CLI adapters, retries/batching, registration and restart recovery,
-and the real M1 server on a temporary SQLite database over HTTP. Integration
+and the real Muster server on a temporary SQLite database over HTTP. Integration
 covers plan → confirm → build → merge → done, conflict → Review, concurrent
 work, heartbeat stopping, Chief resume, and the compiled CLI's MUSTER_HOME,
 logs, and SIGTERM handling. Tests never call a model API.

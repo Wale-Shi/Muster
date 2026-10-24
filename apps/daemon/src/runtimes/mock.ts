@@ -2,6 +2,7 @@ import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { TurnJob } from "@muster/shared";
 import type { Runtime, RuntimeContext, RunningTurn } from "./types.js";
+import { splitChief } from "./mock-chief.js";
 import { delay } from "../util.js";
 
 export class MockRuntime implements Runtime {
@@ -11,7 +12,7 @@ export class MockRuntime implements Runtime {
     const queued: string[] = [];
     let finished = false;
     const result = (async () => {
-      const text = job.readOnly ? `# Plan\n\n1. Inspect the project.\n2. Implement: ${job.prompt}\n3. Verify the changes.\n` : job.project ? `Implemented: ${job.prompt}\n` : `Chief: ${job.prompt}\n`;
+      const text = job.kind === "chief" && job.prompt.startsWith("/split") ? await splitChief(job, ctx) : job.readOnly ? `# Plan\n\n1. Inspect the project.\n2. Implement: ${job.prompt}\n3. Verify the changes.\n` : job.project ? `Implemented: ${job.prompt}\n` : `Chief: ${job.prompt}\n`;
       ctx.emit({ type: "status", status: "running" });
       let output = "";
       for (const chunk of text.match(/.{1,16}|\n/g) ?? []) {

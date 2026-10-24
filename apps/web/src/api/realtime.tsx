@@ -12,10 +12,9 @@ import type { Message, ServerEvent } from "@muster/shared";
 type Activity = {
   status: "queued" | "running" | "idle";
   unread: boolean;
-  queued: string[];
   detail?: string;
 };
-const idle: Activity = { status: "idle", unread: false, queued: [] };
+const idle: Activity = { status: "idle", unread: false };
 const RealtimeContext = createContext<{
   connected: boolean;
   activity: Record<string, Activity>;
@@ -25,54 +24,17 @@ export const useRealtime = () => useContext(RealtimeContext);
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 
-// M1 sends partial message.created payloads. Deltas update the cache in place;
-// turn boundaries reconcile the complete, authoritative history over REST.
-export function applyMessageEvent(
-  messages: Message[] | undefined,
-  event: ServerEvent,
-): Message[] | undefined {
+// Each update carries an authoritative message with an increasing revision.
+// Replayed deltas cannot duplicate text or overwrite a newer REST snapshot.
+export function applyMessageEvent(messages: Message[] | undefined, event: ServerEvent): Message[] | undefined {
   if (!messages || !event.conversationId) return messages;
-  const payload = record(event.payload);
-  if (
-    event.type === "message.created" &&
-    typeof payload.id === "string" &&
-    typeof payload.content === "string" &&
-    ["user", "agent", "system", "tool"].includes(String(payload.role))
-  ) {
-    if (messages.some((message) => message.id === payload.id)) return messages;
-    return [
-      ...messages,
-      {
-        id: payload.id,
-        conversationId: event.conversationId,
-        turnId: null,
-        role: payload.role as Message["role"],
-        content: payload.content,
-        meta: record(payload.meta),
-        createdAt: new Date().toISOString(),
-      },
-    ];
-  }
-  if (event.type !== "message.delta" && event.type !== "message.completed")
-    return messages;
-  const index = messages.findLastIndex(
-    (message) => message.role === "agent" && message.meta.streaming === true,
-  );
-  if (index < 0) return messages;
-  return messages.map((message, i) =>
-    i !== index
-      ? message
-      : {
-          ...message,
-          content:
-            event.type === "message.delta"
-              ? message.content + String(payload.content ?? "")
-              : typeof payload.content === "string"
-                ? payload.content
-                : message.content,
-          meta: { ...message.meta, streaming: event.type === "message.delta" },
-        },
-  );
+  if (event.type === "message.deleted") return messages.filter((message) => message.id !== record(event.payload).id);
+  const incoming = event.message ?? (event.type === "message.created" ? event.payload as Message : undefined);
+  if (!incoming || typeof incoming.id !== "string") return messages;
+  const index = messages.findIndex((message) => message.id === incoming.id);
+  if (index < 0) return [...messages, incoming];
+  if (Number(messages[index]!.meta.revision ?? 0) >= Number(incoming.meta.revision ?? 0)) return messages;
+  return messages.map((message, i) => i === index ? incoming : message);
 }
 
 export function mergeMessageSnapshot(
@@ -87,14 +49,7 @@ export function mergeMessageSnapshot(
       continue;
     }
     const stored = merged[index]!;
-    // REST may have captured a prefix while newer deltas were in flight.
-    // A completed REST message is always authoritative.
-    if (
-      stored.meta.streaming === true &&
-      (live.meta.streaming === false || live.content.startsWith(stored.content))
-    ) {
-      merged[index] = { ...stored, content: live.content, meta: live.meta };
-    }
+    if (Number(live.meta.revision ?? 0) > Number(stored.meta.revision ?? 0)) merged[index] = live;
   }
   return merged;
 }
@@ -164,12 +119,6 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
               unread:
                 current.unread ||
                 (type === "message.created" && payload.role !== "user"),
-              queued:
-                type === "message.queued" && typeof payload.content === "string"
-                  ? [...current.queued, payload.content]
-                  : type === "turn.completed"
-                    ? []
-                    : current.queued,
               ...(type === "status" && typeof payload.detail === "string"
                 ? { detail: payload.detail }
                 : {}),
@@ -202,6 +151,10 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         void client.invalidateQueries({ queryKey: ["documents"] });
         void client.invalidateQueries({ queryKey: ["todo"] });
       }
+      if (conversationId && ["message.queued", "message.delivered", "message.queue_changed", "turn.completed"].includes(type)) {
+        void client.invalidateQueries({ queryKey: ["queued-messages", conversationId] });
+      }
+      if (type.startsWith("turn.")) void client.invalidateQueries({ queryKey: ["topics"] });
       if (type === "turn.completed") {
         void client.invalidateQueries({ queryKey: ["usage"] });
         void client.invalidateQueries({ queryKey: ["usage-details"] });

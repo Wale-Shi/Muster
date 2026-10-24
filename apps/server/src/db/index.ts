@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { DEFAULT_MODELS } from "@muster/shared";
 import type { Agent, Build, Document, Machine, Message, Project, Todo, Topic, Turn } from "@muster/shared";
 import { migrations } from "./migrations.js";
 
@@ -47,7 +48,7 @@ export class MusterDb {
     const timestamp = now();
     if (Number((this.raw.prepare("SELECT count(*) AS count FROM agents WHERE is_chief = 1").get() as Row).count) === 0) {
       this.raw.prepare("INSERT INTO agents VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(id(), "Chief", "Coordinate work, delegate todos, and report at decision gates.", "codex", "gpt-5.6-sol", null, null, 1, timestamp);
+        .run(id(), "Chief", "Coordinate work, delegate todos, and report at decision gates.", "codex", DEFAULT_MODELS.codex, null, null, 1, timestamp);
     }
     if (Number((this.raw.prepare("SELECT count(*) AS count FROM topics").get() as Row).count) === 0) {
       this.raw.prepare("INSERT INTO topics VALUES (?, ?, ?, ?, ?)").run(id(), "General", null, timestamp, timestamp);
@@ -62,7 +63,12 @@ export class MusterDb {
   turn(row: Row): Turn { return { id: String(row.id), buildId: String(row.build_id), kind: row.kind as Turn["kind"], status: row.status as Turn["status"], machineId: row.machine_id as string | null, prompt: String(row.prompt), startedAt: row.started_at as string | null, endedAt: row.ended_at as string | null, error: row.error as string | null, tokensIn: Number(row.tokens_in), tokensOut: Number(row.tokens_out) }; }
   message(row: Row): Message { return { id: String(row.id), conversationId: String(row.conversation_id), turnId: row.turn_id as string | null, role: row.role as Message["role"], content: String(row.content), meta: json(row.meta_json, {}), createdAt: String(row.created_at) }; }
   document(row: Row): Document { return { id: String(row.id), buildId: String(row.build_id), kind: row.kind as Document["kind"], version: Number(row.version), content: String(row.content), createdAt: String(row.created_at) }; }
-  topic(row: Row): Topic { return { id: String(row.id), title: String(row.title), runtimeSession: json(row.runtime_session_json, null), createdAt: String(row.created_at), updatedAt: String(row.updated_at) }; }
+  topic(row: Row): Topic { return { id: String(row.id), title: String(row.title), runtimeSession: json(row.runtime_session_json, null), ...this.topicActivity(String(row.id)), createdAt: String(row.created_at), updatedAt: String(row.updated_at) }; }
+
+  private topicActivity(topicId: string): Pick<Topic, "activity" | "activeTurnId"> {
+    const turn = this.row("SELECT t.id, t.status FROM turns t JOIN builds b ON b.id=t.build_id WHERE b.branch=? AND t.status IN ('queued','running') ORDER BY CASE t.status WHEN 'running' THEN 0 ELSE 1 END, t.rowid LIMIT 1", `chief:${topicId}`);
+    return { activity: turn ? turn.status as "queued" | "running" : "idle", activeTurnId: turn ? String(turn.id) : null };
+  }
 
   rows(sql: string, ...params: unknown[]): Row[] { return this.raw.prepare(sql).all(...params as SqlValue[]) as Row[]; }
   row(sql: string, ...params: unknown[]): Row | undefined { return this.raw.prepare(sql).get(...params as SqlValue[]) as Row | undefined; }

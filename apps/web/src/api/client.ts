@@ -1,6 +1,5 @@
 import type {
   Agent,
-  Build,
   Document,
   Machine,
   Message,
@@ -8,13 +7,12 @@ import type {
   Runtime,
   Todo,
   Topic,
-  Turn,
-  UsageSummary,
+  UsageReport,
+  QueuedMessage,
+  TodoDetail,
 } from "@muster/shared";
 
-export type TodoDetail = Todo & {
-  builds: (Build & { turns: Turn[]; documents: Document[] })[];
-};
+export type { TodoDetail } from "@muster/shared";
 export type AgentInput = {
   name: string;
   role: string;
@@ -125,5 +123,8 @@ export const api = {
     request<{ turnId: string }>(`/topics/${pathId(id)}/messages`, "POST", {
       content,
     }),
-  usage: () => request<UsageSummary>("/usage"),
+  queuedMessages: (id: string) => request<QueuedMessage[]>(`/conversations/${pathId(id)}/queued-messages`),
+  editQueued: (id: string, messageId: string, content: string) => request(`/conversations/${pathId(id)}/queued-messages/${pathId(messageId)}`, "PATCH", { content }),
+  retractQueued: (id: string, messageId: string) => request(`/conversations/${pathId(id)}/queued-messages/${pathId(messageId)}`, "DELETE"),
+  usage: () => request<UsageReport>("/usage"),
 };

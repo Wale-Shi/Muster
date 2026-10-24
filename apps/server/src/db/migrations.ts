@@ -16,4 +16,16 @@ export const migrations = [
   CREATE INDEX messages_conversation_idx ON messages(conversation_id, created_at);
   CREATE INDEX documents_build_idx ON documents(build_id, kind, version);
   `,
+  `
+  ALTER TABLE queued_messages ADD COLUMN source_message_id TEXT REFERENCES messages(id);
+  ALTER TABLE queued_messages ADD COLUMN delivery_turn_id TEXT REFERENCES turns(id);
+  ALTER TABLE turns ADD COLUMN agent_snapshot_json TEXT;
+  ALTER TABLE turns ADD COLUMN completion_json TEXT;
+  ALTER TABLE turns ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE turns ADD COLUMN last_reported_at TEXT;
+  CREATE TABLE event_batches (turn_id TEXT NOT NULL REFERENCES turns(id), batch_id TEXT NOT NULL, body_json TEXT NOT NULL, PRIMARY KEY(turn_id, batch_id));
+  CREATE TABLE machine_claims (machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE, request_id TEXT NOT NULL, job_json TEXT NOT NULL, PRIMARY KEY(machine_id, request_id));
+  CREATE TABLE server_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_json TEXT NOT NULL);
+  CREATE INDEX turns_build_status_idx ON turns(build_id, status);
+  `,
 ] as const;

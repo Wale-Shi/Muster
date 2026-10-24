@@ -15,7 +15,8 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@muster/shared": "0.1.0"
+    "@muster/shared": "0.1.0",
+    "@modelcontextprotocol/sdk": "^1.32.0"
   },
   "devDependencies": {
     "@hono/node-server": "^1.19.9"

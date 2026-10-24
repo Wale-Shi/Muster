@@ -21,7 +21,7 @@ export async function git(cwd: string, ...args: string[]): Promise<string> {
 }
 
 type Project = NonNullable<TurnJob["project"]>;
-export interface Workspace { cwd: string; repo: string; branch: string; startHead: string; project: Project }
+export interface Workspace { cwd: string; repo: string; branch: string; startHead: string; baseCommit: string; project: Project }
 export class Worktrees {
   private mutex = new Mutex();
   constructor(readonly root: string) {}
@@ -48,7 +48,7 @@ export class Worktrees {
           throw new Error(`Workspace ${cwd} does not belong to ${branch}`);
         }
       }
-      return { cwd, repo, branch, startHead: await git(cwd, "rev-parse", "HEAD"), project };
+      return { cwd, repo, branch, startHead: await git(cwd, "rev-parse", "HEAD"), baseCommit: await git(cwd, "merge-base", "HEAD", `refs/remotes/origin/${project.baseBranch}`), project };
     });
   }
 

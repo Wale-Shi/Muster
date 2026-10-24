@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS turns (
   id TEXT PRIMARY KEY, build_id TEXT NOT NULL REFERENCES builds(id), kind TEXT NOT NULL,
   status TEXT NOT NULL, machine_id TEXT REFERENCES machines(id), prompt TEXT NOT NULL,
   started_at TEXT, ended_at TEXT, error TEXT, tokens_in INTEGER NOT NULL DEFAULT 0,
-  tokens_out INTEGER NOT NULL DEFAULT 0, session_state_json TEXT, stop_requested INTEGER NOT NULL DEFAULT 0
+  tokens_out INTEGER NOT NULL DEFAULT 0, session_state_json TEXT, stop_requested INTEGER NOT NULL DEFAULT 0,
+  agent_snapshot_json TEXT, completion_json TEXT, duration_ms INTEGER NOT NULL DEFAULT 0, last_reported_at TEXT
 );
 CREATE TABLE IF NOT EXISTS messages (
   id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, turn_id TEXT REFERENCES turns(id),
@@ -50,7 +51,8 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 CREATE TABLE IF NOT EXISTS queued_messages (
   id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, content TEXT NOT NULL,
-  delivered_at TEXT, created_at TEXT NOT NULL
+  delivered_at TEXT, created_at TEXT NOT NULL, delivery_turn_id TEXT REFERENCES turns(id),
+  source_message_id TEXT REFERENCES messages(id)
 );
 CREATE TABLE IF NOT EXISTS mcp_tokens (
   token TEXT PRIMARY KEY, turn_id TEXT NOT NULL REFERENCES turns(id), created_at TEXT NOT NULL
@@ -59,4 +61,14 @@ CREATE INDEX IF NOT EXISTS turns_queue_idx ON turns(status);
 CREATE INDEX IF NOT EXISTS messages_conversation_idx ON messages(conversation_id, created_at);
 CREATE INDEX IF NOT EXISTS documents_build_idx ON documents(build_id, kind, version);
 
-PRAGMA user_version = 1;
+CREATE TABLE IF NOT EXISTS event_batches (
+  turn_id TEXT NOT NULL REFERENCES turns(id), batch_id TEXT NOT NULL, body_json TEXT NOT NULL,
+  PRIMARY KEY(turn_id, batch_id)
+);
+CREATE TABLE IF NOT EXISTS machine_claims (
+  machine_id TEXT NOT NULL REFERENCES machines(id) ON DELETE CASCADE, request_id TEXT NOT NULL, job_json TEXT NOT NULL,
+  PRIMARY KEY(machine_id, request_id)
+);
+CREATE TABLE IF NOT EXISTS server_events (id INTEGER PRIMARY KEY AUTOINCREMENT, event_json TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS turns_build_status_idx ON turns(build_id, status);
+PRAGMA user_version = 2;

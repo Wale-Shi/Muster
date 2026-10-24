@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Pencil, Plus } from "lucide-react";
-import type { Agent, Runtime } from "@muster/shared";
+import { DEFAULT_MODELS, type Agent, type Runtime } from "@muster/shared";
 import { api, type AgentInput } from "../api/client";
 import { useAgents, useTodos } from "../api/queries";
 import { Avatar, Dialog, Empty, ErrorNotice, Loading } from "../components/ui";
@@ -17,7 +17,7 @@ function AgentDialog({
     name: agent?.name ?? "",
     role: agent?.role ?? "",
     runtime: agent?.runtime ?? "codex",
-    model: agent?.model ?? "",
+    model: agent?.model ?? DEFAULT_MODELS.codex,
     reasoning: agent?.reasoning ?? null,
   });
   const client = useQueryClient();
@@ -75,7 +75,7 @@ function AgentDialog({
               <select
                 value={input.runtime}
                 onChange={(event) =>
-                  setInput({ ...input, runtime: event.target.value as Runtime })
+                  setInput({ ...input, runtime: event.target.value as Runtime, model: DEFAULT_MODELS[event.target.value as Runtime] })
                 }
               >
                 <option value="codex">Codex</option>

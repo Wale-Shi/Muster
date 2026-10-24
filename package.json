@@ -13,14 +13,18 @@
     "apps/web"
   ],
   "scripts": {
-    "dev": "npm run dev --workspaces --if-present",
+    "dev": "npm run build --workspace @muster/shared && node scripts/dev.mjs",
     "build": "npm run build --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "daemon": "npm run build --workspace @muster/shared && npm run build --workspace @muster/daemon && node apps/daemon/dist/index.js start --server http://127.0.0.1:7420",
+    "start": "node apps/server/dist/index.js",
+    "e2e": "node scripts/e2e.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.16",
+    "tsx": "^4.21.0"
   }
 }

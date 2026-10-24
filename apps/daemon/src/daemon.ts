@@ -30,7 +30,6 @@ export interface DaemonOptions {
 export class Daemon {
   private abort = new AbortController();
   private active = new Map<string, Active>();
-  private builds = new Mutex();
   private journal = new Mutex();
   private worktrees: Worktrees;
   private runtimes: Record<RuntimeName, Runtime>;
@@ -95,7 +94,8 @@ export class Daemon {
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
     if (saved.machineId !== machineId) return;
     for (const turnId of saved.turns) {
-      await this.options.client.complete(turnId, { status: "stopped", error: "Daemon restarted before this turn was reported complete" });
+      try { await this.options.client.complete(turnId, { status: "stopped", error: "Daemon restarted before this turn was reported complete" }); }
+      catch (error) { if (!(error instanceof HttpError && error.status === 409 && /Turn is (done|failed|stopped)/.test(error.message))) throw error; }
       this.options.log("info", "Recovered abandoned turn", { turnId });
     }
     await this.saveRunning();
@@ -136,7 +136,7 @@ export class Daemon {
           this.active.set(job.turnId, active);
           try { await this.saveRunning(); }
           catch (error) { active.stopped = true; this.options.log("error", "Cannot journal claimed turn", { turnId: job.turnId, error: errorText(error) }); }
-          active.task = this.builds.run(job.buildId, () => this.run(job, active)).catch((error: unknown) => {
+          active.task = this.run(job, active).catch((error: unknown) => {
             this.options.log("error", "Turn reporting failed", { turnId: job.turnId, error: errorText(error) });
           }).finally(async () => {
             this.active.delete(job.turnId);
@@ -163,7 +163,8 @@ export class Daemon {
       let cwd: string;
       if (job.project) { workspace = await this.worktrees.prepare(job); cwd = workspace.cwd; }
       else {
-        const topicId = await this.options.client.chiefTopic(job);
+        const topicId = job.topicId;
+        if (!topicId) throw new Error("Chief job is missing topicId");
         cwd = join(this.options.client.options.home, "chief", safeId(topicId));
         await mkdir(cwd, { recursive: true });
       }
@@ -176,12 +177,17 @@ export class Daemon {
         active.runtime = runtime;
         if (active.stopped) await runtime.interrupt();
         inboxTask = (async () => {
-          // Retain destructively-read inbox messages until the adapter accepts them.
-          const pending: Array<{ id: string; content: string }> = [];
+          // ACK only after runtime acceptance. Retry a lost ACK without steering twice.
+          const pending: Array<{ id: string; content: string; accepted?: boolean }> = [];
           while (!inboxDone) {
             try {
               if (!pending.length) pending.push(...await this.options.client.inbox(job.turnId, inboxAbort.signal));
-              while (pending.length && !inboxDone) { await runtime.steer(pending[0]!.content); pending.shift(); }
+              while (pending.length && !inboxDone) {
+                const message = pending[0]!;
+                if (!message.accepted) { await runtime.steer(message.content); message.accepted = true; }
+                await this.options.client.ackInbox(job.turnId, [message.id]);
+                pending.shift();
+              }
             } catch (error) { if (!inboxDone) this.options.log("error", "Inbox delivery failed", { turnId: job.turnId, error: errorText(error) }); }
             await delay(this.options.inboxMs ?? 500, inboxAbort.signal);
           }
@@ -193,14 +199,23 @@ export class Daemon {
       }
     } catch (error) { payload = { ...payload, status: active.stopped ? "stopped" : "failed", error: errorText(error) }; }
     finally {
+      if (workspace) payload.baseCommit = workspace.baseCommit;
       inboxDone = true; inboxAbort.abort();
       await inboxTask;
       if (job.readOnly && workspace) {
         try { await this.worktrees.reset(workspace); }
         catch (error) { payload.status = "failed"; payload.error = `Read-only cleanup failed: ${errorText(error)}`; }
       }
-      try { await batch.close(); }
-      catch (error) { this.options.log("error", "Final event upload failed", { turnId: job.turnId, error: errorText(error) }); }
+      for (;;) {
+        try { await batch.close(); break; }
+        catch (error) {
+          this.options.log("error", "Final event upload failed", { turnId: job.turnId, error: errorText(error) });
+          if (error instanceof HttpError && error.status < 500 && error.status !== 429) {
+            payload.status = "failed"; payload.error = `Event upload rejected: ${errorText(error)}`; break;
+          }
+          await delay(4000);
+        }
+      }
       // Keep the turn owned and heartbeating until its result reaches the server.
       // Otherwise a long outage would strand it forever on an online machine.
       for (;;) {

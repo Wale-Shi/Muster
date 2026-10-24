@@ -171,6 +171,7 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
               <Conversation
                 key={topic?.id ?? "none"}
                 conversationId={topic?.id ?? ""}
+                status={topic?.activity ?? "idle"}
                 disabled={!topic ? "Create a topic to get started" : undefined}
                 reference={reference}
                 onReferenceConsumed={consumeReference}

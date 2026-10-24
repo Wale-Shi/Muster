@@ -14,8 +14,11 @@ describe("machine protocol", () => {
     expect(job).toMatchObject({ todoId, kind: "plan", readOnly: true, branch: expect.stringMatching(/^muster\/conv-/), agent: { runtime: "mock" } });
     await requestJson(app, `/api/todos/${todoId}/message`, "POST", { content: "Include edge cases" });
     expect((await requestJson(app, `/api/machine/turns/${job.turnId}/inbox`, "GET", undefined, machine.token)).json).toEqual([expect.objectContaining({ content: "Include edge cases" })]);
+    const pending = (await requestJson(app, `/api/machine/turns/${job.turnId}/inbox`, "GET", undefined, machine.token)).json;
+    expect(pending).toHaveLength(1);
+    await requestJson(app, `/api/machine/turns/${job.turnId}/inbox/ack`, "POST", { ids: [pending[0].id] }, machine.token);
     expect((await requestJson(app, `/api/machine/turns/${job.turnId}/inbox`, "GET", undefined, machine.token)).json).toEqual([]);
-    const events = await requestJson(app, `/api/machine/turns/${job.turnId}/events`, "POST", [{ type: "message.delta", content: "Plan " }, { type: "message.delta", content: "it" }, { type: "message.completed" }, { type: "tool.started", tool: "read" }, { type: "tool.completed", tool: "read", output: "ok" }], machine.token);
+    const events = await requestJson(app, `/api/machine/turns/${job.turnId}/events`, "POST", { batchId: "events-1", events: [{ type: "message.delta", content: "Plan " }, { type: "message.delta", content: "it" }, { type: "message.completed" }, { type: "tool.started", tool: "read" }, { type: "tool.completed", tool: "read", output: "ok" }] }, machine.token);
     expect(events.json.accepted).toBe(5);
     await requestJson(app, `/api/machine/turns/${job.turnId}/complete`, "POST", { status: "done", plan: "1. Implement\n2. Test", usage: { tokensIn: 10, tokensOut: 20, durationMs: 30 }, sessionState: { sessionId: "s1" } }, machine.token);
     const todo = (await requestJson(app, `/api/todos/${todoId}`)).json.data;

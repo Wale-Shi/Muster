@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Clock3 } from "lucide-react";
 import { api } from "../api/client";
-import { useAgents, useTodos } from "../api/queries";
 import { Empty, ErrorNotice, Loading } from "../components/ui";
 import { duration, number } from "../lib/format";
 
@@ -54,35 +53,20 @@ function TokenChart({ rows }: { rows: Row[] }) {
 }
 export function Usage() {
   const usage = useQuery({ queryKey: ["usage"], queryFn: api.usage });
-  const todos = useTodos();
-  const agents = useAgents();
-  const ids = todos.data?.map((todo) => todo.id).sort() ?? [];
-  const details = useQuery({
-    queryKey: ["usage-details", ids],
-    queryFn: () => Promise.all(ids.map((id) => api.todo(id))),
-    enabled: todos.isSuccess,
-  });
   const [group, setGroup] = useState<"agent" | "model" | "day">("agent");
   const rows = useMemo(() => {
     const grouped = new Map<string, Row>();
-    for (const todo of details.data ?? [])
-      for (const build of todo.builds) {
-        const agent = agents.data?.find((item) => item.id === todo.agentId);
-        const label =
-          group === "day"
-            ? build.createdAt.slice(0, 10)
-            : group === "model"
-              ? (agent?.model ?? "Unassigned")
-              : (agent?.name ?? "Unassigned");
+    for (const entry of usage.data?.entries ?? []) {
+        const label = group === "day" ? entry.startedAt.slice(0, 10) : group === "model" ? entry.model : entry.agentName;
         const row = grouped.get(label) ?? {
           label,
           input: 0,
           output: 0,
           durationMs: 0,
         };
-        row.input += build.tokensIn;
-        row.output += build.tokensOut;
-        row.durationMs += build.durationMs;
+        row.input += entry.tokensIn;
+        row.output += entry.tokensOut;
+        row.durationMs += entry.durationMs;
         grouped.set(label, row);
       }
     return [...grouped.values()].sort((a, b) =>
@@ -90,7 +74,7 @@ export function Usage() {
         ? a.label.localeCompare(b.label)
         : b.input + b.output - (a.input + a.output),
     );
-  }, [details.data, agents.data, group]);
+  }, [usage.data, group]);
   const summary = usage.data;
   return (
     <div className="management-page">
@@ -103,7 +87,7 @@ export function Usage() {
           <h2>A little perspective on the work.</h2>
           <p>Token usage and time across your workspace.</p>
         </div>
-        <ErrorNotice error={usage.error || todos.error || agents.error} />
+        <ErrorNotice error={usage.error} />
         {usage.isPending ? (
           <Loading />
         ) : (
@@ -154,12 +138,10 @@ export function Usage() {
             </div>
           </div>
           <p className="hint usage-explainer">
-            Breakdowns use todo builds only; workspace totals also include
-            Chief. Agent/model use current assignments; days use build start
-            dates.
+            Completed turns, including Chief. Agent and model reflect each turn when it ran; days use UTC start dates.
           </p>
-          <ErrorNotice error={details.error} />
-          {details.isPending ? (
+          <ErrorNotice error={usage.error} />
+          {usage.isPending ? (
             <Loading />
           ) : rows.length ? (
             <TokenChart rows={rows} />

@@ -1,8 +1,9 @@
-import type { AgentEvent } from "@muster/shared";
+import type { AgentEvent, EventUpload } from "@muster/shared";
 import type { MachineClient } from "./client.js";
 
 export class EventBatcher {
   private queue: AgentEvent[] = [];
+  private pending: EventUpload | undefined;
   private flight: Promise<void> | undefined;
   private timer: NodeJS.Timeout;
   constructor(private client: MachineClient, private turnId: string, private onError: (error: unknown) => void, flushMs = 250) {
@@ -12,10 +13,10 @@ export class EventBatcher {
   async flush(): Promise<void> {
     if (this.flight) return this.flight;
     const send = async () => {
-      while (this.queue.length) {
-        const batch = this.queue.splice(0, 200);
-        try { await this.client.events(this.turnId, batch); }
-        catch (error) { this.queue.unshift(...batch); throw error; }
+      while (this.pending || this.queue.length) {
+        this.pending ??= { batchId: crypto.randomUUID(), events: this.queue.splice(0, 200) };
+        await this.client.events(this.turnId, this.pending);
+        this.pending = undefined;
       }
     };
     this.flight = send();

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { ZodError } from "zod";
@@ -24,7 +24,7 @@ export interface CreateAppOptions {
 
 export function createApp(options: CreateAppOptions = {}): { app: Hono; services: AppServices } {
   const db = new MusterDb(options.databasePath ?? ":memory:");
-  const events = new EventBus();
+  const events = new EventBus(db);
   const orchestrator = new Orchestrator(db, events, options.publicUrl ?? "http://127.0.0.1:7420", options.autoFollowUp ?? true);
   const scheduler = new Scheduler(db, orchestrator, events);
   const services: AppServices = { db, events, orchestrator, scheduler, enrollKey: options.enrollKey ?? null, claimWaitMs: options.claimWaitMs ?? 25_000 };
@@ -42,7 +42,7 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
   app.route("/api", apiRoutes(services));
   app.all("/mcp", (c) => handleMcp(c.req.raw, services));
 
-  const webRoot = resolve(process.cwd(), "apps/web/dist");
+  const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
   if ((options.serveWeb ?? process.env.NODE_ENV === "production") && existsSync(webRoot)) {
     app.use("/*", serveStatic({ root: webRoot }));
     app.get("/*", serveStatic({ root: webRoot, path: "index.html" }));

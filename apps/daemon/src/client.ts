@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
-import type { AgentEvent, Runtime, TurnCompletePayload, TurnJob } from "@muster/shared";
+import type { EventUpload, Runtime, TurnCompletePayload, TurnJob } from "@muster/shared";
 import { delay } from "./util.js";
 
 export class HttpError extends Error {
@@ -56,15 +56,12 @@ export class MachineClient {
     return this.registration;
   }
   heartbeat(running: string[]): Promise<{ stop: string[] }> { return this.request("/api/machine/heartbeat", { running }); }
-  claim(signal?: AbortSignal): Promise<TurnJob | null> { return this.request("/api/machine/claim", {}, signal, false); }
-  events(turnId: string, events: AgentEvent[]): Promise<{ accepted: number }> { return this.request(`/api/machine/turns/${turnId}/events`, events); }
+  claim(signal?: AbortSignal): Promise<TurnJob | null> { return this.request("/api/machine/claim", { requestId: crypto.randomUUID() }, signal); }
+  events(turnId: string, upload: EventUpload): Promise<{ accepted: number }> { return this.request(`/api/machine/turns/${turnId}/events`, upload); }
   inbox(turnId: string, signal?: AbortSignal): Promise<Array<{ id: string; content: string }>> { return this.request(`/api/machine/turns/${turnId}/inbox`, undefined, signal); }
+  ackInbox(turnId: string, ids: string[]): Promise<{ accepted: true }> { return this.request(`/api/machine/turns/${turnId}/inbox/ack`, { ids }); }
   async complete(turnId: string, payload: TurnCompletePayload): Promise<void> {
-    try { await this.request(`/api/machine/turns/${turnId}/complete`, payload); }
-    catch (error) {
-      // Completion may have succeeded before its response was lost. M1 rejects repeats.
-      if (!(error instanceof HttpError && error.status === 409 && /Turn is (done|failed|stopped)/.test(error.message))) throw error;
-    }
+    await this.request(`/api/machine/turns/${turnId}/complete`, payload);
   }
 
   async turnNumber(job: TurnJob): Promise<number> {
@@ -74,15 +71,4 @@ export class MachineClient {
     return index + 1;
   }
 
-  async chiefTopic(job: TurnJob): Promise<string> {
-    // M1 omits topicId/branch from Chief jobs. An empty delta creates a message
-    // carrying turnId in the correct conversation, without adding visible text.
-    await this.events(job.turnId, [{ type: "message.delta", content: "" }]);
-    const topics = await this.request<{ data: Array<{ id: string }> }>("/api/topics");
-    for (const topic of topics.data) {
-      const messages = await this.request<{ data: Array<{ turnId: string | null }> }>(`/api/conversations/${encodeURIComponent(topic.id)}/messages`);
-      if (messages.data.some((message) => message.turnId === job.turnId)) return topic.id;
-    }
-    throw new Error(`Cannot resolve Chief topic for ${job.turnId}`);
-  }
 }

@@ -21,8 +21,8 @@ readline.createInterface({input:process.stdin}).on('line', line => {
  if(m.method==='initialize') { if(p.clientInfo.name!=='muster-daemon'||p.clientInfo.title!==null) throw Error('initialize'); reply({}); }
  else if(m.method==='initialized') {}
  else if(m.method==='thread/start'||m.method==='thread/resume') {
-  if(p.approvalPolicy!=='never'||p.developerInstructions!=='Follow the task'||!p.config.mcp_servers.muster.http_headers.Authorization) throw Error('thread config');
-  if(p.sandbox!=='workspace-write') throw Error('sandbox');
+  if(p.approvalPolicy!=='never'||p.developerInstructions!=='Follow the task'||p.config.mcp_servers.muster.http_headers.Authorization!=='Bearer test-only'||p.config.mcp_servers.muster.url!=='http://localhost:7420/mcp'||p.config.mcp_servers.muster.required!==true) throw Error('thread config');
+  if(p.sandbox!=='read-only') throw Error('sandbox');
   if(m.method==='thread/resume' && p.threadId!=='thread-test') throw Error('resume');
   reply({thread:{id:'thread-test'}});
  }
@@ -78,7 +78,8 @@ const readline=require('node:readline');
 const args=process.argv.slice(1);
 if(!args.includes('--include-partial-messages')||!args.includes('--resume')||args[args.indexOf('--resume')+1]!=='session-test') throw Error('CLI args');
 const mcp=JSON.parse(args[args.indexOf('--mcp-config')+1]);
-if(!mcp.mcpServers.muster.headers.Authorization) throw Error('MCP');
+if(mcp.mcpServers.muster.headers.Authorization!=='Bearer test-only'||mcp.mcpServers.muster.url!=='http://localhost:7420/mcp'||mcp.mcpServers.muster.type!=='http') throw Error('MCP');
+if(args[args.indexOf('--system-prompt-snapshot')+1]!=='off') throw Error('stale instructions');
 const send=x=>process.stdout.write(JSON.stringify(x)+'\\n');
 let count=0;
 readline.createInterface({input:process.stdin}).on('line',line=>{

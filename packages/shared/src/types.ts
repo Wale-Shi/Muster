@@ -115,10 +115,21 @@ export interface Document {
   createdAt: Timestamp;
 }
 
+export interface QueuedMessage {
+  id: Id;
+  conversationId: Id;
+  content: string;
+  createdAt: Timestamp;
+  deliveredAt: Timestamp | null;
+  delivering: boolean;
+}
+
 export interface Topic {
   id: Id;
   title: string;
   runtimeSession: Record<string, unknown> | null;
+  activity: "idle" | "queued" | "running";
+  activeTurnId: Id | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
@@ -130,3 +141,20 @@ export interface UsageSummary {
   builds: number;
   turns: number;
 }
+
+export interface UsageEntry {
+  turnId: Id;
+  buildId: Id;
+  todoId: Id | null;
+  topicId: Id | null;
+  agentId: Id | null;
+  agentName: string;
+  runtime: Runtime | null;
+  model: string;
+  startedAt: Timestamp;
+  tokensIn: number;
+  tokensOut: number;
+  durationMs: number;
+}
+export interface UsageReport extends UsageSummary { entries: UsageEntry[] }
+export type TodoDetail = Todo & { builds: (Build & { turns: Turn[]; documents: Document[] })[] };

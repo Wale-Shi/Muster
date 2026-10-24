@@ -88,9 +88,9 @@ export class CodexRuntime implements Runtime {
       process.send({ method: "initialized" });
       if (stopped) { settle("stopped"); return; }
       const config: Wire = {
-        mcp_servers: { muster: { url: job.mcp.url, http_headers: { Authorization: `Bearer ${job.mcp.token}` } } },
+        mcp_servers: { muster: { url: job.mcp.url, required: true, http_headers: { Authorization: `Bearer ${job.mcp.token}` } } },
       };
-      const params = { cwd: ctx.cwd, model: job.agent.model, developerInstructions: job.systemInstructions, approvalPolicy: "never", sandbox: job.readOnly ? "workspace-write" : "danger-full-access", config };
+      const params = { cwd: ctx.cwd, model: job.agent.model, developerInstructions: job.systemInstructions, approvalPolicy: "never", sandbox: job.readOnly ? "read-only" : "danger-full-access", config };
       const response = await rpc(threadId ? "thread/resume" : "thread/start", { ...params, ...(threadId ? { threadId } : {}) });
       threadId = String(response.thread.id);
       if (stopped) { settle("stopped"); return; }

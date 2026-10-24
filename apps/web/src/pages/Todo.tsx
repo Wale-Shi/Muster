@@ -60,7 +60,7 @@ export function TodoPage() {
       : ["planning", "building"].includes(todo.phase)
         ? "running"
         : "idle";
-  const canMessage = ["planning", "building", "confirm", "review"].includes(
+  const canMessage = ["queued", "planning", "building", "confirm", "review"].includes(
     todo.phase,
   );
   return (

@@ -31,22 +31,30 @@ it("persists a private registration and reuses it on restart", async () => {
   expect(fetcher).toHaveBeenCalledTimes(2); expect(String(fetcher.mock.calls[1]![0])).toContain("heartbeat");
 });
 it("retains a failed event batch and drains in order before close", async () => {
-  const batches: unknown[] = []; let fail = true;
+  const batches: Array<{ batchId: string; events: unknown[] }> = []; let fail = true;
+  let failedId: string | undefined;
   const c = await client((async (_url, options) => {
-    if (fail) return new Response("bad", { status: 400 });
+    if (fail) { failedId = JSON.parse(String(options?.body)).batchId; return new Response("bad", { status: 400 }); }
     batches.push(JSON.parse(String(options?.body))); return Response.json({ accepted: 1 });
   }) as typeof fetch);
   const batch = new EventBatcher(c, "turn", () => {}, 60_000);
   batch.emit({ type: "message.delta", content: "a" });
   await expect(batch.flush()).rejects.toThrow("400");
   batch.emit({ type: "message.completed", content: "ab" }); fail = false;
-  await batch.close(); expect(batches).toEqual([[{ type: "message.delta", content: "a" }, { type: "message.completed", content: "ab" }]]);
+  await batch.close();
+  expect(batches.map((item) => item.events)).toEqual([[{ type: "message.delta", content: "a" }], [{ type: "message.completed", content: "ab" }]]);
+  expect(batches[0]!.batchId).toBe(failedId);
 });
-it("does not retry an ambiguous claim or enrollment", async () => {
-  const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError("connection lost")); const c = await client(fetcher);
-  await expect(c.claim()).rejects.toThrow("connection lost"); expect(fetcher).toHaveBeenCalledTimes(1);
-  await expect(c.enroll()).rejects.toThrow("connection lost"); expect(fetcher).toHaveBeenCalledTimes(2);
+it("retries claims with the same request ID and does not retry enrollment", async () => {
+  const fetcher = vi.fn<typeof fetch>().mockRejectedValueOnce(new TypeError("connection lost")).mockResolvedValueOnce(Response.json(null));
+  const c = await client(fetcher);
+  expect(await c.claim()).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher.mock.calls[0]![1]?.body).toBe(fetcher.mock.calls[1]![1]?.body);
+  fetcher.mockRejectedValue(new TypeError("connection lost"));
+  await expect(c.enroll()).rejects.toThrow("connection lost"); expect(fetcher).toHaveBeenCalledTimes(3);
 });
+
 it("drains a claim assigned during shutdown and reports that turn as stopped", async () => {
   const { Daemon } = await import("../src/daemon.js");
   const { makeJob } = await import("./helpers.js");

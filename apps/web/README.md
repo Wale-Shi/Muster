@@ -6,7 +6,7 @@ react-markdown/remark-gfm, dnd-kit, and Lucide. Fonts are bundled locally.
 From the repository root:
 
 ```sh
-npm install --package-lock=false
+npm install
 npm run dev --workspace @muster/web
 npm run typecheck --workspace @muster/web
 npm run build --workspace @muster/web
@@ -15,8 +15,7 @@ npm test --workspace @muster/web
 
 The dev server uses port 5173 and proxies `/api` and `/mcp` to
 `http://localhost:7420`. Production output is `apps/web/dist`.
-M3 changes only `apps/web`; the coordinator must regenerate the root
-`package-lock.json` before using `npm ci`.
+`npm run dev` at the root starts both server and web concurrently. `npm run build && npm start` serves the production SPA from 7420.
 
 Keyboard: Cmd/Ctrl+B sidebar, Cmd/Ctrl+K search, N new task,
 Cmd/Ctrl+Alt+B workspace board, Cmd/Ctrl+Alt+Enter review completion.
@@ -27,26 +26,13 @@ Theme defaults to the system setting and cycles System → Dark → Light.
 Sidebar state, workspace divider, todo divider, and board visibility persist
 in localStorage. On small screens use the panel buttons or horizontal swipes.
 
-## M1 contract limits and client behavior
+## Integrated server contract (M4)
 
-- No queued-message list, delivery event, edit, or retract endpoint exists.
-  The tray shows messages observed via SSE in this browser session, labels
-  delivery as unknown, and clears at turn completion. It does not claim
-  that a queued message is still undelivered.
-- Usage is aggregate-only. Client breakdowns load todo builds, exclude Chief,
-  use current agent/model assignments, and group days by build creation date.
-  Workspace totals come directly from `/api/usage` and include Chief.
-- Topics expose no persisted active-turn or unread state. Chief activity and
-  unread indicators reflect events observed during this browser session;
-  associated todo phases can be restored from REST.
-- SSE has no replay IDs, and delta payloads omit message/turn IDs. One
-  EventSource updates message caches directly, buffers messages during the
-  initial history fetch, and reconciles history at completion/reconnect.
-  Independently concurrent Chief turns on the same topic cannot be reliably
-  separated by the client until REST reconciliation.
-- Board dragging supports the server's Review → Done action. Other phases
-  dropped into Done show an explanation; arbitrary phase moves are not
-  attempted. Task-to-composer drops become removable number references.
+Shared models and event schemas in `packages/shared` define the contract. The pending steer tray loads from REST, supports edit/retract before dispatch, displays in-flight delivery, and removes messages only after an ACK event. Usage comes from server-side turn snapshots and includes Chief; changing an agent does not rewrite old breakdowns. Chief activity restores from persisted topic fields. Unread badges remain local to the browser session.
+
+SSE provides persistent IDs and replay after `Last-Event-ID`. Deltas carry message/turn IDs plus complete message snapshots and increasing revisions. The client upserts these and reconciles history fetch races without duplicating replayed text.
+
+Board dragging supports Review → Done. Other phases dropped into Done show an explanation; task-to-composer drops become removable number references.
 
 Tests cover all phase mappings, the seven-day Done cutoff, diff parsing and
 filtering, rendered board placement, and streaming cache reconciliation.

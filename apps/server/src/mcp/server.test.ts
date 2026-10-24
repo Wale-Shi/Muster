@@ -29,3 +29,36 @@ describe("MCP server", () => {
     expect((await requestJson(app, `/api/todos/${createdTodo.id}`)).json.data.phase).toBe("queued");
   });
 });
+
+describe("MCP authentication boundaries", () => {
+  it("rejects missing/machine tokens, expired tokens, and stopped or offline assignments", async () => {
+    const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
+    const { projectId, agentId } = await seedProjectAndAgent(app); const todoId = await createTodo(app, projectId, agentId, "run"); const machine = await enroll(app);
+    await requestJson(app, `/api/todos/${todoId}/start`, "POST", { mode: "run" });
+    const job = services.scheduler.claim(machine.token)!;
+    const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+    expect((await requestJson(app, "/mcp", "POST", initialize)).response.status).toBe(401);
+    expect((await requestJson(app, "/mcp", "POST", initialize, machine.token)).response.status).toBe(401);
+    expect((await requestJson(app, "/mcp", "POST", initialize, job.mcp.token)).response.status).toBe(200);
+    services.db.run("UPDATE machines SET last_seen_at=? WHERE id=?", "2000-01-01T00:00:00.000Z", machine.machineId);
+    expect((await requestJson(app, "/mcp", "POST", initialize, job.mcp.token)).response.status).toBe(401);
+    services.db.run("UPDATE machines SET last_seen_at=? WHERE id=?", new Date().toISOString(), machine.machineId);
+    services.orchestrator.stop(todoId);
+    expect((await requestJson(app, "/mcp", "POST", initialize, job.mcp.token)).response.status).toBe(401);
+    services.scheduler.complete(machine.token, job.turnId, { status: "stopped" });
+    expect((await requestJson(app, "/mcp", "POST", initialize, job.mcp.token)).response.status).toBe(401);
+  });
+
+  it("does not accept another turn's transport session ID", async () => {
+    const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
+    const { projectId, agentId } = await seedProjectAndAgent(app); const machine = await enroll(app, 2);
+    const ids = await Promise.all(["one", "two"].map((title) => createTodo(app, projectId, agentId, "run", title)));
+    ids.forEach((todoId) => services.orchestrator.start(todoId, "run"));
+    const first = services.scheduler.claim(machine.token)!; const second = services.scheduler.claim(machine.token)!;
+    const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+    const initial = await requestJson(app, "/mcp", "POST", initialize, first.mcp.token);
+    const stolenSession = initial.response.headers.get("mcp-session-id")!;
+    const result = await requestJson(app, "/mcp", "POST", { jsonrpc: "2.0", id: 2, method: "tools/list" }, second.mcp.token, { "mcp-session-id": stolenSession });
+    expect(result.response.status).toBe(400);
+  });
+});

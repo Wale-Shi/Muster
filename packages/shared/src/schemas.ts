@@ -68,9 +68,13 @@ export const agentEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("status"), status: z.string(), detail: z.string().optional() }),
 ]);
 export const agentEventsSchema = z.array(agentEventSchema);
+export const eventUploadSchema = z.object({ batchId: idSchema, events: agentEventsSchema });
+export const claimSchema = z.object({ requestId: idSchema.optional() });
+export const inboxAckSchema = z.object({ ids: z.array(idSchema).min(1) });
 export const turnCompleteSchema = z.object({
   status: z.enum(["done", "failed", "stopped"]),
   headCommit: z.string().optional(),
+  baseCommit: z.string().optional(),
   diff: z.string().optional(),
   plan: z.string().optional(),
   usage: z.object({ tokensIn: z.number().int().nonnegative(), tokensOut: z.number().int().nonnegative(), durationMs: z.number().int().nonnegative() }).optional(),

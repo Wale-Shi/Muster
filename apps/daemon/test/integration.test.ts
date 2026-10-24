@@ -24,6 +24,7 @@ async function setup(chunkDelay = 3) {
   const server = serve({ fetch: serverApp.app.fetch, hostname: "127.0.0.1", port: 0 });
   await new Promise<void>((resolve) => server.on("listening", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  serverApp.services.orchestrator.publicUrl = url;
   cleanup.push(async () => { if ("closeAllConnections" in server) server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); serverApp.services.db.close(); });
   async function api<T>(path: string, body?: unknown, method = body === undefined ? "GET" : "POST"): Promise<T> {
     const response = await fetch(`${url}/api${path}`, { method, headers: { "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -48,6 +49,7 @@ describe("daemon against the real M1 HTTP server", () => {
     await f.api(`/todos/${todo.id}/start`, { mode: "plan" });
     const planned = await f.phase(todo.id, "confirm");
     const build = planned.builds[0]!;
+    expect(build.baseCommit).toMatch(/^[a-f0-9]{40}$/);
     expect(build.documents.find((doc) => doc.kind === "plan")?.content).toContain("# Plan");
     await expect(readFile(join(f.ws, build.id, "MUSTER_MOCK.md"))).rejects.toThrow();
     await f.api(`/todos/${todo.id}/confirm`, {});

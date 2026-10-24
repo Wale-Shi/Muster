@@ -19,7 +19,7 @@ export const ALLOWED_PHASE_TRANSITIONS: Readonly<Record<TodoPhase, readonly Todo
   queued: ["planning", "building", "failed", "closed"],
   planning: ["confirm", "failed", "closed"],
   confirm: ["queued", "closed"],
-  building: ["review", "failed", "closed"],
+  building: ["review", "done", "failed", "closed"],
   review: ["queued", "done", "closed"],
   failed: ["queued", "closed"],
   done: ["review", "closed"],

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
-import { agentEventsSchema, enrollMachineSchema, heartbeatSchema, turnCompleteSchema } from "@muster/shared";
-import type { AgentEvent, TurnCompletePayload } from "@muster/shared";
+import { eventUploadSchema, claimSchema, inboxAckSchema, enrollMachineSchema, heartbeatSchema, turnCompleteSchema } from "@muster/shared";
+import type { TurnCompletePayload } from "@muster/shared";
 import type { AppServices } from "../services.js";
 import { bearer, body } from "./helpers.js";
 import { StateError } from "../orchestrator/state.js";
@@ -23,12 +23,14 @@ export function machineRoutes(services: AppServices): Hono {
   app.post("/heartbeat", async (c) => { const input = await body(c, heartbeatSchema); return c.json(services.scheduler.heartbeat(machineToken(c.req.header("authorization")), input.running)); });
   app.post("/claim", async (c) => {
     const token = machineToken(c.req.header("authorization"));
-    const deadline = Date.now() + services.claimWaitMs; let job = services.scheduler.claim(token);
-    while (!job && Date.now() < deadline && !c.req.raw.signal.aborted) { await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now()))); job = services.scheduler.claim(token); }
+    const input = await body(c, claimSchema);
+    const deadline = Date.now() + services.claimWaitMs; let job = services.scheduler.claim(token, input.requestId);
+    while (!job && Date.now() < deadline && !c.req.raw.signal.aborted) { await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now()))); job = services.scheduler.claim(token, input.requestId); }
     return c.json(job);
   });
-  app.post("/turns/:id/events", async (c) => { const input = await body(c, agentEventsSchema) as AgentEvent[]; services.scheduler.ingestEvents(machineToken(c.req.header("authorization")), c.req.param("id"), input); return c.json({ accepted: input.length }); });
+  app.post("/turns/:id/events", async (c) => { const input = await body(c, eventUploadSchema); services.scheduler.ingestEvents(machineToken(c.req.header("authorization")), c.req.param("id"), input.events, input.batchId); return c.json({ accepted: input.events.length }); });
   app.get("/turns/:id/inbox", (c) => c.json(services.scheduler.inbox(machineToken(c.req.header("authorization")), c.req.param("id"))));
+  app.post("/turns/:id/inbox/ack", async (c) => { const input = await body(c, inboxAckSchema); services.scheduler.ackInbox(machineToken(c.req.header("authorization")), c.req.param("id"), input.ids); return c.json({ accepted: true }); });
   app.post("/turns/:id/complete", async (c) => { const input = await body(c, turnCompleteSchema) as TurnCompletePayload; services.scheduler.complete(machineToken(c.req.header("authorization")), c.req.param("id"), input); return c.json({ accepted: true }); });
   return app;
 }

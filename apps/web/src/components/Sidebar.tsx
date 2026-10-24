@@ -61,8 +61,8 @@ export function Sidebar({
           (!todo.topicId && topic.id === defaultTopic),
       ) ?? [];
     if (
-      realtime.activity[topic.id]?.status === "running" ||
-      realtime.activity[topic.id]?.status === "queued" ||
+      topic.activity === "running" ||
+      topic.activity === "queued" ||
       linked.some((todo) => isRunning(todo.phase))
     )
       return "running";

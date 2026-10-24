@@ -6,6 +6,8 @@ import {
 } from "@muster/shared";
 import type { AppServices } from "../services.js";
 import { id, now } from "../db/index.js";
+import { queueRoutes } from "./queue.js";
+import { usageReport } from "./usage.js";
 import { body } from "./helpers.js";
 
 export function apiRoutes(services: AppServices): Hono {
@@ -98,10 +100,11 @@ export function apiRoutes(services: AppServices): Hono {
   app.post("/topics", async (c) => { const input = await body(c, createTopicSchema); const topicId = id(); const timestamp = now(); db.run("INSERT INTO topics VALUES (?, ?, NULL, ?, ?)", topicId, input.title, timestamp, timestamp); const topic = db.topic(db.row("SELECT * FROM topics WHERE id=?", topicId)!); events.emit({ type: "topic.changed", conversationId: topicId, payload: topic }); return c.json({ data: topic }, 201); });
   app.get("/topics/:id", (c) => { const row = db.row("SELECT * FROM topics WHERE id=?", c.req.param("id")); return row ? c.json({ data: db.topic(row) }) : c.json({ error: "Topic not found" }, 404); });
   app.patch("/topics/:id", async (c) => { const input = await body(c, updateTopicSchema); const row = db.row("SELECT * FROM topics WHERE id=?", c.req.param("id")); if (!row) return c.json({ error: "Topic not found" }, 404); db.run("UPDATE topics SET title=?, updated_at=? WHERE id=?", input.title ?? row.title, now(), row.id); const topic = db.topic(db.row("SELECT * FROM topics WHERE id=?", row.id)!); events.emit({ type: "topic.changed", conversationId: String(row.id), payload: topic }); return c.json({ data: topic }); });
-  app.delete("/topics/:id", (c) => { const topicId = c.req.param("id"); if (!db.row("SELECT id FROM topics WHERE id=?", topicId)) return c.json({ error: "Topic not found" }, 404); db.run("DELETE FROM topics WHERE id=?", topicId); events.emit({ type: "topic.deleted", conversationId: topicId, payload: { id: topicId } }); return c.body(null, 204); });
+  app.delete("/topics/:id", (c) => { const topicId = c.req.param("id"); if (!db.row("SELECT id FROM topics WHERE id=?", topicId)) return c.json({ error: "Topic not found" }, 404); if (db.row("SELECT id FROM builds WHERE branch=?", `chief:${topicId}`)) return c.json({ error: "Topic has conversation history" }, 409); db.run("DELETE FROM topics WHERE id=?", topicId); events.emit({ type: "topic.deleted", conversationId: topicId, payload: { id: topicId } }); return c.body(null, 204); });
   app.post("/topics/:id/messages", async (c) => { const input = await body(c, topicMessageSchema); const topicId = c.req.param("id"); if (!db.row("SELECT id FROM topics WHERE id=?", topicId)) return c.json({ error: "Topic not found" }, 404); orchestrator.addMessage(topicId, null, "user", input.content, {}); db.run("UPDATE topics SET updated_at=? WHERE id=?", now(), topicId); return c.json({ data: { turnId: orchestrator.enqueueChief(topicId, input.content) } }, 202); });
 
-  app.get("/usage", (c) => { const row = db.row("SELECT COALESCE(sum(tokens_in),0) tokens_in, COALESCE(sum(tokens_out),0) tokens_out, COALESCE(sum(duration_ms),0) duration_ms, count(*) builds FROM builds"); const turns = Number((db.row("SELECT count(*) count FROM turns") ?? {}).count ?? 0); return c.json({ data: { tokensIn: Number(row?.tokens_in), tokensOut: Number(row?.tokens_out), durationMs: Number(row?.duration_ms), builds: Number(row?.builds), turns } }); });
+  app.route("/conversations", queueRoutes(services));
+  app.get("/usage", (c) => c.json({ data: usageReport(db) }));
 
   return app;
 }
