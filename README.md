@@ -40,6 +40,85 @@ See [architecture and limits](docs/ARCHITECTURE.md#phase-a-agent-resources) for 
 See [Phase B architecture](docs/ARCHITECTURE.md#phase-b-schedules-and-connections) for
 API contracts, catalog source URLs, verified CLI versions and limits.
 
+## Settings and external assistants
+
+Open **Settings** from the sidebar or **⌘,**. General stores language, appearance
+and workspace name on the server. Notifications controls desktop alerts for
+confirmation, review, failure and completion, plus the Dock badge. The API keys
+tab creates revocable keys: copy the full key immediately, because it is shown
+only once. `read` grants read-only board tools; `chief` also grants task control,
+topic messages (queueing Chief) and schedule creation. Both scopes can use MCP.
+
+The MCP tab provides setup and copyable client snippets using the current origin.
+Replace `http://localhost:7420` below with your workspace URL, and `<key>` with your
+key. API keys authenticate `/api/mcp`; other REST routes retain the trusted-local
+hosting model described below.
+
+Claude Code (**2.1.310**, verified with local `mcp add --help`):
+
+```sh
+claude mcp add --transport http muster http://localhost:7420/api/mcp --header "Authorization: Bearer <key>"
+```
+
+Codex (**codex-cli 0.162.1**, local help and configuration parser verified), in
+`~/.codex/config.toml`:
+
+```toml
+[mcp_servers.muster]
+url = "http://localhost:7420/api/mcp"
+http_headers = { Authorization = "Bearer <key>" }
+```
+
+Cursor / generic MCP JSON (the Cursor client itself was not exercised):
+
+```json
+{
+  "mcpServers": {
+    "muster": {
+      "url": "http://localhost:7420/api/mcp",
+      "headers": { "Authorization": "Bearer <key>" }
+    }
+  }
+}
+```
+
+## Projects and task input
+
+Open a project from its card or the sidebar. Files browses committed files on the
+base branch with lazy folders, markdown/text previews and the last 100 commits;
+select a commit to view its diff. Only absolute local repository paths accessible
+to the server are supported. No fetch or checkout occurs. File previews are capped
+at 1 MB; binary files show a notice. Git reads time out after eight seconds and
+commit diffs are capped at 4 MB. Tasks supports search, phase/agent filters,
+sorting and list/grid views. Project Settings edits name, description and base
+branch; projects referenced by tasks cannot be deleted.
+
+New task supports project selection, a structured description, tags, mentions and
+up to 10 attachments / 20 MB total. Save keeps the task in Backlog; Save & start
+uses the remembered Plan first / Run now choice (⌘Enter). The daemon downloads
+attachments into its external `attachments-cache` and supplies absolute paths in
+the prompt; files are not copied into the worktree. Server attachments are removed
+on task deletion; daemon cache pruning is manual. CLI sandbox access to external
+paths depends on the installed runtime. Chief's starter tiles help import a project
+or skill and fill example prompts.
+
+## Keyboard shortcuts
+
+Use Command on macOS or Ctrl elsewhere. **⌘/** opens this list anywhere.
+
+| Keys | Action |
+| --- | --- |
+| ⌘K / ⌘P / ⌘J | Search all / tasks / topics |
+| ⌘N / N | New task (plain N only outside inputs) |
+| ⌘[ | Back |
+| ⌘B | Toggle sidebar |
+| ⌘⌥B | Toggle board/right panel |
+| ⌘⇧Enter | Maximize/restore right panel |
+| ⌘⌥Enter | Done/merge at Review, outside inputs |
+| ⌘, / ⌘/ | Settings / keyboard shortcuts |
+| Esc | Close dialog |
+| ⌘Enter | Save & start in the new-task dialog |
+
 ## Quick start
 
 Install Node.js 22 or newer (a current Node 22 release is recommended; see [.nvmrc](.nvmrc)), npm, and Git. Run these commands from the repository root:
@@ -177,6 +256,6 @@ Muster 是开源、可自托管的 todos.dev 风格编码协作工作台。你�
 
 ### Languages
 
-Muster supports English and Simplified Chinese. Choose a language at the bottom of the sidebar; changes apply immediately to the web UI and desktop menus. Your choice is saved locally. On first use, any `zh*` browser language preference selects Simplified Chinese; otherwise English is used. Unsupported saved preferences fall back to this detection. Desktop menus initially follow system preferences.
+Muster supports English and Simplified Chinese. Choose a language in Settings → General; changes apply to the web UI and desktop menus. Language and appearance are stored server-side and cached locally for startup. A new workspace defaults to English and system appearance. Desktop menus initially follow system preferences until workspace settings arrive.
 
 To add a web language, add one dictionary file exporting `messages: Messages` (including its native `languageName`) alongside `apps/web/src/i18n/en.ts` and one entry in the locale list in `packages/shared/src/locale.ts`; discovery and the language picker are automatic. Add matching native menu copy in the separate desktop dictionary in `apps/desktop/src/i18n.ts`, and extend automatic language detection if needed. English is the source of truth. Keep named placeholders unchanged, use complete sentences and `{one, other}` plural forms, and format values through `useI18n()`. Run the dictionary, switching and desktop locale tests as well as the normal project checks. User/Agent messages, product names, model IDs, code and Git branches are not translated; unknown external errors remain available verbatim.

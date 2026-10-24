@@ -1,4 +1,6 @@
-import { viewMenuRoles } from "./menu.js";
+import { shouldNotify, badgeCount, defaultNotificationPreferences } from "./notifications.js";
+import type { NotificationPreferences } from "@muster/shared";
+import { viewMenuRoles, commandAccelerators } from "./menu.js";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, screen, shell, systemPreferences, Tray } from "electron";
 import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -109,13 +111,14 @@ function integrations() {
 function rebuildMenu() {
   if (process.platform === "darwin") systemPreferences.setUserDefault("NSFullScreenMenuItemEverywhere", "boolean", false);
   Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+    { label: "Muster", submenu: [...(process.platform === "darwin" ? [{ role: "about" as const }, { type: "separator" as const }] : []), { label: t("settings"), accelerator: commandAccelerators.settings, click: () => command({ type: "settings" }) }, { type: "separator" }, ...(process.platform === "darwin" ? [{ role: "services" as const }, { type: "separator" as const }, { role: "hide" as const }, { role: "hideOthers" as const }, { role: "unhide" as const }, { type: "separator" as const }] : []), { role: "quit" }] },
     { label: t("file"), submenu: [
       { label: t("newTask"), accelerator: "CmdOrCtrl+N", click: () => command({ type: "new-task" }) },
       { label: t("browser"), click: () => { void shell.openExternal(origin); } },
       { label: t("logs"), click: () => { void shell.openPath(logs); } },
       { type: "separator" }, process.platform === "darwin" ? { role: "close" as const } : { role: "quit" as const },
     ] }, { role: "editMenu", label: t("edit") }, { label: t("view"), submenu: viewMenuRoles(app.isPackaged).map((role) => ({ role })) }, { role: "windowMenu", label: t("window") },
+    { label: t("help"), submenu: [{ label: t("shortcuts"), accelerator: commandAccelerators.shortcuts, click: () => command({ type: "shortcuts" }) }] },
   ]));
 }
 function rebuildTray() {
@@ -127,6 +130,11 @@ function rebuildTray() {
 interface TodoStatus { id: string; title: string; phase: string; updatedAt: string }
 let polling = false;
 let badge = -1;
+let notificationPreferences = defaultNotificationPreferences;
+async function readNotificationPreferences() {
+  const response = await fetch(`${origin}/api/settings/notifications`, { signal: AbortSignal.timeout(3000) });
+  if (response.ok) notificationPreferences = (await response.json() as { data: NotificationPreferences }).data;
+}
 const eventsAbort = new AbortController();
 async function refreshStatus() {
   if (polling || quitting) return;
@@ -135,9 +143,10 @@ async function refreshStatus() {
     const response = await fetch(`${origin}/api/todos`, { signal: AbortSignal.timeout(3000) });
     if (!response.ok) throw new Error(`Status HTTP ${response.status}`);
     const { data: todos } = await response.json() as { data: TodoStatus[] };
-    const needs = todos.filter((todo) => ["confirm", "review", "failed"].includes(todo.phase));
-    if (needs.length !== badge) {
-      badge = needs.length;
+    await readNotificationPreferences();
+    const count = badgeCount(todos.map((todo) => todo.phase), notificationPreferences);
+    if (count !== badge) {
+      badge = count;
       // macOS only draws the badge once Muster may post notifications.
       if (!app.setBadgeCount(badge)) log(`Dock badge ${badge} not shown (notification permission missing?)`);
     }
@@ -171,8 +180,10 @@ async function launch() {
   if (server) failed("Server", server);
   if (daemon) failed("Daemon", daemon);
   void watchEvents(origin, eventsAbort.signal, async (event) => {
-    if (event.type !== "todo.changed" || !event.todoId || !["confirm", "review", "failed"].includes(event.payload?.phase ?? "")) return;
+    if (event.type !== "todo.changed" || !event.todoId || !["confirm", "review", "failed", "done"].includes(event.payload?.phase ?? "")) return;
     void refreshStatus();
+    await readNotificationPreferences();
+    if (!shouldNotify(event.payload?.phase ?? "", notificationPreferences)) return;
     if (!Notification.isSupported() || smoke || quitting) return;
     const response = await fetch(`${origin}/api/todos/${encodeURIComponent(event.todoId)}`, { signal: AbortSignal.timeout(3000) });
     if (!response.ok) return;

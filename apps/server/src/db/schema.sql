@@ -89,3 +89,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS secrets_team_name ON secrets(name) WHERE scope
   CREATE TABLE schedules (id TEXT PRIMARY KEY, todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE, cadence TEXT NOT NULL CHECK(cadence IN ('hourly','daily','weekly','once')), minute INTEGER NOT NULL, hour INTEGER, weekday INTEGER, run_at TEXT, timezone TEXT NOT NULL, mode TEXT NOT NULL, agent_id TEXT REFERENCES agents(id), machine_id TEXT REFERENCES machines(id), enabled INTEGER NOT NULL, next_run_at TEXT, last_run_at TEXT, last_result TEXT, last_error TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
   CREATE INDEX schedules_due ON schedules(enabled,next_run_at);
   CREATE TABLE connections (id TEXT PRIMARY KEY, identifier TEXT UNIQUE NOT NULL, name TEXT NOT NULL, catalog_id TEXT, transport TEXT NOT NULL CHECK(transport IN ('http','stdio')), url TEXT, command TEXT, args_json TEXT NOT NULL, machine_id TEXT REFERENCES machines(id), secret_json_ciphertext TEXT NOT NULL, iv TEXT NOT NULL, tag TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+
+CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE api_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, prefix TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, scopes_json TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT, revoked_at TEXT);
+ALTER TABLE projects ADD COLUMN description TEXT NOT NULL DEFAULT '';
+CREATE TABLE attachments (id TEXT PRIMARY KEY, todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE, name TEXT NOT NULL, size INTEGER NOT NULL, hash TEXT NOT NULL);

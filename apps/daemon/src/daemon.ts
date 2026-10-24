@@ -1,4 +1,4 @@
-import { prepareSkills, redactor, secretEvents, jobCredentials } from "./resources.js";
+import { prepareAttachments, prepareSkills, redactor, secretEvents, jobCredentials } from "./resources.js";
 import { access, mkdir, readFile, writeFile, rm, rename } from "node:fs/promises";
 import { constants } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
@@ -160,6 +160,7 @@ export class Daemon {
     try {
       if (active.stopped) { payload = { status: "stopped" }; return; }
       job = await prepareSkills(job, this.options.client);
+      job = await prepareAttachments(job, this.options.client);
       let cwd: string;
       if (job.project) { workspace = await this.worktrees.prepare(job); cwd = workspace.cwd; }
       else {

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Link } from "react-router";
-import { Circle, Plus, SlidersHorizontal } from "lucide-react";
+import { Circle, CircleHelp, Plus, SlidersHorizontal } from "lucide-react";
 import type { Agent, Project, Todo } from "@muster/shared";
 import { boardTodos, type ColumnId } from "../lib/board";
 import { Avatar, PhaseDot } from "./ui";
@@ -192,11 +192,13 @@ export function Board({
   return (
     <div className="board">
       <div className="board-toolbar">
-        <span className="muted">
+        <span className="muted board-title">
           {t("ui.allTasks")}{" "}
           <span className="dim">
             {formatNumber(todos.filter((todo) => todo.phase !== "closed").length)}
           </span>
+          <button className="icon-button sm" aria-label={t("phaseC.help")} title={t("phaseC.help")} popoverTarget="board-help"><CircleHelp size={13} /></button>
+          <div id="board-help" popover="auto" className="board-help">{t("phaseC.boardHelp")}</div>
         </span>
         <label className="board-filter">
           <SlidersHorizontal size={12} />

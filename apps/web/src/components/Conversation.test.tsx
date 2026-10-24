@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -19,7 +20,7 @@ async function setup() {
   vi.spyOn(api, "messages").mockResolvedValue([]);
   vi.spyOn(api, "queuedMessages").mockResolvedValue([]);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><RealtimeProvider><Conversation conversationId="topic" /></RealtimeProvider></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MemoryRouter><RealtimeProvider><Conversation conversationId="topic" /></RealtimeProvider></MemoryRouter></QueryClientProvider>);
   await screen.findByText("How can I help?");
   const emit = (type: string, payload: unknown, extra: Partial<ServerEvent> = {}) => {
     act(() => receive?.({ data: JSON.stringify({ type, conversationId: "topic", turnId: "turn", payload, ...extra }) }));
@@ -73,4 +74,14 @@ it.each(["done", "failed", "stopped"])("clears the warning when the turn ends %s
   emit("turn.completed", { turnId: "turn", status });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(screen.queryByText("Working…")).not.toBeInTheDocument();
+});
+
+it("offers four Chief starter tiles and fills the composer", async () => {
+  const { user } = await setup();
+  expect(screen.getByRole("button", { name: "Import an existing project" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Import a skill" })).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Build a small browser game" }));
+  expect(screen.getByLabelText("Message")).toHaveValue("Build a small browser game");
+  await user.click(screen.getByRole("button", { name: "Make a daily news digest page" }));
+  expect(screen.getByLabelText("Message")).toHaveValue("Make a daily news digest page");
 });

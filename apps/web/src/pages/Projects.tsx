@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { useI18n } from "../i18n";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -45,7 +46,7 @@ export function Projects() {
                   <FolderGit2 size={20} />
                 </span>
                 <div className="project-info">
-                  <h3>{project.name}</h3>
+                  <h3><Link to={`/projects/${project.id}`}>{project.name}</Link></h3>
                   <p className="mono muted" title={project.repoUrl}>
                     {project.repoUrl}
                   </p>
@@ -66,7 +67,7 @@ export function Projects() {
     </div>
   );
 }
-function ProjectDialog({ onClose }: { onClose: () => void }) {
+export function ProjectDialog({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
   const [name, setName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");

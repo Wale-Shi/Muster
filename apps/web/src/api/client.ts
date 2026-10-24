@@ -22,6 +22,7 @@ export type AgentInput = {
 };
 export type ProjectInput = Pick<Project, "name" | "repoUrl" | "baseBranch">;
 export type TodoInput = {
+  tags?: string[];
   projectId: string;
   title: string;
   spec: string;

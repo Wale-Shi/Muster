@@ -1,3 +1,8 @@
+import { Attachments } from "./resources/attachments.js";
+import { attachmentRoutes } from "./routes/attachments.js";
+import { projectGitRoutes } from "./routes/project-git.js";
+import { Settings } from "./resources/settings.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { Connections } from "./resources/connections.js";
 import { Schedules } from "./resources/schedules.js";
 import { existsSync, mkdtempSync } from "node:fs";
@@ -17,7 +22,7 @@ import { Scheduler } from "./orchestrator/scheduler.js";
 import { apiRoutes } from "./routes/api.js";
 import { machineRoutes } from "./routes/machine.js";
 import { eventRoutes } from "./routes/events.js";
-import { handleMcp } from "./mcp/server.js";
+import { handleMcp, handleExternalMcp } from "./mcp/server.js";
 import type { AppServices } from "./services.js";
 
 export interface CreateAppOptions {
@@ -39,7 +44,7 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
   const memories = new Memories(db); const secrets = new Secrets(db, dataDir); const skills = new Skills(db, join(dataDir, "skills"), options.githubFetcher);
   const connections = new Connections(db, secrets, events); const schedules = new Schedules(db, orchestrator);
   const scheduler = new Scheduler(db, orchestrator, events, memories, secrets, skills, connections);
-  const services: AppServices = { db, events, orchestrator, scheduler, memories, secrets, skills, connections, schedules, enrollKey: options.enrollKey ?? null, claimWaitMs: options.claimWaitMs ?? 25_000 };
+  const services: AppServices = { settings: new Settings(db), attachments: new Attachments(db, join(dataDir, "attachments")), dataDir, db, events, orchestrator, scheduler, memories, secrets, skills, connections, schedules, enrollKey: options.enrollKey ?? null, claimWaitMs: options.claimWaitMs ?? 25_000 };
   const app = new Hono();
 
   app.onError((error, c) => {
@@ -51,6 +56,10 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
   app.get("/health", (c) => c.json({ status: "ok", service: "muster" }));
   app.route("/api/machine", machineRoutes(services));
   app.route("/api/events", eventRoutes(services));
+  app.all("/api/mcp", (c) => handleExternalMcp(c.req.raw, services));
+  app.route("/api", settingsRoutes(services));
+  app.route("/api", projectGitRoutes(services));
+  app.route("/api", attachmentRoutes(services));
   app.route("/api", apiRoutes(services));
   app.all("/mcp", (c) => handleMcp(c.req.raw, services));
 

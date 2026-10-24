@@ -7,6 +7,7 @@ export const todoPhaseSchema = z.enum([
 ]);
 
 export const createProjectSchema = z.object({
+  description: z.string().max(16000).optional(),
   name: z.string().trim().min(1),
   repoUrl: z.string().trim().min(1),
   baseBranch: z.string().trim().min(1).default("main"),

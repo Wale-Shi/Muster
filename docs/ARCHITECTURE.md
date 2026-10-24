@@ -19,7 +19,7 @@ The migration runner uses SQLite `user_version`; migration 1 creates the PLAN §
 - `mcp_tokens` stores per-turn bearer tokens.
 - A build with nullable `todo_id` and branch `chief:<topicId>` is the internal conversation container for Chief turns. Normal todo builds always have a todo and `muster/conv-<buildId>` branch.
 
-On first start, Muster creates a `Chief` agent (`codex`, `gpt-6.1-sol`) and a `General` topic. `chief.autoFollowUp` is represented by the `createApp({autoFollowUp})` server option and defaults to true; persistent settings are deferred. Shared `DEFAULT_MODELS` defines Codex `gpt-6.1-sol`, Claude `claude-sonnet-5-5`, and Mock `mock`; the web agent editor uses the same defaults. Existing explicitly configured agents are preserved.
+On first start, Muster creates a `Chief` agent (`codex`, `gpt-6.1-sol`) and a `General` topic. `chief.autoFollowUp` is represented by the `createApp({autoFollowUp})` server option and defaults to true; a persistent auto-follow-up control is not exposed. Shared `DEFAULT_MODELS` defines Codex `gpt-6.1-sol`, Claude `claude-sonnet-5-5`, and Mock `mock`; the web agent editor uses the same defaults. Existing explicitly configured agents are preserved.
 
 Migration 2 adds per-turn immutable agent/model snapshots, duration, heartbeat leases, and idempotent completion bodies. `event_batches` deduplicates uploads, `machine_claims` recovers claim responses, and `server_events` persists SSE replay. Queued messages link to their source user message and record an in-flight delivery turn. `schema.sql` is a current-schema reference; `migrations.ts` is executed on startup.
 
@@ -43,10 +43,10 @@ The `{data: ...}` envelope described below applies to the web-facing `/api` rout
 | GET | `/api/projects` | `Project[]` |
 | POST | `/api/projects` | `{name, repoUrl, baseBranch?}` → `Project` (201; branch defaults to `main`) |
 | GET | `/api/projects/:id` | `Project` |
-| PATCH | `/api/projects/:id` | any of `{name, repoUrl, baseBranch}` → `Project` |
+| PATCH | `/api/projects/:id` | any of `{name, repoUrl, baseBranch, description}` → `Project` |
 | DELETE | `/api/projects/:id` | 204; returns 409 while referenced |
 
-`Project = {id, name, repoUrl, baseBranch, createdAt}`.
+`Project = {id, name, repoUrl, baseBranch, description, createdAt}`.
 
 ### Agents
 
@@ -294,7 +294,7 @@ On this restricted build host, native application registration aborts Electron i
 
 ## Internationalization
 
-Web copy lives in `apps/web/src/i18n`: the nested English dictionary defines `MessageKey` and the recursive `Messages` shape, enforced for Simplified Chinese (`zh-CN`). `I18nProvider` selects a validated `muster.locale` preference or detects Chinese from any `zh*` entry in `navigator.languages` (otherwise English), updates the HTML language/title and exposes `useI18n()`. Unsupported stored preferences fall back to detection. Dictionary modules and native picker names are discovered from the shared locale list. `t(key, params)` interpolates named values and selects `{one, other}` forms with `Intl.PluralRules`; date, relative time, number and duration helpers use the active locale. Phase, runtime and status labels have centralized dictionaries. Tests verify nonempty copy, placeholder parity and live language switching. Components rendered without a provider default to English, keeping isolated tests deterministic.
+Web copy lives in `apps/web/src/i18n`: the nested English dictionary defines `MessageKey` and the recursive `Messages` shape, enforced for Simplified Chinese (`zh-CN`). `I18nProvider` selects a validated `muster.locale` preference or detects Chinese from any `zh*` entry in `navigator.languages` (otherwise English), updates the HTML language/title and exposes `useI18n()`. Unsupported stored preferences fall back to detection. Once loaded, Phase C server settings supersede the startup locale/theme cache. Dictionary modules and native picker names are discovered from the shared locale list. `t(key, params)` interpolates named values and selects `{one, other}` forms with `Intl.PluralRules`; date, relative time, number and duration helpers use the active locale. Phase, runtime and status labels have centralized dictionaries. Tests verify nonempty copy, placeholder parity and live language switching. Components rendered without a provider default to English, keeping isolated tests deterministic.
 
 System messages with `meta.todoId` and a known `meta.phase` render a translated notice. New notices include `todoNumber` and `todoTitle`; legacy structured notices retain their original task identity. Stored English content and Chief prompts remain unchanged; unstructured history, user/agent text, tools, unknown runtime diagnostics and unknown errors retain their source content. Known API error messages are mapped at render time, so switching languages also updates visible errors.
 
@@ -467,3 +467,130 @@ removed afterwards. Process protocol peers assert exact HTTP/stdio maps, resumed
 Codex threads and unchanged plan sandboxes. These checks do not claim live provider
 authentication or real model tool execution. Tests use local fixtures and mock turns.
 Visual review remains manual; no screenshots or desktop distribution build is used.
+
+## Phase C: settings, external MCP, projects and task input
+
+Migration 6 adds `settings(key,value)` (JSON values), `api_keys`, project `description`,
+and attachment metadata. GET/PATCH `/api/settings` exposes validated workspace name,
+language (`en|zh-CN`), appearance (`light|dark|system`), and notifications. GET/PATCH
+`/api/settings/notifications` exposes per-phase `confirm`, `review`, `failed`, `done`
+and independent `dockBadge` booleans (all default on). The renderer applies saved
+language/appearance globally; the desktop main process reads preferences before a
+notification and on status polling. A disabled Dock badge clears its count. Native
+notifications include Done. Browser settings explain their desktop-only effect.
+
+### Personal API keys and external MCP
+
+GET/POST `/api/api-keys` lists metadata or creates a key; DELETE `/api/api-keys/:id`
+revokes it. A cryptographically random key is `mst_` plus 32 uniformly sampled
+base62 characters. SQLite stores SHA256, a ten-character display prefix, name,
+scopes JSON, creation/last-use/revocation timestamps. Only the creation response
+contains the full key; UI shows it once with a copy action. Metadata never returns
+hashes. Both `read` and `chief` scopes enable MCP; there is no separate `mcp` scope.
+
+`/api/mcp` uses the same SDK Streamable HTTP implementation as the per-turn MCP,
+with stateless JSON responses. Every request authenticates `Authorization: Bearer
+mst_…`, checks revocation and updates last use. It needs no transport session ID;
+clients still initialize and negotiate the protocol normally. The per-turn `/mcp`
+contract and catalog are unchanged. Failed authentication gets 401 for the first
+20 attempts per server instance in a fixed 60-second window, then 429 with
+`Retry-After`. Valid credentials remain usable during this window. This bounded
+in-memory limiter resets on restart and does not trust forwarded IP headers.
+
+External read tools (all annotated `readOnlyHint:true`): `list_projects`,
+`get_project`, `list_agents`, `get_agent`, `list_todos`, `get_todo`, `list_topics`,
+`get_topic`, `list_schedules`, `list_skills`. Chief keys additionally expose
+`create_todo`, `start_todo`, `confirm_plan`, `complete_todo`, `close_todo`,
+`send_todo_message`, `post_topic_message`, `create_schedule`. Posting a topic
+message persists a user message and queues a Chief turn. Writes are absent from
+both the read-only catalog and its execution registry. Existing orchestration
+phase gates remain enforced. External clients do not inherit a live agent turn's
+memory, secret-request or connection-grant capabilities.
+
+Key management and other web REST routes retain Muster's trusted-local-workspace
+model; API keys secure the external MCP route, not the whole REST API. Network
+hosting still requires an authenticated reverse proxy and TLS.
+
+The Settings MCP tab uses the current renderer origin. Verified locally on
+2026-10-25: **Claude Code 2.1.310**, `claude mcp add --help`, documents
+`--transport http`, positional name/URL and `--header`. **codex-cli 0.162.1**,
+`codex mcp --help` / `add --help`, documents HTTP URL setup; `mcp get muster
+--json` with isolated command-line overrides parsed `url` plus `http_headers`
+as Streamable HTTP. No user CLI configuration was changed. Exact client snippets
+are in README and generated by `clientSnippets()` for the Settings page. Cursor's
+snippet is generic MCP JSON; no installed Cursor client was exercised.
+
+### Read-only project browsing
+
+`/projects/:id` has Files and Tasks; `/projects/:id/settings` edits name, base
+branch and description. The repository identifier is displayed read-only with a
+copy action; REST preserves its existing editing contract. Deleting a project
+retains existing foreign-key semantics: referenced tasks (including running work)
+prevent deletion. Cards and sidebar entries link to the project, with nested-route
+highlighting. Task search/filter/sort and list/grid operate on the existing todo
+query. Branch selection uses GET `/api/projects/:id/branches`, falling back to a
+text field when local branches cannot be read.
+
+GET `/api/projects/:id/tree?path=`, `/file?path=`, `/commits` and `/commits/:sha`
+read an absolute local `repoUrl` accessible to the **server**. No clone, fetch,
+checkout or working-tree read is performed. Base branch resolution is restricted
+to `refs/heads/…`, then commands use its resolved commit ID. `ls-tree -z` returns
+one directory at a time; the UI loads folders on demand. `cat-file` checks type
+and size before reading a blob, never follows repository symlinks. Absolute,
+parent-segment, backslash and NUL paths are rejected. History contains at most 100
+commits; detail requires a full 40-character SHA reachable from the base branch,
+and uses `git show --no-ext-diff --no-textconv`. Commands have an 8-second timeout
+and 4 MB output cap; files have a 1 MB cap and NUL-containing blobs display a
+binary notice. Oversized commit diffs produce an explicit error. Markdown uses
+the existing safe renderer; other text has line numbers. Remote, relative and
+inaccessible repository paths have a local-repository explanation. Uncommitted
+working-tree edits are intentionally not displayed.
+
+### Attachments and task creation
+
+GET/POST `/api/todos/:id/attachments` lists/uploads files. Multipart requests are
+bounded to 20 MB plus 64 KB framing overhead, and stored bytes to 20 MB / 10 files
+per todo. Uploads are allowed only in Backlog. Server paths are
+`<data>/attachments/<todoId>/<attachmentId>`; user filenames are metadata only.
+Each item has `{id,todoId,name,size,hash}`. The machine claim response includes
+current attachment metadata, including on replay. GET
+`/api/machine/attachments/:id` requires the existing machine bearer credential
+and returns a base64 payload. As with skill archives, enrolled machines are trusted
+workspace participants, not per-task access principals.
+
+The daemon verifies size and SHA256, caches immutable content once under absolute
+`<MUSTER_HOME>/attachments-cache/<id>-<hash>`, and appends original names and
+absolute paths to each task prompt. Cache files stay outside git worktrees and are
+not auto-pruned. Deleting a todo via REST closes it and removes its server-side
+attachments; Close alone preserves attachments for reopen. Deletion during a
+pending download may cause that turn to fail explicitly. Read-only runtime access
+to external cache paths remains subject to the installed CLI sandbox (see Phase A
+host limitation); no real model read was tested.
+
+The task dialog puts the project picker in its header, has a localized structured
+placeholder, compact default-agent selection, tags (Enter/backspace), file input
+and drop, mentions, Save and Save & start. Plan first is the initial default;
+plan/run choice and sidebar group collapse state persist in browser storage for
+the local user. Creation retains its todo ID after upload/start failure to avoid
+creating another task on retry. Chief empty-state tiles open project creation,
+link to skill import, or fill the composer. Topic menus preserve existing deletion
+rules; board help explains the gates.
+
+### Shortcuts and verification
+
+`apps/web/src/lib/shortcuts.ts` is the typed source for event matching and Settings
+/help display: ⌘K all search, ⌘P tasks, ⌘J topics, ⌘N new task, N outside inputs,
+⌘[ back, ⌘B sidebar, ⌘⌥B right panel, ⌘⇧Enter maximize/restore, ⌘⌥Enter Done at
+Review outside inputs, ⌘, Settings, ⌘/ shortcuts, Escape native dialog dismissal.
+Ctrl substitutes for Command. Dialogs keep their own keyboard handling, including
+⌘Enter to save/start a task; shortcut help remains available over a dialog.
+Desktop Muster/Help menu accelerators send Settings/Shortcuts commands through the
+existing bridge. Settings, project, and task copy is present in both dictionaries.
+
+Tests cover migration, settings/notifications, key secrecy/revocation/usage,
+external MCP catalog and denied calls, temporary-repository reads, traversal and
+size/binary limits, attachment limits/auth/cleanup/cache, native notification
+choices, bridge commands, sidebar persistence, settings, project tabs and task
+input. Mock e2e additionally exercises external MCP over HTTP and actual attachment
+delivery/cache. Visual inspection is deliberately left to manual light/dark,
+English/Chinese and viewport review; no screenshots or desktop distribution build.

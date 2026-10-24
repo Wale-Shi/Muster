@@ -1,3 +1,5 @@
+import { useNavigate } from "react-router";
+import { ProjectDialog } from "../pages/Projects";
 import { MentionInput } from "./MentionInput";
 import { SecretCard } from "../pages/Secrets";
 import { systemMessage } from "../i18n/system";
@@ -9,9 +11,12 @@ import {
   ArrowDown,
   ArrowUp,
   AlertTriangle,
+  BookOpen,
   ChevronRight,
   Command,
-  Sparkles,
+  FileText,
+  FolderOpen,
+  Gamepad2,
   Terminal,
   X,
 } from "lucide-react";
@@ -184,6 +189,8 @@ export function Conversation({
   const realtime = useRealtime();
   const activity = realtime.activity[conversationId];
   const currentStatus = status ?? activity?.status ?? "idle";
+  const [newProject, setNewProject] = useState(false);
+  const navigate = useNavigate();
   const [text, setText] = useState("");
   const [references, setReferences] = useState<Todo[]>([]);
   const [following, setFollowing] = useState(true);
@@ -297,27 +304,23 @@ export function Conversation({
             </article>
           ) : (
             <div className="chief-empty">
+              {newProject && <ProjectDialog onClose={() => setNewProject(false)} />}
               <span className="chief-mark">
                 <Command size={24} />
               </span>
               <h1>{t("ui.howCanIHelp")}</h1>
               <p>{t("ui.shareAGoalIllHelpTurnItIntoProgress")}</p>
               <div className="suggestions">
-                {[t("ui.planMyNextFeature"), t("ui.whatNeedsMyAttention")].map(
-                  (suggestion) => (
-                    <button
-                      key={suggestion}
-                      onClick={() => {
-                        setText(suggestion);
-                        textarea.current?.focus();
-                      }}
-                    >
-                      <Sparkles size={13} />
-                      {suggestion}
-                      <ArrowUp size={13} />
-                    </button>
-                  ),
-                )}
+                {[
+                  { icon: FolderOpen, label: t("phaseC.importProject"), run: () => setNewProject(true) },
+                  { icon: BookOpen, label: t("phaseC.importSkill"), run: () => navigate("/skills/new") },
+                  ...[{ icon: Gamepad2, label: t("phaseC.game") }, { icon: FileText, label: t("phaseC.digest") }].map((item) => ({ ...item, run: () => { setText(item.label); textarea.current?.focus(); } })),
+                ].map(({ icon: Icon, label, run }) => (
+                  <button key={label} onClick={run}>
+                    <span className="suggestion-icon"><Icon size={14} /></span>
+                    {label}
+                  </button>
+                ))}
               </div>
             </div>
           )

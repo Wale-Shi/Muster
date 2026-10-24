@@ -21,7 +21,8 @@ export function apiRoutes(services: AppServices): Hono {
   app.get("/projects", (c) => c.json({ data: db.rows("SELECT * FROM projects ORDER BY created_at").map((row) => db.project(row)) }));
   app.post("/projects", async (c) => {
     const input = await body(c, createProjectSchema); const projectId = id();
-    db.run("INSERT INTO projects VALUES (?, ?, ?, ?, ?)", projectId, input.name, input.repoUrl, input.baseBranch, now());
+    db.run("INSERT INTO projects (id,name,repo_url,base_branch,created_at) VALUES (?, ?, ?, ?, ?)", projectId, input.name, input.repoUrl, input.baseBranch, now());
+    if (input.description !== undefined) db.run("UPDATE projects SET description=? WHERE id=?", input.description, projectId);
     const project = db.project(db.row("SELECT * FROM projects WHERE id = ?", projectId)!);
     events.emit({ type: "project.changed", payload: project }); return c.json({ data: project }, 201);
   });
@@ -33,6 +34,7 @@ export function apiRoutes(services: AppServices): Hono {
     const input = await body(c, updateProjectSchema); const projectId = c.req.param("id");
     const current = db.row("SELECT * FROM projects WHERE id = ?", projectId); if (!current) return c.json({ error: "Project not found" }, 404);
     db.run("UPDATE projects SET name = ?, repo_url = ?, base_branch = ? WHERE id = ?", input.name ?? current.name, input.repoUrl ?? current.repo_url, input.baseBranch ?? current.base_branch, projectId);
+    if (input.description !== undefined) db.run("UPDATE projects SET description=? WHERE id=?", input.description, projectId);
     const project = db.project(db.row("SELECT * FROM projects WHERE id = ?", projectId)!); events.emit({ type: "project.changed", payload: project }); return c.json({ data: project });
   });
   app.delete("/projects/:id", (c) => {
@@ -91,7 +93,7 @@ export function apiRoutes(services: AppServices): Hono {
     return c.json({ data: { ...todo, builds } });
   });
   app.patch("/todos/:id", async (c) => { const input = await body(c, updateTodoSchema); const todoId = c.req.param("id"); const current = db.row("SELECT * FROM todos WHERE id = ?", todoId); if (!current) return c.json({ error: "Todo not found" }, 404); db.run("UPDATE todos SET title=?, spec=?, agent_id=?, plan_agent_id=?, tags_json=?, updated_at=? WHERE id=?", input.title ?? current.title, input.spec ?? current.spec, input.agentId === undefined ? current.agent_id : input.agentId, input.planAgentId === undefined ? current.plan_agent_id : input.planAgentId, input.tags ? JSON.stringify(input.tags) : current.tags_json, now(), todoId); const todo = orchestrator.getTodo(todoId); events.emit({ type: "todo.changed", todoId, payload: todo }); return c.json({ data: todo }); });
-  app.delete("/todos/:id", (c) => { try { orchestrator.close(c.req.param("id")); return c.body(null, 204); } catch (error) { throw error; } });
+  app.delete("/todos/:id", (c) => { try { orchestrator.close(c.req.param("id")); services.attachments.delete(c.req.param("id")); return c.body(null, 204); } catch (error) { throw error; } });
 
   app.post("/todos/:id/start", async (c) => { const input = await body(c, startTodoSchema); return c.json({ data: { turnId: orchestrator.start(c.req.param("id"), input.mode, input.agentId) } }, 202); });
   app.post("/todos/:id/confirm", (c) => c.json({ data: { turnId: orchestrator.confirm(c.req.param("id")) } }, 202));

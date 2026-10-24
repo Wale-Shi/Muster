@@ -66,3 +66,16 @@ it("redacts connection header values, bearer tokens and short stdio env across c
   stream.emit({ type: "message.completed" }); stream.emit({ type: "tool.completed", tool: "fixture", callId: "test", output: { value: "xyz", header: "Bearer fixture-credential" } }); stream.flush();
   expect(JSON.stringify(events)).not.toMatch(/fixture-credential|xyz/); expect(redactor(credentials, 1)({ diff: "+xyz", error: "fixture-credential" })).toEqual({ diff: "+[secret:local.PIN]", error: "[secret:remote.Authorization.token]" });
 });
+
+it("downloads attachments once outside worktrees, verifies hashes and rejects unsafe identities", async () => {
+  const { prepareAttachments } = await import("../src/resources.js");
+  const root = await home(); let downloads = 0; const bytes = Buffer.from("Attachment fixture");
+  const client = new MachineClient({ home: root, server: "http://localhost:1", name: "test", concurrency: 1, runtimes: ["mock"], fetch: async () => { downloads++; return Response.json({ content: bytes.toString("base64") }); } });
+  const job = makeJob(); job.attachments = [{ id: crypto.randomUUID(), todoId: job.todoId!, name: "../../notes.txt", size: bytes.length, hash: createHash("sha256").update(bytes).digest("hex") }];
+  const prepared = await prepareAttachments(job, client);
+  expect(prepared.prompt).toContain(join(root, "attachments-cache"));
+  expect(await readFile(join(root, "attachments-cache", `${job.attachments[0]!.id}-${job.attachments[0]!.hash}`), "utf8")).toBe(bytes.toString());
+  await prepareAttachments(job, client); expect(downloads).toBe(1);
+  await expect(prepareAttachments({ ...job, attachments: [{ ...job.attachments[0]!, id: "../escape" }] }, client)).rejects.toThrow("Invalid attachment");
+  await expect(prepareAttachments({ ...job, attachments: [{ ...job.attachments[0]!, hash: "a".repeat(64) }] }, client)).rejects.toThrow("Attachment hash mismatch");
+});

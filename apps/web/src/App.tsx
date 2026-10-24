@@ -1,3 +1,6 @@
+import { SettingsPage, ShortcutsDialog } from "./pages/Settings";
+import { matchShortcut, dispatchShortcut } from "./lib/shortcuts";
+import { ProjectPage, ProjectSettingsPage } from "./pages/Project";
 import { SchedulesPage } from "./pages/Schedules";
 import { ConnectionsPage } from "./pages/Connections";
 import { AgentPage } from "./pages/Agent";
@@ -5,7 +8,7 @@ import { SkillsPage, NewSkillPage, SkillPage } from "./pages/Skills";
 import { SecretsPage } from "./pages/Secrets";
 import { useI18n } from "./i18n";
 import { useEffect, useState } from "react";
-import { Link, Route, Routes, useLocation, useParams } from "react-router";
+import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 import { Command, PanelLeft } from "lucide-react";
 import { DesktopIntegration } from "./components/DesktopIntegration";
 import { Sidebar } from "./components/Sidebar";
@@ -27,7 +30,9 @@ export function App() {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useStored("sidebar-collapsed", false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [search, setSearch] = useState(false);
+  const [search, setSearch] = useState<number | null>(null);
+  const [help, setHelp] = useState(false);
+  const navigate = useNavigate();
   const [newTask, setNewTask] = useState(false);
   const location = useLocation();
   const toggleSidebar = () => {
@@ -36,49 +41,36 @@ export function App() {
   };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      const editing =
-        event.target instanceof HTMLElement &&
-        !!event.target.closest(
-          'input, textarea, select, [contenteditable="true"]',
-        );
+      if (event.defaultPrevented || event.repeat) return;
+      const shortcut = matchShortcut(event); if (!shortcut) return;
       const dialogOpen = !!document.querySelector("dialog[open]");
-      if ((event.metaKey || event.ctrlKey) && event.code === "KeyK") {
-        event.preventDefault();
-        if (!dialogOpen || search) setSearch((prior) => !prior);
-      }
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        !event.altKey &&
-        event.code === "KeyB"
-      ) {
-        event.preventDefault();
-        if (window.innerWidth < 768) setMobileOpen((prior) => !prior);
-        else setCollapsed((prior) => !prior);
-      }
-      if (
-        event.code === "KeyN" &&
-        !editing &&
-        !dialogOpen &&
-        !event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey
-      ) {
-        event.preventDefault();
-        setNewTask(true);
+      if (shortcut.command === "close") return; // Native dialog cancel handles Escape.
+      if (dialogOpen && shortcut.command !== "shortcuts") return;
+      event.preventDefault();
+      switch (shortcut.command) {
+        case "searchAll": setSearch(0); break;
+        case "searchTasks": setSearch(1); break;
+        case "searchTopics": setSearch(2); break;
+        case "newTask": setNewTask(true); break;
+        case "sidebar": toggleSidebar(); break;
+        case "back": navigate(-1); break;
+        case "settings": navigate("/settings"); break;
+        case "shortcuts": setHelp((prior) => !prior); break;
+        default: dispatchShortcut(shortcut.command);
       }
     };
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
-  }, [setCollapsed, search]);
+  }, [setCollapsed, search, navigate]);
   return (
     <div className={`app ${collapsed ? "sidebar-is-collapsed" : ""} ${window.muster?.desktop ? "muster-desktop" : ""} ${window.muster?.platform === "darwin" ? "muster-mac" : ""}`} >
-      <DesktopIntegration onNewTask={() => setNewTask(true)} />
+      <DesktopIntegration onNewTask={() => setNewTask(true)} onShortcuts={() => setHelp(true)} />
       <Sidebar
         collapsed={collapsed}
         mobileOpen={mobileOpen}
         onToggle={toggleSidebar}
         onCloseMobile={() => setMobileOpen(false)}
-        onSearch={() => setSearch(true)}
+        onSearch={() => setSearch(0)}
         onNewTask={() => setNewTask(true)}
       />
       <main className="main">
@@ -125,6 +117,9 @@ export function App() {
           <Route path="/secrets" element={<SecretsPage />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/projects" element={<Projects />} />
+          <Route path="/projects/:id" element={<ProjectPage key={location.pathname} />} />
+          <Route path="/projects/:id/settings" element={<ProjectSettingsPage key={location.pathname} />} />
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="/machines" element={<Machines />} />
           <Route path="/usage" element={<Usage />} />
           <Route
@@ -140,7 +135,8 @@ export function App() {
           />
         </Routes>
       </main>
-      {search && <CommandPalette onClose={() => setSearch(false)} />}
+      {search !== null && <CommandPalette initialTab={search} onClose={() => setSearch(null)} />}
+      {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
       {newTask && (
         <Routes>
           <Route
@@ -149,7 +145,7 @@ export function App() {
           />
           <Route
             path="*"
-            element={<NewTaskDialog onClose={() => setNewTask(false)} />}
+            element={<NewTaskDialog initialProjectId={location.pathname.match(/^\/projects\/([^/]+)/)?.[1]} onClose={() => setNewTask(false)} />}
           />
         </Routes>
       )}

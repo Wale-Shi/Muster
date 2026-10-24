@@ -1,4 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { SettingsPage } from "../pages/Settings";
+import { workspaceSettingsSchema } from "@muster/shared";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -40,30 +42,31 @@ describe("dictionaries", () => {
   });
 });
 
-it("switches sidebar and board instantly, persists language and informs desktop", () => {
+it("switches sidebar and board instantly, persists language and informs desktop", async () => {
   vi.spyOn(api, "topics").mockResolvedValue([]);
   vi.spyOn(api, "machines").mockResolvedValue([]);
   vi.spyOn(api, "todos").mockResolvedValue([]);
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
+  let settingsData = workspaceSettingsSchema.parse({});
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/api/settings" && init?.method === "PATCH") settingsData = { ...settingsData, ...JSON.parse(String(init.body)) };
+    return Response.json({ data: url === "/api/settings" ? settingsData : [] });
+  }));
   const setLocale = vi.fn().mockResolvedValue(undefined);
   window.muster = { desktop: true, platform: "darwin", setLocale, chooseFolder: vi.fn(), openPath: vi.fn(), onCommand: vi.fn() };
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<I18nProvider initial="en"><QueryClientProvider client={client}><MemoryRouter>
     <Sidebar collapsed={false} mobileOpen={false} onToggle={() => {}} onCloseMobile={() => {}} onSearch={() => {}} onNewTask={() => {}} />
-    <Board todos={[]} agents={[]} projects={[]} onNew={() => {}} />
+    <Board todos={[]} agents={[]} projects={[]} onNew={() => {}} /><SettingsPage />
   </MemoryRouter></QueryClientProvider></I18nProvider>);
   expect(screen.getByRole("heading", { name: "Backlog" })).toBeVisible();
   expect(document.documentElement.lang).toBe("en");
-  const settings = screen.getByRole("button", { name: "Appearance settings" });
-  expect(settings).toHaveAttribute("popovertarget", "workspace-settings");
-  expect(document.getElementById("workspace-settings")).toHaveAttribute("popover", "auto");
-  // jsdom does not implement native popover toggling; exercise the controls by label.
-  fireEvent.click(settings);
-  fireEvent.change(screen.getByLabelText("Appearance"), { target: { value: "light" } });
-  expect(document.documentElement.dataset.theme).toBe("light");
-  expect(localStorage.getItem("muster.theme")).toBe("light");
+  expect(screen.getByRole("link", { name: /Settings/ })).toHaveAttribute("href", "/settings");
+  fireEvent.click(await screen.findByRole("tab", { name: "Light" }));
+  await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
+  await waitFor(() => expect(localStorage.getItem("muster.theme")).toBe("light"));
   fireEvent.change(screen.getByLabelText("Language"), { target: { value: "zh-CN" } });
-  expect(screen.getByRole("heading", { name: "待办" })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "待办" })).toBeVisible();
   expect(screen.getByRole("link", { name: "工作区" })).toBeVisible();
   expect(screen.getByText("暂无待办任务")).toBeVisible();
   expect(document.documentElement.lang).toBe("zh-CN");

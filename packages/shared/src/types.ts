@@ -19,6 +19,7 @@ export type MessageRole = "user" | "agent" | "system" | "tool";
 export type DocumentKind = "plan" | "changes";
 
 export interface Project {
+  description?: string;
   id: Id;
   name: string;
   repoUrl: string;

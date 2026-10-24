@@ -1,3 +1,5 @@
+import type { Attachments } from "./resources/attachments.js";
+import type { Settings } from "./resources/settings.js";
 import type { Connections } from "./resources/connections.js";
 import type { Schedules } from "./resources/schedules.js";
 import type { Memories } from "./resources/memories.js";
@@ -9,6 +11,9 @@ import type { Orchestrator } from "./orchestrator/state.js";
 import type { Scheduler } from "./orchestrator/scheduler.js";
 
 export interface AppServices {
+  attachments: Attachments;
+  settings: Settings;
+  dataDir: string;
   connections: Connections;
   schedules: Schedules;
   memories: Memories;

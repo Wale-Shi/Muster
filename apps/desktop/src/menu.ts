@@ -9,3 +9,5 @@ export function viewMenuRoles(packaged: boolean): NonNullable<MenuItemConstructo
     "resetZoom", "zoomIn", "zoomOut", "togglefullscreen",
   ];
 }
+
+export const commandAccelerators = { settings: "CmdOrCtrl+,", shortcuts: "CmdOrCtrl+/" } as const;

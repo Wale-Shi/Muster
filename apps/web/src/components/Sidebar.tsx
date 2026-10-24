@@ -1,5 +1,8 @@
-import { useI18n, languageNames } from "../i18n";
-import { Fragment, useState } from "react";
+import { useWorkspaceSettings } from "../pages/Settings";
+import { ProjectDialog } from "../pages/Projects";
+import { ProjectMonogram } from "./ProjectMonogram";
+import { useI18n } from "../i18n";
+import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,9 +28,9 @@ import {
 } from "lucide-react";
 import type { Topic } from "@muster/shared";
 import { api } from "../api/client";
-import { useTodos, useTopics, useMachines } from "../api/queries";
+import { useTodos, useTopics, useMachines, useProjects } from "../api/queries";
 import { useRealtime } from "../api/realtime";
-import { useTheme } from "../hooks/usePreferences";
+import { useStored } from "../hooks/usePreferences";
 import { isRunning } from "../lib/board";
 import { Dialog, ErrorNotice } from "./ui";
 
@@ -52,16 +55,20 @@ export function Sidebar({
   onSearch: () => void;
   onNewTask: () => void;
 }) {
-  const { t, locale, setLocale, label } = useI18n();
+  const { t, label } = useI18n();
   const topics = useTopics();
   const machines = useMachines();
   const todos = useTodos();
   const realtime = useRealtime();
-  const theme = useTheme();
+  const settings = useWorkspaceSettings();
+  const projects = useProjects();
+  const [projectsOpen, setProjectsOpen] = useStored("projects-expanded", true);
+  const [resourcesOpen, setResourcesOpen] = useStored("resources-expanded", true);
+  const [newProject, setNewProject] = useState(false);
   const onlineCount = machines.data?.filter((machine) => machine.online).length;
   const connection = connectionStatus(realtime.connected, machines.isError ? undefined : onlineCount);
   const location = useLocation();
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useStored("topics-expanded", true);
   const [newTopic, setNewTopic] = useState(false);
   const defaultTopic = [...(topics.data ?? [])].sort((a, b) =>
     a.createdAt.localeCompare(b.createdAt),
@@ -92,7 +99,6 @@ export function Sidebar({
 
     { to: "/usage", title: t("ui.usage"), icon: BarChart3 },
     { to: "/agents", title: t("ui.agents"), icon: Bot },
-    { to: "/projects", title: t("ui.projects"), icon: FolderGit2 },
     { to: "/machines", title: t("ui.machines"), icon: Monitor },
     { to: "/secrets", title: t("parity.secrets"), icon: KeyRound },
   ];
@@ -107,11 +113,11 @@ export function Sidebar({
         className={`sidebar ${collapsed ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}
       >
         <div className="sidebar-brand">
-          <NavLink to="/" onClick={onCloseMobile} className="brand">
+          <NavLink to="/agents" onClick={onCloseMobile} className="brand" title={settings.data?.workspaceName ?? "Muster"}>
             <span className="brand-icon">
               <Command size={17} />
             </span>
-            <strong>Muster</strong>
+            <strong>{settings.data?.workspaceName ?? "Muster"}</strong>
             <ChevronDown size={13} className="dim" />
           </NavLink>
           <button
@@ -136,16 +142,17 @@ export function Sidebar({
             <span>{t("ui.search")}</span>
             <kbd>⌘ K</kbd>
           </button>
-          <button onClick={onNewTask} title={`${t("ui.newTask")} (N)`}>
+          <button onClick={onNewTask} title={`${t("ui.newTask")} (⌘N)`}>
             <Plus size={16} />
             <span>{t("ui.newTask")}</span>
-            <kbd>N</kbd>
+            <kbd>⌘ N</kbd>
           </button>
         </div>
         <nav aria-label={t("ui.mainNavigation")}>
           <div className="workspace-nav">
             <NavLink
               to="/"
+              title={t("ui.workspace")}
               className={
                 location.pathname === "/" ||
                 location.pathname.startsWith("/topics/")
@@ -170,7 +177,7 @@ export function Sidebar({
               )}
             </button>
           </div>
-          {expanded && (
+          {(expanded || collapsed) && (
             <div className="topic-list">
               {topics.data?.map((topic) => {
                 const status = activityFor(topic);
@@ -202,6 +209,7 @@ export function Sidebar({
               })}
               <button
                 className="topic-item new-topic"
+                title={t("ui.newTopic")}
                 onClick={() => setNewTopic(true)}
               >
                 <Plus size={13} />
@@ -210,18 +218,11 @@ export function Sidebar({
             </div>
           )}
           <div className="nav-separator" />
-          {links.map(({ to, title, icon: Icon }) => (<Fragment key={to}>{to === "/machines" && <div className="sidebar-section-label">{t("parity.resources")}</div>}
-            <NavLink
-              className="nav-item"
-              to={to}
-              key={to}
-              title={title}
-              onClick={onCloseMobile}
-            >
-              <Icon size={16} />
-              <span>{title}</span>
-            </NavLink></Fragment>
-          ))}
+          {links.slice(0, 4).map(({ to, title, icon: Icon }) => <NavLink className="nav-item" to={to} key={to} title={title} onClick={onCloseMobile}><Icon size={16} /><span>{title}</span></NavLink>)}
+          <div className="workspace-nav"><NavLink className="nav-item" to="/projects" title={t("ui.projects")} onClick={onCloseMobile}><FolderGit2 size={16} /><span>{t("ui.projects")}</span></NavLink><button className="icon-button topic-expand" aria-label={t("ui.projects")} aria-expanded={projectsOpen} onClick={() => setProjectsOpen(!projectsOpen)}><ChevronDown size={12} /></button></div>
+          {(projectsOpen || collapsed) && <div className="sidebar-group">{projects.data?.map((p) => <NavLink className="nav-item" key={p.id} to={`/projects/${p.id}`} title={p.name} onClick={onCloseMobile}><ProjectMonogram name={p.name} /><span>{p.name}</span></NavLink>)}<button className="nav-item" title={t("ui.newProject")} onClick={() => setNewProject(true)}><Plus size={16} /><span>{t("ui.newProject")}</span></button></div>}
+          <button className="nav-item" title={t("parity.resources")} aria-expanded={resourcesOpen} onClick={() => setResourcesOpen(!resourcesOpen)}><ChevronDown size={16} /><span>{t("parity.resources")}</span></button>
+          {(resourcesOpen || collapsed) && links.slice(4).map(({ to, title, icon: Icon }) => <NavLink className="nav-item" to={to} key={to} title={title} onClick={onCloseMobile}><Icon size={16} /><span>{title}</span></NavLink>)}
         </nav>
         <footer className="sidebar-footer">
           <div
@@ -242,30 +243,17 @@ export function Sidebar({
                 : t("count.online", { count: onlineCount ?? 0 })}
             </span>
           </div>
-          <div className="user-row">
+          <NavLink className="nav-item" to="/settings" title={`${t("phaseC.settings")} (⌘,)`} onClick={onCloseMobile}><Settings size={16} /><span>{t("phaseC.settings")}</span><kbd>⌘,</kbd></NavLink>
+          <div className="user-row" title={t("ui.localWorkspace")}>
             <span className="avatar small" aria-hidden="true"><Command size={13} /></span>
             <div>
               <strong title={t("ui.localWorkspace")}>{t("ui.localWorkspace")}</strong>
               <span>{t("ui.selfhostedPersonal")}</span>
             </div>
-            <button className="icon-button" popoverTarget="workspace-settings" aria-label={t("ui.appearanceSettings")} title={t("ui.appearanceSettings")}>
-              <Settings size={14} />
-            </button>
-          </div>
-          <div id="workspace-settings" popover="auto" className="settings-popover">
-            <label>{t("text.language")}
-              <select value={locale} onChange={(event) => setLocale(event.target.value as typeof locale)}>
-                {Object.entries(languageNames).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
-              </select>
-            </label>
-            <label>{t("ui.appearance")}
-              <select value={theme.theme} onChange={(event) => theme.setTheme(event.target.value as typeof theme.theme)}>
-                {(["system", "light", "dark"] as const).map((value) => <option key={value} value={value}>{t(`theme.${value}`)}</option>)}
-              </select>
-            </label>
           </div>
         </footer>
       </aside>
+      {newProject && <ProjectDialog onClose={() => setNewProject(false)} />}
       {newTopic && (
         <NewTopicDialog
           onClose={() => {

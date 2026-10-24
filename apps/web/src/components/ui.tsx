@@ -82,11 +82,13 @@ export function Dialog({
   children,
   onClose,
   wide = false,
+  headerActions,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  headerActions?: ReactNode;
 }) {
   const { t } = useI18n();
   const ref = useRef<HTMLDialogElement>(null);
@@ -126,6 +128,7 @@ export function Dialog({
     >
       <div className="dialog-header">
         <h2 id={titleId}>{title}</h2>
+        {headerActions}
         <button
           className="icon-button"
           onClick={onClose}

@@ -48,6 +48,19 @@ try {
     return result.data;
   };
   const project = await api("/projects", { name: "E2E", repoUrl: repo });
+  await api("/settings", { workspaceName: "E2E workspace", appearance: "dark", language: "en" }, "PATCH");
+  assert.equal((await api("/settings")).workspaceName, "E2E workspace");
+  assert((await api(`/projects/${project.id}/tree`)).some((file) => file.name === "README.md"));
+  assert.equal((await api(`/projects/${project.id}/file?path=README.md`)).content, "Muster e2e fixture\n");
+  const externalKey = await api("/api-keys", { name: "E2E reader", scopes: ["read"] });
+  const externalMcp = (method, params) => fetch(`${url}/api/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${externalKey.key}` }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+  const catalog = await (await externalMcp("tools/list")).json();
+  assert(catalog.result.tools.every((tool) => tool.annotations.readOnlyHint));
+  assert(!catalog.result.tools.some((tool) => tool.name === "create_todo"));
+  assert.equal((await (await externalMcp("tools/call", { name: "create_todo", arguments: { projectId: project.id, title: "Denied" } })).json()).result.isError, true);
+  assert.equal((await fetch(`${url}/api/api-keys/${externalKey.id}`, { method: "DELETE" })).status, 204);
+  assert.equal((await externalMcp("tools/list")).status, 401);
+  console.log("PASS settings, local project browsing and external MCP scope/revocation over HTTP");
   const agent = await api("/agents", { name: "Mock", role: "Build deterministic fixtures", runtime: "mock", model: "mock" });
   const skillForm = new FormData();
   skillForm.append("files", new Blob(["---\nname: E2E Skill\ndescription: Verify resource delivery\n---\nUse the deterministic mock runtime."]), "fixture/SKILL.md");
@@ -89,6 +102,7 @@ try {
         assert.equal(job.env.SERVICE_TOKEN, "muster-e2e-private");
         assert(job.systemInstructions.includes("E2E persistent memory"));
         assert(job.systemInstructions.includes("skills-cache"));
+        if (job.attachments?.length) assert(job.prompt.includes("attachments-cache"));
         context.emit({ type: "tool.completed", tool: "resource-fixture", output: job.env.SERVICE_TOKEN });
       }
       return super.start(job, context);
@@ -101,11 +115,16 @@ try {
   const phase = (id, target) => until(() => details(id), (todo) => todo.phase === target, `${id} → ${target}`);
   const create = (title) => api("/todos", { projectId: project.id, agentId: agent.id, title, spec: "Write a deterministic integration fixture." });
   const todo = await create("Plan and merge");
+  const attachmentForm = new FormData(); attachmentForm.append("files", new Blob(["E2E attachment"]), "notes.txt");
+  assert.equal((await fetch(`${url}/api/todos/${todo.id}/attachments`, { method: "POST", body: attachmentForm })).status, 201);
   await api(`/todos/${todo.id}/start`, { mode: "plan" });
   const planned = await phase(todo.id, "confirm");
   const resourceMessages = JSON.stringify(await api(`/conversations/${planned.builds[0].id}/messages`));
   assert(!resourceMessages.includes("muster-e2e-private"));
   assert(resourceMessages.includes("[secret:SERVICE_TOKEN]"));
+  const attachment = (await api(`/todos/${todo.id}/attachments`))[0];
+  assert.equal(await readFile(join(root, "daemon", "attachments-cache", `${attachment.id}-${attachment.hash}`), "utf8"), "E2E attachment");
+  console.log("PASS attachment upload → authenticated machine download → cache + prompt");
   console.log("PASS agent memory + skill cache + permission-gated env + upload redaction");
   assert(planned.builds[0].documents.some((doc) => doc.kind === "plan"));
   await api(`/todos/${todo.id}/confirm`, {});
@@ -167,7 +186,7 @@ try {
   assert((await api("/usage")).entries.some((entry) => entry.topicId === topic.id && entry.tokensOut > 0));
   console.log("PASS Chief → authenticated MCP → two started todos → board + persisted activity/usage");
 
-  for (const path of ["/", "/agents", `/agents/${agent.id}`, "/skills", "/skills/new", `/skills/${skill.slug}`, "/secrets", "/projects", "/machines", "/usage", `/todos/${todo.id}`]) {
+  for (const path of ["/", "/agents", `/agents/${agent.id}`, "/skills", "/skills/new", `/skills/${skill.slug}`, "/secrets", "/settings", "/schedules", "/connections", "/projects", `/projects/${project.id}`, `/projects/${project.id}/settings`, "/machines", "/usage", `/todos/${todo.id}`]) {
     const response = await fetch(`${url}${path}`);
     assert.equal(response.status, 200); assert((await response.text()).includes('<div id="root">'));
   }

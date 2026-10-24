@@ -22,6 +22,7 @@ export function machineRoutes(services: AppServices): Hono {
     const input = await body(c, enrollMachineSchema); return c.json(services.scheduler.enroll(input.name, input.runtimes, input.concurrency), 201);
   });
   app.use("/*", async (c, next) => { services.scheduler.authenticate(machineToken(c.req.header("authorization"))); await next(); });
+  app.get("/attachments/:id", (c) => c.json(services.attachments.download(c.req.param("id"))));
   app.get("/skills/:slug/archive", (c) => c.json(services.skills.archive(c.req.param("slug"), c.req.query("version"))));
   app.post("/heartbeat", async (c) => { const input = await body(c, heartbeatSchema); return c.json(services.scheduler.heartbeat(machineToken(c.req.header("authorization")), input.running)); });
   app.post("/claim", async (c) => {
@@ -50,7 +51,7 @@ export function machineRoutes(services: AppServices): Hono {
       }
       if (signal.aborted) { release(); cleanup(); return c.json(null); }
       if (!job) cleanup();
-      return c.json(job);
+      return c.json(job ? { ...job, attachments: job.todoId ? services.attachments.list(job.todoId) : [] } : null);
     } catch (error) { release(); cleanup(); throw error; }
   });
   app.post("/turns/:id/events", async (c) => { const input = await body(c, eventUploadSchema); services.scheduler.ingestEvents(machineToken(c.req.header("authorization")), c.req.param("id"), input.events, input.batchId); return c.json({ accepted: input.events.length }); });

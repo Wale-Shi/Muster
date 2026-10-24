@@ -19,23 +19,19 @@ export function TodoPage() {
   const projects = useProjects();
   const agents = useAgents();
   const [done, setDone] = useState(false);
+  const [maximized, setMaximized] = useState(false);
   const [panelVisible, setPanelVisible] = useState(true);
   const [mobileSide, setMobileSide] = useState<"left" | "right">("left");
   const todo = query.data;
   useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.altKey &&
-        event.key === "Enter" &&
-        todo?.phase === "review"
-      ) {
-        event.preventDefault();
-        setDone(true);
-      }
+    const handler = (event: Event) => {
+      const command = (event as CustomEvent<string>).detail;
+      if (command === "complete" && todo?.phase === "review") setDone(true);
+      if (command === "panel") { setPanelVisible((v) => !v); setMaximized(false); }
+      if (command === "maximize") { setPanelVisible(true); setMaximized((v) => !v); setMobileSide("right"); }
     };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
+    window.addEventListener("muster:shortcut", handler);
+    return () => window.removeEventListener("muster:shortcut", handler);
   }, [todo?.phase]);
   if (query.isPending) return <Loading />;
   if (!todo)
@@ -144,7 +140,7 @@ export function TodoPage() {
         </div>
       </header>
       <ErrorNotice error={query.error} />
-      <Resizable
+      <Resizable maximized={maximized}
         storageKey="todo-width"
         initial={58}
         hidden={!panelVisible}

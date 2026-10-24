@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
@@ -15,7 +16,7 @@ afterEach(() => { vi.unstubAllGlobals(); localStorage.clear(); });
 
 it("starts with the board at the desktop minimum and lets the user switch to Chief", () => {
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
-  const { container } = render(<MemoryRouter><Workspace onNewTask={() => {}} /></MemoryRouter>);
+  const { container } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><Workspace onNewTask={() => {}} /></MemoryRouter></QueryClientProvider>);
   expect(container.querySelector(".split")).toHaveClass("mobile-right");
   fireEvent.click(screen.getByRole("button", { name: "Chat" }));
   expect(container.querySelector(".split")).toHaveClass("mobile-left");
@@ -24,7 +25,7 @@ it("starts with the board at the desktop minimum and lets the user switch to Chi
 });
 it("keeps Chief as the initial pane outside the compact desktop range", () => {
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
-  const { container } = render(<MemoryRouter><Workspace onNewTask={() => {}} /></MemoryRouter>);
+  const { container } = render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><Workspace onNewTask={() => {}} /></MemoryRouter></QueryClientProvider>);
   expect(container.querySelector(".split")).toHaveClass("mobile-left");
   fireEvent.click(screen.getByRole("button", { name: "Maximize board" }));
   expect(container.querySelector(".split")).toHaveClass("right-maximized");

@@ -5,10 +5,10 @@ import { ArrowUpRight, Hash, MessageSquare, Search } from "lucide-react";
 import { useTodos, useTopics } from "../api/queries";
 import { Dialog, ErrorNotice } from "./ui";
 
-export function CommandPalette({ onClose }: { onClose: () => void }) {
+export function CommandPalette({ onClose, initialTab = 0 }: { onClose: () => void; initialTab?: number }) {
   const { t } = useI18n();
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState(initialTab);
   const [selected, setSelected] = useState(0);
   const todos = useTodos();
   const topics = useTopics();

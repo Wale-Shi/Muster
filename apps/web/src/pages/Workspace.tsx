@@ -1,3 +1,4 @@
+import { TopicMenu } from "../components/TopicMenu";
 import { useI18n } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router";
@@ -54,19 +55,13 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
     useSensor(KeyboardSensor),
   );
   useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      if (
-        (event.metaKey || event.ctrlKey) &&
-        event.altKey &&
-        event.code === "KeyB"
-      ) {
-        event.preventDefault();
-        setBoardVisible((prior) => !prior);
-        setMaximized(false);
-      }
+    const handler = (event: Event) => {
+      const command = (event as CustomEvent<string>).detail;
+      if (command === "panel") { setBoardVisible((v) => !v); setMaximized(false); }
+      if (command === "maximize") { setBoardVisible(true); setMaximized((v) => !v); setMobileSide("right"); }
     };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
+    window.addEventListener("muster:shortcut", handler);
+    return () => window.removeEventListener("muster:shortcut", handler);
   }, [setBoardVisible]);
   const consumeReference = useCallback(() => setReference(null), []);
   const dragEnd = (event: DragEndEvent) => {
@@ -92,6 +87,7 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
           <span title={topic?.title}>{topic?.title ?? t("ui.topicNotFound")}</span>
         </div>
         <div className="row">
+          {topic && <TopicMenu topic={topic} chiefId={agents.data?.find((a) => a.isChief)?.id} />}
           <div className="mobile-panel-tabs">
             <button
               className={mobileSide === "left" ? "active" : ""}
