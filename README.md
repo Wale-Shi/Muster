@@ -144,3 +144,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, project conventions, and check
 Muster 是开源、可自托管的 todos.dev 风格编码协作工作台。你与 Chief 对话，由它拆分任务并调度多个 Agent，在独立 Git worktree 中并行工作；通过看板跟踪进展，在计划确认和变更验收关口决定下一步。支持 Codex、Claude Code 与 MCP。
 
 需要 Node.js 22+、npm 和 Git。运行 `npm install`、`npm run dev`，另开终端运行 `npm run daemon`，访问 <http://localhost:5173>。生产模式运行 `npm run build && npm start`，访问 <http://localhost:7420>。当前面向单用户可信本地环境；完整方案见 [docs/PLAN.md](docs/PLAN.md)。
+
+### Languages
+
+Muster supports English and Simplified Chinese. Choose a language at the bottom of the sidebar; changes apply immediately to the web UI and desktop menus. Your choice is saved locally. On first use, any `zh*` browser language preference selects Simplified Chinese; otherwise English is used. Unsupported saved preferences fall back to this detection. Desktop menus initially follow system preferences.
+
+To add a web language, add one dictionary file exporting `messages: Messages` (including its native `languageName`) alongside `apps/web/src/i18n/en.ts` and one entry in the locale list in `packages/shared/src/locale.ts`; discovery and the language picker are automatic. Add matching native menu copy in the separate desktop dictionary in `apps/desktop/src/i18n.ts`, and extend automatic language detection if needed. English is the source of truth. Keep named placeholders unchanged, use complete sentences and `{one, other}` plural forms, and format values through `useI18n()`. Run the dictionary, switching and desktop locale tests as well as the normal project checks. User/Agent messages, product names, model IDs, code and Git branches are not translated; unknown external errors remain available verbatim.

@@ -207,7 +207,7 @@ export class Scheduler {
       if (payload.diff !== undefined) this.storeDocument(String(turn.build_id), "changes", payload.diff);
       const isBuild = turn.kind === "build" || (turn.kind === "revise" && turn.todo_id && this.orchestrator.getTodo(String(turn.todo_id)).previousGate === "review");
       if (payload.status === "done" && payload.diff === "" && isBuild) {
-        this.orchestrator.addMessage(String(turn.build_id), turnId, "system", "No file changes in this build", {});
+        this.orchestrator.addMessage(String(turn.build_id), turnId, "system", "No file changes in this build", { code: "no_file_changes" });
       }
       const failedMerge = turn.kind === "merge" && (payload.merge?.ok !== true || payload.status !== "done");
       const error = failedMerge ? payload.merge?.error ?? payload.error ?? "Merge failed: daemon did not confirm publication" : payload.error;

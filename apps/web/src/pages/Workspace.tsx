@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router";
 import {
@@ -28,6 +29,7 @@ import { Resizable } from "../components/Resizable";
 import { ErrorNotice, Loading } from "../components/ui";
 
 export function Workspace({ onNewTask }: { onNewTask: () => void }) {
+  const { t } = useI18n();
   const { id } = useParams();
   const topics = useTopics();
   const todos = useTodos();
@@ -46,7 +48,7 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
   const [dragging, setDragging] = useState<Todo | null>(null);
   const [reference, setReference] = useState<Todo | null>(null);
   const [done, setDone] = useState<Todo | null>(null);
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor),
@@ -75,8 +77,8 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
     if (event.over?.id === "column-done") {
       if (todo.phase === "review") setDone(todo);
       else {
-        setNotice("Tasks must reach Review before they can be marked Done.");
-        setTimeout(() => setNotice(""), 5000);
+        setNotice(true);
+        setTimeout(() => setNotice(false), 5000);
       }
     }
   };
@@ -85,9 +87,9 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
     <div className="workspace page-fill">
       <header className="page-header">
         <div className="breadcrumb">
-          <span className="dim">Workspace</span>
+          <span className="dim">{t("ui.workspace")}</span>
           <span className="dim">/</span>
-          <span>{topic?.title ?? "Topic not found"}</span>
+          <span>{topic?.title ?? t("ui.topicNotFound")}</span>
         </div>
         <div className="row">
           <div className="mobile-panel-tabs">
@@ -96,7 +98,7 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
               onClick={() => setMobileSide("left")}
             >
               <MessageSquare size={14} />
-              Chat
+              {t("ui.chat")}
             </button>
             <button
               className={mobileSide === "right" ? "active" : ""}
@@ -106,13 +108,13 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
               }}
             >
               <Columns3 size={14} />
-              Board
+              {t("ui.board")}
             </button>
           </div>
           <button
             className="icon-button desktop-only"
-            title="Toggle board (⌘⌥B)"
-            aria-label="Toggle board"
+            title={`${t("ui.toggleBoard")} (⌘⌥B)`}
+            aria-label={t("ui.toggleBoard")}
             onClick={() => {
               setBoardVisible((prior) => !prior);
               setMaximized(false);
@@ -122,7 +124,7 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
           </button>
           <button
             className="icon-button desktop-only"
-            aria-label={maximized ? "Restore split view" : "Maximize board"}
+            aria-label={maximized ? t("ui.restoreSplitView") : t("ui.maximizeBoard")}
             onClick={() => {
               setBoardVisible(true);
               setMaximized(!maximized);
@@ -137,10 +139,19 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
       />
       {notice && (
         <div className="notice" role="status">
-          {notice}
+          {t("ui.tasksMustReachReviewBeforeTheyCanBeMarkedDone")}
         </div>
       )}
       <DndContext
+        accessibility={{
+          screenReaderInstructions: { draggable: t("text.dragInstructions") },
+          announcements: {
+            onDragStart: () => t("text.dragStarted"),
+            onDragOver: ({ over }) => t(over ? "text.dragOver" : "text.dragOutside"),
+            onDragEnd: () => t("text.dragEnd"),
+            onDragCancel: () => t("text.dragCancel"),
+          },
+        }}
         sensors={sensors}
         collisionDetection={(args) => {
           const pointer = pointerWithin(args);
@@ -166,13 +177,13 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
               <div className="panel-heading">
                 <span className="chief-avatar">✳</span>
                 <strong>Chief</strong>
-                <span className="muted">Your team, coordinated</span>
+                <span className="muted">{t("ui.yourTeamCoordinated")}</span>
               </div>
               <Conversation
                 key={topic?.id ?? "none"}
                 conversationId={topic?.id ?? ""}
                 status={topic?.activity ?? "idle"}
-                disabled={!topic ? "Create a topic to get started" : undefined}
+                disabled={!topic ? t("ui.createATopicToGetStarted") : undefined}
                 reference={reference}
                 onReferenceConsumed={consumeReference}
               />

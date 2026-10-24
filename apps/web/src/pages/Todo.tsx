@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { ArrowLeft, Coins, PanelRightClose } from "lucide-react";
@@ -8,9 +9,10 @@ import { DoneDialog } from "../components/DoneDialog";
 import { Resizable } from "../components/Resizable";
 import { TodoActions } from "../components/TodoActions";
 import { Avatar, ErrorNotice, Loading, PhaseBadge } from "../components/ui";
-import { duration, number } from "../lib/format";
 
 export function TodoPage() {
+  const { t, formatDuration: duration, formatNumber } = useI18n();
+  const number = (value: number) => formatNumber(value, { notation: "compact", maximumFractionDigits: 1 });
   const { id = "" } = useParams();
   const query = useTodo(id);
   const projects = useProjects();
@@ -39,9 +41,9 @@ export function TodoPage() {
     return (
       <div className="page-content">
         <Link className="muted" to="/">
-          ← Back to workspace
+          {t("ui.backToWorkspace")}
         </Link>
-        <ErrorNotice error={query.error ?? "Task not found"} />
+        <ErrorNotice error={query.error ?? t("ui.taskNotFound")} />
       </div>
     );
   const build = todo.builds.at(-1);
@@ -70,7 +72,7 @@ export function TodoPage() {
           <Link
             to={todo.topicId ? `/topics/${todo.topicId}` : "/"}
             className="icon-button"
-            aria-label="Back to workspace"
+            aria-label={t("ui.backToWorkspace")}
           >
             <ArrowLeft size={16} />
           </Link>
@@ -78,7 +80,7 @@ export function TodoPage() {
           <h1>{todo.title}</h1>
           <button
             className="icon-button desktop-only"
-            aria-label="Toggle documents panel"
+            aria-label={t("ui.toggleDocumentsPanel")}
             onClick={() => setPanelVisible(!panelVisible)}
           >
             <PanelRightClose size={16} />
@@ -89,7 +91,7 @@ export function TodoPage() {
           <span className="metadata-divider" />
           <span className="project-tag">
             <span className="project-square" />
-            {project?.name ?? "Project"}
+            {project?.name ?? t("ui.project")}
           </span>
           {agent && (
             <span className="row muted">
@@ -100,21 +102,21 @@ export function TodoPage() {
           <details className="usage-popover">
             <summary className="button ghost">
               <Coins size={13} />
-              {number(tokensIn + tokensOut)} tokens
+              {t("text.tokens", { count: tokensIn + tokensOut })}
             </summary>
             <div className="popover">
-              <strong>Build usage</strong>
+              <strong>{t("ui.buildUsage")}</strong>
               <span>
-                Input <b>{number(tokensIn)}</b>
+                {t("ui.input")}<b>{number(tokensIn)}</b>
               </span>
               <span>
-                Output <b>{number(tokensOut)}</b>
+                {t("ui.output")}<b>{number(tokensOut)}</b>
               </span>
               <span>
-                Duration <b>{duration(ms)}</b>
+                {t("ui.duration")}<b>{duration(ms)}</b>
               </span>
               <span>
-                Builds <b>{todo.builds.length}</b>
+                {t("ui.builds")}<b>{number(todo.builds.length)}</b>
               </span>
             </div>
           </details>
@@ -126,7 +128,7 @@ export function TodoPage() {
             className={mobileSide === "left" ? "active" : ""}
             onClick={() => setMobileSide("left")}
           >
-            Conversation
+            {t("ui.conversation")}
           </button>
           <button
             className={mobileSide === "right" ? "active" : ""}
@@ -135,7 +137,7 @@ export function TodoPage() {
               setPanelVisible(true);
             }}
           >
-            Plan & changes
+            {t("ui.planChanges")}
           </button>
         </div>
       </header>
@@ -151,19 +153,19 @@ export function TodoPage() {
             key={build?.id ?? todo.id}
             conversationId={build?.id ?? ""}
             todoId={todo.id}
-            agentName={agent?.name ?? "Agent"}
+            agentName={agent?.name ?? t("ui.agent")}
             status={status}
             disabled={
               canMessage
                 ? undefined
                 : todo.phase === "todo"
-                  ? "Start this task to begin the conversation"
+                  ? t("ui.startThisTaskToBeginTheConversation")
                   : todo.phase === "queued"
-                    ? "Waiting for a machine to start this turn…"
-                    : "Reopen or rerun this task to continue"
+                    ? t("ui.waitingForAMachineToStartThisTurn")
+                    : t("ui.reopenOrRerunThisTaskToContinue")
             }
             initialSpec={todo.spec}
-            placeholder="Send feedback to your agent…"
+            placeholder={t("ui.sendFeedbackToYourAgent")}
             onDone={() => {
               if (todo.phase === "review") setDone(true);
             }}

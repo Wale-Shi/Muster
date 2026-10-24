@@ -8,7 +8,7 @@ afterEach(() => { delete window.muster; });
 it("receives native new-task and notification navigation commands and unsubscribes", () => {
   let callback: (command: DesktopCommand) => void = () => {};
   const unsubscribe = vi.fn(), onNewTask = vi.fn();
-  window.muster = { desktop: true, platform: "darwin", chooseFolder: vi.fn(), openPath: vi.fn(), onCommand: (listener) => { callback = listener; return unsubscribe; } };
+  window.muster = { desktop: true, setLocale: vi.fn().mockResolvedValue(undefined), platform: "darwin", chooseFolder: vi.fn(), openPath: vi.fn(), onCommand: (listener) => { callback = listener; return unsubscribe; } };
   function Location() { return <div>{useLocation().pathname}</div>; }
   const view = render(<MemoryRouter><DesktopIntegration onNewTask={onNewTask} /><Location /></MemoryRouter>);
   act(() => callback({ type: "new-task" })); expect(onNewTask).toHaveBeenCalledOnce();
@@ -18,7 +18,7 @@ it("receives native new-task and notification navigation commands and unsubscrib
 });
 it("opens absolute conversation paths through the desktop bridge", async () => {
   const openPath = vi.fn().mockResolvedValue("");
-  window.muster = { desktop: true, platform: "darwin", chooseFolder: vi.fn(), openPath, onCommand: vi.fn() };
+  window.muster = { desktop: true, setLocale: vi.fn().mockResolvedValue(undefined), platform: "darwin", chooseFolder: vi.fn(), openPath, onCommand: vi.fn() };
   render(<Markdown>{"Open /Users/me/repo and `/Users/me/My Repo`."}</Markdown>);
   act(() => screen.getByRole("link", { name: "/Users/me/repo" }).click());
   act(() => screen.getByRole("button", { name: "/Users/me/My Repo" }).click());

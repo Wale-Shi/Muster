@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useRef, type ReactNode } from "react";
 import { useStored } from "../hooks/usePreferences";
 
@@ -20,6 +21,7 @@ export function Resizable({
   mobileSide?: "left" | "right";
   onSwipe?: (side: "left" | "right") => void;
 }) {
+  const { t } = useI18n();
   const [width, setWidth] = useStored(storageKey, initial);
   const container = useRef<HTMLDivElement>(null);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
@@ -55,7 +57,7 @@ export function Resizable({
       <div
         className="resize-handle"
         role="separator"
-        aria-label="Resize panels"
+        aria-label={t("ui.resizePanels")}
         aria-orientation="vertical"
         aria-valuenow={Math.round(clamp(width))}
         aria-valuemin={24}

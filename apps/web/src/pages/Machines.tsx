@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Cpu, Monitor, Server } from "lucide-react";
@@ -6,6 +7,7 @@ import { api } from "../api/client";
 import { Empty, ErrorNotice, Loading } from "../components/ui";
 
 function MachineCard({ machine }: { machine: Machine }) {
+  const { t, label, formatDate, formatNumber } = useI18n();
   const [concurrency, setConcurrency] = useState(
     Math.min(10, machine.concurrency),
   );
@@ -28,25 +30,24 @@ function MachineCard({ machine }: { machine: Machine }) {
           <h3>{machine.name}</h3>
           <span className="muted">
             <span className={`status-dot ${machine.online ? "online" : ""}`} />
-            {machine.online ? "Online" : "Offline"}
+            {machine.online ? t("ui.online") : t("ui.offline")}
           </span>
         </div>
         <span className="badge mono">
-          {machine.running ?? 0} running{" "}
-          {(machine.running ?? 0) === 1 ? "turn" : "turns"}
+          {t("count.running", { count: machine.running ?? 0 })}
         </span>
       </div>
       <div className="machine-runtimes">
         {machine.runtimes.map((runtime) => (
-          <span className="badge" key={runtime}>
+          <span className="badge" key={label("runtime", runtime)}>
             <Cpu size={12} />
-            {runtime}
+            {label("runtime", runtime)}
           </span>
         ))}
       </div>
       <div className="concurrency-label">
-        <label htmlFor={`concurrency-${machine.id}`}>Concurrency</label>
-        <span className="mono">{concurrency}</span>
+        <label htmlFor={`concurrency-${machine.id}`}>{t("ui.concurrency")}</label>
+        <span className="mono">{formatNumber(concurrency)}</span>
       </div>
       <input
         id={`concurrency-${machine.id}`}
@@ -59,27 +60,28 @@ function MachineCard({ machine }: { machine: Machine }) {
       <div className="row concurrency-footer">
         <span className="hint">
           {machine.concurrency > 10
-            ? `Current machine limit: ${machine.concurrency}. Save to apply ${concurrency}.`
-            : "Maximum simultaneous turns"}
+            ? t("text.limit", { current: machine.concurrency, next: concurrency })
+            : t("ui.maximumSimultaneousTurns")}
         </span>
         <button
           className="button"
           disabled={update.isPending || concurrency === machine.concurrency}
           onClick={() => update.mutate()}
         >
-          {update.isPending ? "Saving…" : "Save"}
+          {update.isPending ? t("ui.saving") : t("ui.save")}
         </button>
       </div>
       <ErrorNotice error={update.error} />
       <div className="machine-seen hint">
         {machine.lastSeenAt
-          ? `Last seen ${new Date(machine.lastSeenAt).toLocaleString()}`
-          : "No heartbeat yet"}
+          ? t("text.lastSeen", { date: formatDate(machine.lastSeenAt) })
+          : t("ui.noHeartbeatYet")}
       </div>
     </article>
   );
 }
 export function Machines() {
+  const { t } = useI18n();
   const machines = useQuery({
     queryKey: ["machines"],
     queryFn: api.machines,
@@ -88,23 +90,22 @@ export function Machines() {
   return (
     <div className="management-page">
       <header className="page-header">
-        <h1>Machines</h1>
+        <h1>{t("ui.machines")}</h1>
         <span className="muted">
-          {machines.data?.filter((machine) => machine.online).length ?? 0}{" "}
-          online
+          {t("count.online", { count: machines.data?.filter((machine) => machine.online).length ?? 0 })}
         </span>
       </header>
       <div className="page-content">
         <div className="page-intro">
-          <h2>Put your machines to work.</h2>
-          <p>Connected machines pick up tasks and run your agents locally.</p>
+          <h2>{t("ui.putYourMachinesToWork")}</h2>
+          <p>{t("ui.connectedMachinesPickUpTasksAndRunYourAgentsLocally")}</p>
         </div>
         <ErrorNotice error={machines.error} />
         {machines.isPending ? (
           <Loading />
         ) : !machines.data?.length ? (
-          <Empty icon={<Server size={28} />} title="No machines connected">
-            <span>Start a daemon to connect your first machine.</span>
+          <Empty icon={<Server size={28} />} title={t("ui.noMachinesConnected")}>
+            <span>{t("ui.startADaemonToConnectYourFirstMachine")}</span>
             <code className="command-block">
               muster-daemon start --server http://localhost:7420
             </code>

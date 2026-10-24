@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowUpRight, Hash, MessageSquare, Search } from "lucide-react";
@@ -5,13 +6,14 @@ import { useTodos, useTopics } from "../api/queries";
 import { Dialog, ErrorNotice } from "./ui";
 
 export function CommandPalette({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState(0);
   const [selected, setSelected] = useState(0);
   const todos = useTodos();
   const topics = useTopics();
   const navigate = useNavigate();
-  const tabs = ["All", "Tasks", "Topics"];
+  const tabs = [t("ui.all"), t("ui.tasks"), t("ui.topics")];
   const results = useMemo(() => {
     const query = search.trim().toLowerCase();
     return [
@@ -36,19 +38,19 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
             .map((topic) => ({
               id: topic.id,
               title: topic.title,
-              subtitle: "Topic",
+              subtitle: t("ui.topic"),
               href: `/topics/${topic.id}`,
               kind: "topic",
             }))
         : []),
     ].slice(0, 30);
-  }, [todos.data, topics.data, search, tab]);
+  }, [todos.data, topics.data, search, tab, t]);
   const open = (href: string) => {
     void navigate(href);
     onClose();
   };
   return (
-    <Dialog title="Search workspace" onClose={onClose} wide>
+    <Dialog title={t("ui.searchWorkspace")} onClose={onClose} wide>
       <div
         className="command-palette"
         onKeyDown={(event) => {
@@ -86,8 +88,8 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
           <Search size={18} />
           <input
             autoFocus
-            aria-label="Search tasks and topics"
-            placeholder="Search tasks and topics…"
+            aria-label={t("ui.searchTasksAndTopics")}
+            placeholder={t("ui.searchPlaceholder")}
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
@@ -114,7 +116,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
         <div
           className="command-results"
           role="listbox"
-          aria-label="Search results"
+          aria-label={t("ui.searchResults")}
         >
           {results.map((result, index) => (
             <button
@@ -139,16 +141,16 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
             <div className="empty">
               <p>
                 {todos.isPending || topics.isPending
-                  ? "Searching…"
-                  : "No results found"}
+                  ? t("ui.searching")
+                  : t("ui.noResultsFound")}
               </p>
             </div>
           )}
         </div>
         <div className="command-help">
-          <span>↑↓ navigate</span>
-          <span>↵ open</span>
-          <span>esc close</span>
+          <span>{t("ui.navigate")}</span>
+          <span>{t("ui.open")}</span>
+          <span>{t("ui.escClose")}</span>
         </div>
       </div>
     </Dialog>

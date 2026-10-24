@@ -2640,3 +2640,12 @@ kbd {
 .muster-desktop.muster-mac .page-header a,
 .muster-desktop.muster-mac .page-header input { -webkit-app-region: no-drag; }
 .local-path { color: var(--accent); text-decoration: underline; cursor: pointer; text-align: left; }
+
+.language-picker { width: 100%; margin-bottom: 10px; font-size: 12px; }
+.button, .column-header h3, .card-gate { white-space: nowrap; }
+.column-header h3 { overflow: hidden; text-overflow: ellipsis; }
+.card-time { white-space: nowrap; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dialog-footer { flex-wrap: wrap; }
+.document-header { flex-wrap: wrap; gap: 6px; }
+.user-row > div { min-width: 0; }
+.user-row strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

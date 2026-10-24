@@ -9,6 +9,8 @@ import { resolvePath } from "./path.js";
 import { chooseServer } from "./ports.js";
 import { Worker, waitForServer } from "./workers.js";
 import type { DesktopCommand } from "./bridge.js";
+import type { Locale } from "@muster/shared";
+import { desktopError, desktopText, isLocale, notificationTitle, resolveLocale } from "./i18n.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../../../..");
@@ -20,6 +22,9 @@ mkdirSync(logs, { recursive: true, mode: 0o700 });
 app.setPath("userData", join(data, "desktop"));
 app.setPath("logs", logs);
 const smoke = process.argv.includes("--smoke-test");
+let locale: Locale = "en";
+const t = (key: Parameters<typeof desktopText>[1], params?: Record<string, string | number>) => desktopText(locale, key, params);
+let machineStatus: { online: boolean; running: number } | undefined;
 let window: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let server: Worker | undefined;
@@ -70,31 +75,44 @@ function createWindow() {
 
 function integrations() {
   const trusted = (event: Electron.IpcMainInvokeEvent) => event.sender === window?.webContents && event.senderFrame === window.webContents.mainFrame && new URL(event.senderFrame.url).origin === origin;
+  ipcMain.handle("muster:set-locale", (event, value: unknown) => {
+    if (!trusted(event)) throw new Error(t("untrusted"));
+    if (!isLocale(value)) throw new Error(t("invalidLocale"));
+    locale = value; rebuildMenu(); rebuildTray();
+  });
   ipcMain.handle("muster:choose-folder", async (event) => {
-    if (!trusted(event) || !window) throw new Error("Untrusted desktop request");
-    const result = await dialog.showOpenDialog(window, { properties: ["openDirectory"], title: "Choose project repository" });
+    if (!trusted(event) || !window) throw new Error(t("untrusted"));
+    const result = await dialog.showOpenDialog(window, { properties: ["openDirectory"], title: t("folder") });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
   ipcMain.handle("muster:open-path", async (event, path: unknown) => {
-    if (!trusted(event) || typeof path !== "string" || !isAbsolute(path) || path.includes("\0")) throw new Error("Expected a local absolute path");
+    if (!trusted(event) || typeof path !== "string" || !isAbsolute(path) || path.includes("\0")) throw new Error(t("path"));
     return shell.openPath(path);
   });
-  Menu.setApplicationMenu(Menu.buildFromTemplate([
-    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
-    { label: "File", submenu: [
-      { label: "New task", accelerator: "CmdOrCtrl+N", click: () => command({ type: "new-task" }) },
-      { label: "Open in browser", click: () => { void shell.openExternal(origin); } },
-      { label: "Show logs", click: () => { void shell.openPath(logs); } },
-      { type: "separator" }, process.platform === "darwin" ? { role: "close" as const } : { role: "quit" as const },
-    ] }, { role: "editMenu" }, { role: "viewMenu" }, { role: "windowMenu" },
-  ]));
+  rebuildMenu();
   const assets = app.isPackaged ? join(process.resourcesPath, "assets") : join(root, "apps/desktop/assets");
   const image = nativeImage.createFromPath(join(assets, "tray.png"));
   image.setTemplateImage(process.platform === "darwin");
   tray = new Tray(image);
   tray.on("click", show);
-  tray.setToolTip("Muster — connecting");
-  tray.setContextMenu(Menu.buildFromTemplate([{ label: "Machine connecting", enabled: false }, { label: "Open Muster", click: show }, { role: "quit" }]));
+  rebuildTray();
+}
+
+function rebuildMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
+    { label: t("file"), submenu: [
+      { label: t("newTask"), accelerator: "CmdOrCtrl+N", click: () => command({ type: "new-task" }) },
+      { label: t("browser"), click: () => { void shell.openExternal(origin); } },
+      { label: t("logs"), click: () => { void shell.openPath(logs); } },
+      { type: "separator" }, process.platform === "darwin" ? { role: "close" as const } : { role: "quit" as const },
+    ] }, { role: "editMenu", label: t("edit") }, { role: "viewMenu", label: t("view") }, { role: "windowMenu", label: t("window") },
+  ]));
+}
+function rebuildTray() {
+  const status = machineStatus ? `${t(machineStatus.online ? "online" : "offline")} · ${t("running", { count: machineStatus.running })}` : t("connecting");
+  tray?.setToolTip(`Muster — ${status}`);
+  tray?.setContextMenu(Menu.buildFromTemplate([{ label: status, enabled: false }, { label: t("open"), click: show }, { role: "quit" }]));
 }
 
 interface TodoStatus { id: string; title: string; phase: string; updatedAt: string }
@@ -119,14 +137,14 @@ async function refreshStatus() {
     let machineId: string | undefined;
     try { machineId = (JSON.parse(readFileSync(join(data, "machine.json"), "utf8")) as { machineId: string }).machineId; } catch { /* enrolling */ }
     const machine = machines.find((value) => value.id === machineId);
-    const status = `Machine ${machine?.online ? "online" : "offline"} · ${machine?.running ?? 0} running`;
-    tray?.setToolTip(`Muster — ${status}`);
-    tray?.setContextMenu(Menu.buildFromTemplate([{ label: status, enabled: false }, { label: "Open Muster", click: show }, { role: "quit" }]));
+    machineStatus = { online: machine?.online ?? false, running: machine?.running ?? 0 };
+    rebuildTray();
   } catch (error) { log(`Status unavailable: ${String(error)}`); }
   finally { polling = false; }
 }
 
 async function launch() {
+  locale = resolveLocale(app.getPreferredSystemLanguages());
   const env = { ...process.env, PATH: await resolvePath(), MUSTER_DATA_DIR: data, MUSTER_HOME: data };
   // Retry discovery when another application wins the bind race.
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -140,7 +158,7 @@ async function launch() {
   if (quitting) return;
   if (existingDaemon(data, origin)) log("Reusing the existing machine daemon (left running on quit)");
   else daemon = new Worker(join(runtime, "apps/daemon/dist/index.js"), ["start", "--server", origin], env, logs, "daemon");
-  const failed = (name: string, worker: Worker) => { void worker.exited.then((code) => { if (!quitting) { log(`${name} exited: ${code}`); if (!smoke) dialog.showErrorBox("Muster worker stopped", `${name} exited unexpectedly. See ${logs}`); app.quit(); } }); };
+  const failed = (name: string, worker: Worker) => { void worker.exited.then((code) => { if (!quitting) { log(`${name} exited: ${code}`); if (!smoke) dialog.showErrorBox(t("workerStopped"), t("workerError", { name: t(name === "Server" ? "server" : "daemon"), logs })); app.quit(); } }); };
   if (server) failed("Server", server);
   if (daemon) failed("Daemon", daemon);
   void watchEvents(origin, eventsAbort.signal, async (event) => {
@@ -150,7 +168,7 @@ async function launch() {
     const response = await fetch(`${origin}/api/todos/${encodeURIComponent(event.todoId)}`, { signal: AbortSignal.timeout(3000) });
     if (!response.ok) return;
     const { data: todo } = await response.json() as { data: TodoStatus };
-    const notification = new Notification({ title: `${event.payload?.phase} · Muster`, body: todo.title });
+    const notification = new Notification({ title: notificationTitle(locale, event.payload?.phase ?? "failed"), body: todo.title });
     notification.on("click", () => command({ type: "open-todo", id: todo.id }));
     notification.on("failed", (_event, error) => log(`Notification failed: ${error}`));
     notification.show();
@@ -192,7 +210,7 @@ else {
   });
   const startup = app.whenReady().then(launch).catch((error: unknown) => {
     log(error instanceof Error ? error.stack ?? error.message : String(error));
-    if (!smoke) dialog.showErrorBox("Muster could not start", `${String(error)}\nLogs: ${logs}`);
+    if (!smoke) dialog.showErrorBox(t("startup"), t("startupError", { error: desktopError(locale, error), logs }));
     process.exitCode = 1;
     app.quit();
   });

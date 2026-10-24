@@ -24,16 +24,5 @@ export function boardTodos(todos: Todo[], column: ColumnId, now = Date.now()) {
           Date.parse(todo.doneAt) >= now - 7 * 86_400_000)),
   );
 }
-export const phaseLabels: Record<TodoPhase, string> = {
-  todo: "To do",
-  queued: "Queued",
-  planning: "Planning",
-  confirm: "Confirm",
-  building: "Building",
-  review: "Review",
-  failed: "Failed",
-  done: "Done",
-  closed: "Closed",
-};
 export const isRunning = (phase: TodoPhase) =>
   ["queued", "planning", "building"].includes(phase);

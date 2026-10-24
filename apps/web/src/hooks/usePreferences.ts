@@ -26,11 +26,12 @@ export function useStored<T>(key: string, fallback: T) {
   return [value, update] as const;
 }
 export function useTheme() {
-  const [theme, setTheme] = useState(() => {
+  const [theme, setTheme] = useState<"system" | "dark" | "light">(() => {
     // The desktop window starts dark; browsers follow the system appearance.
     const fallback = window.muster?.desktop ? "dark" : "system";
     try {
-      return localStorage.getItem("muster.theme") ?? fallback;
+      const saved = localStorage.getItem("muster.theme");
+      return saved === "system" || saved === "dark" || saved === "light" ? saved : fallback;
     } catch {
       return fallback;
     }

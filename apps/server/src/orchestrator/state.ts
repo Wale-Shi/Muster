@@ -192,7 +192,7 @@ export class Orchestrator {
     if (!topicRow) return;
     const topicId = String(topicRow.id);
     const content = `Todo #${todo.number} ${todo.title} entered ${phase}.`;
-    this.addMessage(topicId, null, "system", content, { todoId: todo.id, phase });
+    this.addMessage(topicId, null, "system", content, { todoId: todo.id, phase, todoNumber: todo.number, todoTitle: todo.title });
     if (this.autoFollowUp && todo.createdBy === "chief") this.enqueueChief(topicId, content, true);
   }
 

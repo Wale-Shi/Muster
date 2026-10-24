@@ -1,8 +1,9 @@
+import { displayError } from "../i18n/errors";
+import { useI18n } from "../i18n";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { LoaderCircle, X } from "lucide-react";
 import type { TodoPhase } from "@muster/shared";
 import { initials } from "../lib/format";
-import { phaseLabels } from "../lib/board";
 
 export function Avatar({
   name,
@@ -18,36 +19,40 @@ export function Avatar({
   );
 }
 export function PhaseDot({ phase }: { phase: TodoPhase }) {
+  const { label } = useI18n();
   return ["planning", "building", "queued"].includes(phase) ? (
     <LoaderCircle
       size={12}
       className={`phase-icon ${phase} spin`}
-      aria-label={phaseLabels[phase]}
+      aria-label={label("phase", phase)}
     />
   ) : (
-    <span className={`phase-dot ${phase}`} title={phaseLabels[phase]} />
+    <span className={`phase-dot ${phase}`} title={label("phase", phase)} />
   );
 }
 export function PhaseBadge({ phase }: { phase: TodoPhase }) {
+  const { label } = useI18n();
   return (
     <span className={`badge phase-badge ${phase}`}>
       <PhaseDot phase={phase} />
-      {phaseLabels[phase]}
+      {label("phase", phase)}
     </span>
   );
 }
 export function ErrorNotice({ error }: { error: unknown }) {
+  const { t, label } = useI18n();
   return error ? (
     <div className="error" role="alert">
-      {error instanceof Error ? error.message : String(error)}
+      {displayError(error, t, label)}
     </div>
   ) : null;
 }
 export function Loading() {
+  const { t } = useI18n();
   return (
     <div className="centered muted">
       <LoaderCircle className="spin" size={18} />
-      <span>Loading…</span>
+      <span>{t("ui.loading")}</span>
     </div>
   );
 }
@@ -80,6 +85,7 @@ export function Dialog({
   onClose: () => void;
   wide?: boolean;
 }) {
+  const { t } = useI18n();
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -120,7 +126,7 @@ export function Dialog({
         <button
           className="icon-button"
           onClick={onClose}
-          aria-label="Close dialog"
+          aria-label={t("ui.closeDialog")}
         >
           <X size={16} />
         </button>

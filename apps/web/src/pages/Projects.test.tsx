@@ -11,7 +11,7 @@ afterEach(() => { delete window.muster; });
 function page() { return render(<QueryClientProvider client={new QueryClient()}><Projects /></QueryClientProvider>); }
 it("fills the repository field from the native folder picker", async () => {
   const chooseFolder = vi.fn().mockResolvedValue("/Users/me/My Project");
-  window.muster = { desktop: true, platform: "darwin", chooseFolder, openPath: vi.fn(), onCommand: vi.fn() };
+  window.muster = { desktop: true, setLocale: vi.fn().mockResolvedValue(undefined), platform: "darwin", chooseFolder, openPath: vi.fn(), onCommand: vi.fn() };
   page();
   act(() => screen.getByRole("button", { name: "New project" }).click());
   act(() => screen.getByRole("button", { name: "Choose folder…" }).click());

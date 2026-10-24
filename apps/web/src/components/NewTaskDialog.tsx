@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
@@ -13,6 +14,7 @@ export function NewTaskDialog({
   onClose: () => void;
   topicId?: string;
 }) {
+  const { t, label } = useI18n();
   const projects = useProjects();
   const agents = useAgents();
   const [projectId, setProjectId] = useState("");
@@ -60,26 +62,25 @@ export function NewTaskDialog({
   };
   const disabled = create.isPending || !selectedProject || !title.trim();
   return (
-    <Dialog title="New task" onClose={onClose} wide>
+    <Dialog title={t("ui.newTask")} onClose={onClose} wide>
       <form onSubmit={submit}>
         <div className="dialog-body form-stack">
           <ErrorNotice error={projects.error || agents.error} />
           {!projects.isPending && !projects.data?.length && (
             <p className="notice">
-              Create a project in Projects before adding a task.
+              {t("ui.createAProjectInProjectsBeforeAddingATask")}
             </p>
           )}
           <div className="form-row">
             <label>
-              Project
-              <select
+              {t("ui.project")}<select
                 required
                 value={selectedProject}
                 onChange={(event) => setProjectId(event.target.value)}
                 disabled={!!createdId}
               >
                 <option value="" disabled>
-                  Select project
+                  {t("ui.selectProject")}
                 </option>
                 {projects.data?.map((project) => (
                   <option key={project.id} value={project.id}>
@@ -89,17 +90,16 @@ export function NewTaskDialog({
               </select>
             </label>
             <label>
-              Agent
-              <select
+              {t("ui.agent")}<select
                 value={selectedAgent}
                 onChange={(event) => setAgentId(event.target.value)}
               >
-                <option value="">Default agent</option>
+                <option value="">{t("ui.defaultAgent")}</option>
                 {agents.data
                   ?.filter((agent) => !agent.isChief)
                   .map((agent) => (
                     <option key={agent.id} value={agent.id}>
-                      {agent.name} · {agent.runtime}
+                      {agent.name} · {label("runtime", agent.runtime)}
                     </option>
                   ))}
               </select>
@@ -107,8 +107,8 @@ export function NewTaskDialog({
           </div>
           <input
             className="title-input"
-            aria-label="Task title"
-            placeholder="What needs to get done?"
+            aria-label={t("ui.taskTitle")}
+            placeholder={t("ui.whatNeedsToGetDone")}
             autoFocus
             required
             value={title}
@@ -116,8 +116,8 @@ export function NewTaskDialog({
             disabled={!!createdId}
           />
           <textarea
-            aria-label="Task description"
-            placeholder="Add a description, context, or a few acceptance criteria…"
+            aria-label={t("ui.taskDescription")}
+            placeholder={t("ui.addADescriptionContextOrAFewAcceptanceCriteria")}
             rows={7}
             value={spec}
             onChange={(event) => setSpec(event.target.value)}
@@ -126,7 +126,7 @@ export function NewTaskDialog({
           <ErrorNotice error={create.error} />
           {createdId && create.isError && (
             <p className="hint">
-              Task saved. Retry starting it, or open it from the board.
+              {t("ui.taskSavedRetryStartingItOrOpenItFromTheBoard")}
             </p>
           )}
         </div>
@@ -138,7 +138,7 @@ export function NewTaskDialog({
             onClick={() => create.mutate("backlog")}
           >
             <ListTodo size={14} />
-            Save to backlog
+            {t("ui.saveToBacklog")}
           </button>
           <div className="row">
             <button
@@ -148,11 +148,11 @@ export function NewTaskDialog({
               onClick={() => create.mutate("run")}
             >
               <Play size={13} />
-              Run now
+              {t("ui.runNow")}
             </button>
             <button className="button primary" disabled={disabled}>
               <ArrowRight size={14} />
-              {create.isPending ? "Creating…" : "Plan first"}
+              {create.isPending ? t("ui.creating") : t("ui.planFirst")}
             </button>
           </div>
         </div>

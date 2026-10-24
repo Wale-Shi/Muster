@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { DesktopBridge, DesktopCommand } from "./bridge.js";
 const bridge: DesktopBridge = {
+  setLocale: (locale) => ipcRenderer.invoke("muster:set-locale", locale) as Promise<void>,
   desktop: true,
   platform: process.platform,
   chooseFolder: () => ipcRenderer.invoke("muster:choose-folder") as Promise<string | null>,

@@ -1,18 +1,18 @@
+import { useI18n, type MessageKey } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Link } from "react-router";
 import { Circle, Plus, SlidersHorizontal } from "lucide-react";
 import type { Agent, Project, Todo } from "@muster/shared";
-import { boardTodos, phaseLabels, type ColumnId } from "../lib/board";
-import { relativeTime } from "../lib/format";
+import { boardTodos, type ColumnId } from "../lib/board";
 import { Avatar, PhaseDot } from "./ui";
 
-const columns: { id: ColumnId; title: string; empty: string }[] = [
-  { id: "backlog", title: "Backlog", empty: "Nothing waiting to start" },
-  { id: "in_progress", title: "In progress", empty: "Nothing in progress" },
-  { id: "needs_you", title: "Needs you", empty: "Nothing waiting on you" },
-  { id: "done", title: "Done", empty: "Nothing finished yet" },
+const columns: { id: ColumnId; title: MessageKey; empty: MessageKey }[] = [
+  { id: "backlog", title: "ui.backlog", empty: "ui.nothingWaitingToStart" },
+  { id: "in_progress", title: "ui.inProgress", empty: "ui.nothingInProgress" },
+  { id: "needs_you", title: "ui.needsYou", empty: "ui.nothingWaitingOnYou" },
+  { id: "done", title: "ui.done", empty: "ui.nothingFinishedYet" },
 ];
 export function TaskCard({
   todo,
@@ -25,6 +25,7 @@ export function TaskCard({
   agent?: Agent | undefined;
   overlay?: boolean;
 }) {
+  const { t, label, formatRelative, formatDate } = useI18n();
   const drag = useDraggable({ id: todo.id, data: { todo }, disabled: overlay });
   return (
     <article
@@ -33,16 +34,17 @@ export function TaskCard({
       {...drag.listeners}
       {...drag.attributes}
       className={`task-card ${drag.isDragging ? "dragging" : ""} ${overlay ? "overlay-card" : ""}`}
-      aria-label={`Drag task #${todo.number}: ${todo.title}`}
+      aria-roledescription={t("text.draggable")}
+      aria-label={t("text.drag", { number: todo.number, title: todo.title })}
     >
       <div className="card-top">
         <PhaseDot phase={todo.phase} />
         <span className="mono dim">#{todo.number}</span>
         {["confirm", "review", "failed"].includes(todo.phase) && (
-          <span className={`card-gate ${todo.phase}`}>{phaseLabels[todo.phase]}</span>
+          <span className={`card-gate ${todo.phase}`}>{label("phase", todo.phase)}</span>
         )}
-        <span className="card-time" title="Time since last update">
-          {relativeTime(todo.updatedAt)}
+        <span className="card-time" title={`${t("ui.timeSinceLastUpdate")}: ${formatDate(todo.updatedAt)}`}>
+          {formatRelative(todo.updatedAt)}
         </span>
       </div>
       <Link
@@ -57,12 +59,12 @@ export function TaskCard({
       <div className="card-footer">
         <span className="project-tag">
           <span className="project-square" />
-          {project?.name ?? "Project"}
+          {project?.name ?? t("ui.project")}
         </span>
         {agent ? (
           <Avatar name={agent.name} small />
         ) : (
-          <span className="unassigned" title="Unassigned">
+          <span className="unassigned" title={t("ui.unassigned")}>
             —
           </span>
         )}
@@ -87,6 +89,7 @@ function Column({
   agents: Agent[];
   onNew: () => void;
 }) {
+  const { t, formatNumber } = useI18n();
   const drop = useDroppable({ id: `column-${id}`, disabled: id !== "done" });
   return (
     <section
@@ -97,18 +100,18 @@ function Column({
       <div className="column-header">
         <span className={`column-dot ${id}`} />
         <h3>{title}</h3>
-        <span className="column-count">{todos.length}</span>
+        <span className="column-count">{formatNumber(todos.length)}</span>
         {id === "backlog" && (
           <button
             className="icon-button"
             onClick={onNew}
-            aria-label="Add to backlog"
+            aria-label={t("ui.addToBacklog")}
           >
             <Plus size={14} />
           </button>
         )}
       </div>
-      {id === "done" && <div className="column-subtitle">Last 7 days</div>}
+      {id === "done" && <div className="column-subtitle">{t("ui.last7Days")}</div>}
       <div className="column-cards">
         {todos.map((todo) => (
           <TaskCard
@@ -145,6 +148,7 @@ export function Board({
   agents: Agent[];
   onNew: () => void;
 }) {
+  const { t, formatNumber } = useI18n();
   const [filter, setFilter] = useState("");
   const grouped = columns.map((column) => boardTodos(
     todos.filter((todo) => !filter || todo.projectId === filter), column.id,
@@ -189,22 +193,22 @@ export function Board({
     <div className="board">
       <div className="board-toolbar">
         <span className="muted">
-          All tasks{" "}
+          {t("ui.allTasks")}{" "}
           <span className="dim">
-            {todos.filter((todo) => todo.phase !== "closed").length}
+            {formatNumber(todos.filter((todo) => todo.phase !== "closed").length)}
           </span>
         </span>
         <label className="board-filter">
           <SlidersHorizontal size={12} />
           <select
-            aria-label="Filter board by project"
+            aria-label={t("ui.filterBoardByProject")}
             value={filter}
             onChange={(event) => {
               navigated.current = false;
               setFilter(event.target.value);
             }}
           >
-            <option value="">All projects</option>
+            <option value="">{t("ui.allProjects")}</option>
             {projects.map((project) => (
               <option value={project.id} key={project.id}>
                 {project.name}
@@ -213,7 +217,7 @@ export function Board({
           </select>
         </label>
       </div>
-      <nav className="board-paging" aria-label="Board columns">
+      <nav className="board-paging" aria-label={t("ui.boardColumns")}>
         {columns.map((column, index) => (
           <button
             key={column.id}
@@ -225,7 +229,7 @@ export function Board({
               scrollToColumn(index);
             }}
           >
-            <span>{column.title}</span>{" "}<span>{grouped[index]!.length}</span>
+            <span>{t(column.title)}</span>{" "}<span>{formatNumber(grouped[index]!.length)}</span>
           </button>
         ))}
       </nav>
@@ -251,6 +255,7 @@ export function Board({
           <Column
             key={column.id}
             {...column}
+            title={t(column.title)} empty={t(column.empty)}
             todos={grouped[index]!}
             projects={projects}
             agents={agents}

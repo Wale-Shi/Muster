@@ -1,3 +1,4 @@
+import { I18nProvider } from "./i18n";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
@@ -18,7 +19,7 @@ const client = new QueryClient({
 });
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <ErrorBoundary>
+    <I18nProvider><ErrorBoundary>
       <QueryClientProvider client={client}>
         <BrowserRouter>
           <RealtimeProvider>
@@ -26,6 +27,6 @@ createRoot(document.getElementById("root")!).render(
           </RealtimeProvider>
         </BrowserRouter>
       </QueryClientProvider>
-    </ErrorBoundary>
+    </ErrorBoundary></I18nProvider>
   </StrictMode>,
 );

@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Pencil, Plus } from "lucide-react";
@@ -13,6 +14,7 @@ function AgentDialog({
   agent: Agent | null;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [input, setInput] = useState<AgentInput>({
     name: agent?.name ?? "",
     role: agent?.role ?? "",
@@ -44,28 +46,26 @@ function AgentDialog({
   };
   const missing = (["name", "role", "model"] as const).filter((field) => !input[field].trim());
   return (
-    <Dialog title={agent ? "Edit agent" : "Create agent"} onClose={onClose}>
+    <Dialog title={agent ? t("ui.editAgent") : t("ui.createAgent")} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="dialog-body form-stack">
           <label>
-            Name (required)
-            <input
+            {t("ui.nameRequired")}<input
               autoFocus
               required
               value={input.name}
-              placeholder="e.g. Atlas"
+              placeholder={t("ui.egAtlas")}
               onChange={(event) =>
                 setInput({ ...input, name: event.target.value })
               }
             />
           </label>
           <label>
-            Role (required)
-            <textarea
+            {t("ui.roleRequired")}<textarea
               required
               rows={3}
               value={input.role}
-              placeholder="What is this agent responsible for?"
+              placeholder={t("ui.whatIsThisAgentResponsibleFor")}
               onChange={(event) =>
                 setInput({ ...input, role: event.target.value })
               }
@@ -73,8 +73,7 @@ function AgentDialog({
           </label>
           <div className="form-row">
             <label>
-              Runtime (required)
-              <select
+              {t("ui.runtimeRequired")}<select
                 required
                 value={input.runtime}
                 onChange={(event) =>
@@ -83,16 +82,15 @@ function AgentDialog({
               >
                 <option value="codex">Codex</option>
                 <option value="claude">Claude Code</option>
-                <option value="mock">Mock (local test)</option>
+                <option value="mock">{t("ui.mockLocalTest")}</option>
               </select>
             </label>
             <label>
-              Model (required)
-              <input
+              {t("ui.modelRequired")}<input
                 required
                 value={input.model}
                 placeholder={
-                  input.runtime === "mock" ? "mock" : "Model identifier"
+                  input.runtime === "mock" ? "mock" : t("ui.modelIdentifier")
                 }
                 onChange={(event) =>
                   setInput({ ...input, model: event.target.value })
@@ -101,10 +99,9 @@ function AgentDialog({
             </label>
           </div>
           <label>
-            Reasoning
-            <input
+            {t("ui.reasoning")}<input
               value={input.reasoning ?? ""}
-              placeholder="e.g. high (optional)"
+              placeholder={t("ui.egHighOptional")}
               onChange={(event) =>
                 setInput({ ...input, reasoning: event.target.value || null })
               }
@@ -113,13 +110,13 @@ function AgentDialog({
           <ErrorNotice error={save.error} />
           {missing.length > 0 && (
             <p className="hint" id="agent-required" role="status">
-              Enter {missing.join(", ")} to {agent ? "save changes" : "create an agent"}.
+              {t(agent ? "text.requiredSave" : "text.requiredCreate", { fields: missing.map((field) => t(`field.${field}`)).join(", ") })}
             </p>
           )}
         </div>
         <div className="dialog-footer">
           <button type="button" className="button" onClick={onClose}>
-            Cancel
+            {t("ui.cancel")}
           </button>
           <button
             className="button primary"
@@ -127,10 +124,10 @@ function AgentDialog({
             aria-describedby={missing.length ? "agent-required" : undefined}
           >
             {save.isPending
-              ? "Saving…"
+              ? t("ui.saving")
               : agent
-                ? "Save changes"
-                : "Create agent"}
+                ? t("ui.saveChanges")
+                : t("ui.createAgent")}
           </button>
         </div>
       </form>
@@ -138,30 +135,31 @@ function AgentDialog({
   );
 }
 export function Agents() {
+  const { t, label } = useI18n();
   const agents = useAgents();
   const todos = useTodos();
   const [editing, setEditing] = useState<Agent | null | undefined>(undefined);
   return (
     <div className="management-page">
       <header className="page-header">
-        <h1>Agents</h1>
+        <h1>{t("ui.agents")}</h1>
         <button className="button primary" onClick={() => setEditing(null)}>
           <Plus size={14} />
-          New agent
+          {t("ui.newAgent")}
         </button>
       </header>
       <div className="page-content">
         <div className="page-intro">
-          <h2>Your team, ready to build.</h2>
-          <p>Give each agent a role, a runtime, and a little direction.</p>
+          <h2>{t("ui.yourTeamReadyToBuild")}</h2>
+          <p>{t("ui.giveEachAgentARoleARuntimeAndALittleDirection")}</p>
         </div>
         <ErrorNotice error={agents.error || todos.error} />
         {agents.isPending ? (
           <Loading />
         ) : !agents.data?.length ? (
-          <Empty icon={<Bot size={26} />} title="Meet your next teammate">
+          <Empty icon={<Bot size={26} />} title={t("ui.meetYourNextTeammate")}>
             <button className="button" onClick={() => setEditing(null)}>
-              Create an agent
+              {t("ui.createAnAgent")}
             </button>
           </Empty>
         ) : (
@@ -182,12 +180,12 @@ export function Agents() {
                         {agent.name}
                         {agent.isChief && <span className="badge">Chief</span>}
                       </h3>
-                      <span className="mono muted">{agent.runtime}</span>
+                      <span className="mono muted">{label("runtime", agent.runtime)}</span>
                     </div>
                     <button
                       className="icon-button"
                       onClick={() => setEditing(agent)}
-                      aria-label={`Edit ${agent.name}`}
+                      aria-label={t("text.edit", { name: agent.name })}
                     >
                       <Pencil size={14} />
                     </button>
@@ -202,7 +200,7 @@ export function Agents() {
                   <div className="agent-card-footer">
                     <span className={`status-dot ${active ? "indigo" : ""}`} />
                     <span>
-                      {active} active {active === 1 ? "task" : "tasks"}
+                      {t("count.active", { count: active })}
                     </span>
                   </div>
                 </article>

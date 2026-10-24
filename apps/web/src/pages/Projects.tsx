@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { FolderGit2, GitBranch, Plus } from "lucide-react";
@@ -6,22 +7,23 @@ import { useProjects, useTodos } from "../api/queries";
 import { Dialog, Empty, ErrorNotice, Loading } from "../components/ui";
 
 export function Projects() {
+  const { t } = useI18n();
   const projects = useProjects();
   const todos = useTodos();
   const [open, setOpen] = useState(false);
   return (
     <div className="management-page">
       <header className="page-header">
-        <h1>Projects</h1>
+        <h1>{t("ui.projects")}</h1>
         <button className="button primary" onClick={() => setOpen(true)}>
           <Plus size={14} />
-          New project
+          {t("ui.newProject")}
         </button>
       </header>
       <div className="page-content">
         <div className="page-intro">
-          <h2>A home for every task.</h2>
-          <p>Connect a repository. Your agents work in isolated branches.</p>
+          <h2>{t("ui.aHomeForEveryTask")}</h2>
+          <p>{t("ui.connectARepositoryYourAgentsWorkInIsolatedBranches")}</p>
         </div>
         <ErrorNotice error={projects.error || todos.error} />
         {projects.isPending ? (
@@ -29,10 +31,10 @@ export function Projects() {
         ) : !projects.data?.length ? (
           <Empty
             icon={<FolderGit2 size={26} />}
-            title="Your next project starts here"
+            title={t("ui.yourNextProjectStartsHere")}
           >
             <button className="button" onClick={() => setOpen(true)}>
-              Connect a repository
+              {t("ui.connectARepository")}
             </button>
           </Empty>
         ) : (
@@ -53,11 +55,7 @@ export function Projects() {
                   {project.baseBranch}
                 </span>
                 <span className="muted">
-                  {todos.data?.filter(
-                    (todo) =>
-                      todo.projectId === project.id && todo.phase !== "closed",
-                  ).length ?? 0}{" "}
-                  tasks
+                  {t("count.tasks", { count: todos.data?.filter((todo) => todo.projectId === project.id && todo.phase !== "closed").length ?? 0 })}
                 </span>
               </article>
             ))}
@@ -69,6 +67,7 @@ export function Projects() {
   );
 }
 function ProjectDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
   const [name, setName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [baseBranch, setBaseBranch] = useState("main");
@@ -95,37 +94,35 @@ function ProjectDialog({ onClose }: { onClose: () => void }) {
     create.mutate();
   };
   return (
-    <Dialog title="New project" onClose={onClose}>
+    <Dialog title={t("ui.newProject")} onClose={onClose}>
       <form onSubmit={submit}>
         <div className="dialog-body form-stack">
           <label>
-            Name
-            <input
+            {t("ui.name")}<input
               autoFocus
               required
-              placeholder="My project"
+              placeholder={t("ui.myProject")}
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
           </label>
           <label>
-            Repository path or URL
-            <input
+            {t("ui.repositoryPathOrURL")}<input
               required
               className="mono"
-              placeholder="/path/to/repo or https://github.com/…"
+              placeholder={t("ui.pathtorepoOrHttpsgithubcom")}
               value={repoUrl}
               onChange={(event) => setRepoUrl(event.target.value)}
             />
           </label>
-          {window.muster?.desktop && <button type="button" className="button" onClick={() => { void chooseFolder(); }}>Choose folder…</button>}
+          {window.muster?.desktop && <button type="button" className="button" onClick={() => { void chooseFolder(); }}>{t("ui.chooseFolder")}
+          </button>}
           <ErrorNotice error={folderError} />
           <p className="hint">
-            Local paths must be accessible on the machine running the agent.
+            {t("ui.localPathsMustBeAccessibleOnTheMachineRunningTheAgent")}
           </p>
           <label>
-            Base branch
-            <input
+            {t("ui.baseBranch")}<input
               required
               className="mono"
               value={baseBranch}
@@ -136,7 +133,7 @@ function ProjectDialog({ onClose }: { onClose: () => void }) {
         </div>
         <div className="dialog-footer">
           <button type="button" className="button" onClick={onClose}>
-            Cancel
+            {t("ui.cancel")}
           </button>
           <button
             className="button primary"
@@ -147,7 +144,7 @@ function ProjectDialog({ onClose }: { onClose: () => void }) {
               !baseBranch.trim()
             }
           >
-            {create.isPending ? "Creating…" : "Create project"}
+            {create.isPending ? t("ui.creating") : t("ui.createProject")}
           </button>
         </div>
       </form>

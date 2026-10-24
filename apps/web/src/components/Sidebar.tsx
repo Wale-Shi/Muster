@@ -1,3 +1,4 @@
+import { useI18n, languageNames } from "../i18n";
 import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -43,6 +44,7 @@ export function Sidebar({
   onSearch: () => void;
   onNewTask: () => void;
 }) {
+  const { t, locale, setLocale, label } = useI18n();
   const topics = useTopics();
   const todos = useTodos();
   const realtime = useRealtime();
@@ -73,16 +75,16 @@ export function Sidebar({
     return "idle";
   };
   const links = [
-    { to: "/agents", title: "Agents", icon: Bot },
-    { to: "/projects", title: "Projects", icon: FolderGit2 },
-    { to: "/machines", title: "Machines", icon: Monitor },
-    { to: "/usage", title: "Usage", icon: BarChart3 },
+    { to: "/agents", title: t("ui.agents"), icon: Bot },
+    { to: "/projects", title: t("ui.projects"), icon: FolderGit2 },
+    { to: "/machines", title: t("ui.machines"), icon: Monitor },
+    { to: "/usage", title: t("ui.usage"), icon: BarChart3 },
   ];
   return (
     <>
       <button
         className={`sidebar-scrim ${mobileOpen ? "visible" : ""}`}
-        aria-label="Close navigation"
+        aria-label={t("ui.closeNavigation")}
         onClick={onCloseMobile}
       />
       <aside
@@ -99,32 +101,32 @@ export function Sidebar({
           <button
             className="icon-button collapse-control"
             onClick={onToggle}
-            aria-label="Collapse sidebar"
-            title="Collapse sidebar (⌘B)"
+            aria-label={t("ui.collapseSidebar")}
+            title={`${t("ui.collapseSidebar")} (⌘B)`}
           >
             <PanelLeftClose size={15} />
           </button>
           <button
             className="icon-button mobile-close"
             onClick={onCloseMobile}
-            aria-label="Close sidebar"
+            aria-label={t("ui.closeSidebar")}
           >
             <X size={16} />
           </button>
         </div>
         <div className="sidebar-actions">
-          <button onClick={onSearch} title="Search (⌘K)">
+          <button onClick={onSearch} title={`${t("ui.search")} (⌘K)`}>
             <Search size={16} />
-            <span>Search</span>
+            <span>{t("ui.search")}</span>
             <kbd>⌘ K</kbd>
           </button>
-          <button onClick={onNewTask} title="New task (N)">
+          <button onClick={onNewTask} title={`${t("ui.newTask")} (N)`}>
             <Plus size={16} />
-            <span>New task</span>
+            <span>{t("ui.newTask")}</span>
             <kbd>N</kbd>
           </button>
         </div>
-        <nav aria-label="Main navigation">
+        <nav aria-label={t("ui.mainNavigation")}>
           <div className="workspace-nav">
             <NavLink
               to="/"
@@ -137,12 +139,12 @@ export function Sidebar({
               onClick={onCloseMobile}
             >
               <LayoutDashboard size={16} />
-              <span>Workspace</span>
+              <span>{t("ui.workspace")}</span>
             </NavLink>
             <button
               className="icon-button topic-expand"
               onClick={() => setExpanded(!expanded)}
-              aria-label={expanded ? "Collapse topics" : "Expand topics"}
+              aria-label={expanded ? t("ui.collapseTopics") : t("ui.expandTopics")}
               aria-expanded={expanded}
             >
               {expanded ? (
@@ -170,12 +172,12 @@ export function Sidebar({
                       <LoaderCircle
                         className="spin"
                         size={11}
-                        aria-label="Running"
+                        aria-label={t("ui.running")}
                       />
                     ) : (
                       <span
                         className={`topic-status ${status}`}
-                        aria-label={status}
+                        aria-label={label("status", status)}
                       />
                     )}
                     <span>{topic.title}</span>
@@ -187,7 +189,7 @@ export function Sidebar({
                 onClick={() => setNewTopic(true)}
               >
                 <Plus size={13} />
-                <span>New topic</span>
+                <span>{t("ui.newTopic")}</span>
               </button>
             </div>
           )}
@@ -206,12 +208,15 @@ export function Sidebar({
           ))}
         </nav>
         <footer className="sidebar-footer">
+          <select className="language-picker" aria-label={t("text.language")} value={locale} onChange={(event) => setLocale(event.target.value as typeof locale)}>
+            {Object.entries(languageNames).map(([code, name]) => <option key={code} value={code}>{name}</option>)}
+          </select>
           <div
             className="connection-label"
             title={
               realtime.connected
-                ? "Realtime connection established"
-                : "Reconnecting to server"
+                ? t("ui.realtimeConnectionEstablished")
+                : t("ui.reconnectingToServer")
             }
           >
             <span
@@ -219,20 +224,20 @@ export function Sidebar({
             />
             <span>
               {realtime.connected
-                ? "All systems connected"
-                : "Connecting to server…"}
+                ? t("ui.allSystemsConnected")
+                : t("ui.connectingToServer")}
             </span>
           </div>
           <div className="user-row">
-            <Avatar name="Local user" small />
+            <Avatar name={t("ui.localUser")} small />
             <div>
-              <strong>Local workspace</strong>
-              <span>Self-hosted · Personal</span>
+              <strong>{t("ui.localWorkspace")}</strong>
+              <span>{t("ui.selfhostedPersonal")}</span>
             </div>
             <button
               className="icon-button"
-              aria-label={`Theme: ${theme.theme}. Click to change`}
-              title={`Theme: ${theme.theme}`}
+              aria-label={t("text.themeChange", { name: t(`theme.${theme.theme}`) })}
+              title={t("text.theme", { name: t(`theme.${theme.theme}`) })}
               onClick={theme.cycle}
             >
               {theme.theme === "system" ? (
@@ -258,6 +263,7 @@ export function Sidebar({
   );
 }
 function NewTopicDialog({ onClose }: { onClose: () => void }) {
+  const { t } = useI18n();
   const [title, setTitle] = useState("");
   const navigate = useNavigate();
   const client = useQueryClient();
@@ -270,7 +276,7 @@ function NewTopicDialog({ onClose }: { onClose: () => void }) {
     },
   });
   return (
-    <Dialog title="New topic" onClose={onClose}>
+    <Dialog title={t("ui.newTopic")} onClose={onClose}>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -279,30 +285,29 @@ function NewTopicDialog({ onClose }: { onClose: () => void }) {
       >
         <div className="dialog-body form-stack">
           <label>
-            Topic name
-            <input
+            {t("ui.topicName")}<input
               required
               autoFocus
               value={title}
-              placeholder="What are we working on?"
+              placeholder={t("ui.whatAreWeWorkingOn")}
               onChange={(event) => setTitle(event.target.value)}
             />
           </label>
           <p className="hint">
-            A fresh conversation with Chief, with your workspace in context.
+            {t("ui.aFreshConversationWithChiefWithYourWorkspaceInContext")}
           </p>
           <ErrorNotice error={create.error} />
         </div>
         <div className="dialog-footer">
           <button type="button" className="button" onClick={onClose}>
-            Cancel
+            {t("ui.cancel")}
           </button>
           <button
             className="button primary"
             disabled={create.isPending || !title.trim()}
           >
             <MessageSquare size={13} />
-            {create.isPending ? "Creating…" : "Create topic"}
+            {create.isPending ? t("ui.creating") : t("ui.createTopic")}
           </button>
         </div>
       </form>

@@ -1,3 +1,5 @@
+import { systemMessage } from "../i18n/system";
+import { useI18n } from "../i18n";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useDroppable } from "@dnd-kit/core";
@@ -22,6 +24,7 @@ import { useRealtime } from "../api/realtime";
 import { Avatar, ErrorNotice, Loading } from "./ui";
 
 export function Markdown({ children }: { children: string }) {
+  const { t } = useI18n();
   const [pathError, setPathError] = useState<unknown>(null);
   const openPath = (path: string) => { void window.muster?.openPath(path).then((error) => { if (error) setPathError(new Error(error)); }).catch(setPathError); };
   return (
@@ -32,20 +35,22 @@ export function Markdown({ children }: { children: string }) {
         components={{
           a: ({ href, children }) => {
             const path = window.muster?.desktop && href ? absolutePath(href) : null;
-            return path ? <a href={href} title={`Open ${path}`} onClick={(event) => { event.preventDefault(); openPath(path); }}>{children}</a> : <a href={href} target="_blank" rel="noreferrer">{children}</a>;
+            return path ? <a href={href} title={t("text.open", { path })} onClick={(event) => { event.preventDefault(); openPath(path); }}>{children}</a> : <a href={href} target="_blank" rel="noreferrer">{children}</a>;
           },
           code: ({ children, className }) => {
             const path = window.muster?.desktop && !className && typeof children === "string" ? absolutePath(children) : null;
             return path && !path.includes("\n") ? <code><button className="local-path" onClick={() => openPath(path)}>{children}</button></code> : <code className={className}>{children}</code>;
           },
         }}
-      >{children}</ReactMarkdown>
+      >{children}
+      </ReactMarkdown>
       <ErrorNotice error={pathError} />
     </div>
   );
 }
 
 function ToolGroup({ messages }: { messages: Message[] }) {
+  const { t } = useI18n();
   const calls = messages.filter(
     (message) => message.meta.type === "tool.started",
   );
@@ -59,8 +64,8 @@ function ToolGroup({ messages }: { messages: Message[] }) {
         <Terminal size={13} />
         <span>
           {reasoningOnly
-            ? "Thinking"
-            : `${calls.length || messages.length} tool ${calls.length === 1 ? "call" : "calls"}`}
+            ? t("ui.thinking")
+            : t("count.tools", { count: calls.length || messages.length })}
         </span>
       </summary>
       <div className="tool-lines">
@@ -73,8 +78,8 @@ function ToolGroup({ messages }: { messages: Message[] }) {
             {typeof message.meta.tool === "string"
               ? message.meta.tool
               : reasoningOnly
-                ? "reasoning"
-                : "tool"}{" "}
+                ? t("text.reasoning")
+                : t("text.tool")}{" "}
             <span className="muted">
               {message.meta.input !== undefined
                 ? JSON.stringify(message.meta.input)
@@ -104,6 +109,7 @@ function MessageStream({
   messages: Message[];
   agentName: string;
 }) {
+  const { t, formatDate, label } = useI18n();
   const groups: (Message | Message[])[] = [];
   for (const message of messages) {
     const last = groups.at(-1);
@@ -120,16 +126,16 @@ function MessageStream({
         ) : item.role === "system" ? (
           <div className="system-message" key={item.id}>
             <span className="system-line" />
-            <Markdown>{item.content}</Markdown>
+            <Markdown>{systemMessage(item, t, label)}</Markdown>
             <span className="system-line" />
           </div>
         ) : (
           <article key={item.id} className={`message ${item.role}`}>
             <div className="message-author">
-              <Avatar name={item.role === "user" ? "You" : agentName} small />
-              <strong>{item.role === "user" ? "You" : agentName}</strong>
+              <Avatar name={item.role === "user" ? t("ui.you") : agentName} small />
+              <strong>{item.role === "user" ? t("ui.you") : agentName}</strong>
               <time dateTime={item.createdAt}>
-                {new Date(item.createdAt).toLocaleTimeString([], {
+                {formatDate(item.createdAt, {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}
@@ -171,6 +177,7 @@ export function Conversation({
   onDone?: () => void;
   initialSpec?: string;
 }) {
+  const { t, label } = useI18n();
   const messages = useMessages(conversationId);
   const realtime = useRealtime();
   const activity = realtime.activity[conversationId];
@@ -274,15 +281,15 @@ export function Conversation({
           <div className="load-error">
             <ErrorNotice error={messages.error} />
             <button className="button" onClick={() => void messages.refetch()}>
-              Try again
+              {t("ui.tryAgain")}
             </button>
           </div>
         ) : !messages.data?.length ? (
           initialSpec ? (
             <article className="message user">
               <div className="message-author">
-                <Avatar name="You" small />
-                <strong>Task description</strong>
+                <Avatar name={t("ui.you")} small />
+                <strong>{t("ui.taskDescription")}</strong>
               </div>
               <Markdown>{initialSpec}</Markdown>
             </article>
@@ -291,10 +298,10 @@ export function Conversation({
               <span className="chief-mark">
                 <Command size={24} />
               </span>
-              <h1>How can I help?</h1>
-              <p>Share a goal. I’ll help turn it into progress.</p>
+              <h1>{t("ui.howCanIHelp")}</h1>
+              <p>{t("ui.shareAGoalIllHelpTurnItIntoProgress")}</p>
               <div className="suggestions">
-                {["Plan my next feature", "What needs my attention?"].map(
+                {[t("ui.planMyNextFeature"), t("ui.whatNeedsMyAttention")].map(
                   (suggestion) => (
                     <button
                       key={suggestion}
@@ -318,9 +325,9 @@ export function Conversation({
         {currentStatus !== "idle" && (
           <div className="live-status" role="status">
             <span className="pulse-dot" />
-            {currentStatus === "queued" ? "Waiting for a machine" : "Working…"}
+            {currentStatus === "queued" ? t("ui.waitingForAMachine") : t("ui.working")}
             {currentStatus === "running" && activity?.detail && (
-              <span className="dim">{activity.detail}</span>
+              <span className="dim">{label("status", activity.detail)}</span>
             )}
           </div>
         )}
@@ -335,7 +342,7 @@ export function Conversation({
           }}
         >
           <ArrowDown size={13} />
-          Latest messages
+          {t("ui.latestMessages")}
         </button>
       )}
       <div className="composer-wrap">
@@ -344,7 +351,7 @@ export function Conversation({
           <div className="runtime-warning" role="alert">
             <AlertTriangle size={14} />
             <span>{activity.warning.detail}</span>
-            <button className="icon-button" aria-label="Dismiss runtime warning" onClick={() => realtime.dismissWarning(conversationId)}><X size={13} /></button>
+            <button className="icon-button" aria-label={t("ui.dismissRuntimeWarning")} onClick={() => realtime.dismissWarning(conversationId)}><X size={13} /></button>
           </div>
         )}
         <ErrorNotice error={send.error} />
@@ -353,7 +360,7 @@ export function Conversation({
           className={`composer ${isOver ? "drag-over" : ""}`}
         >
           {isOver && (
-            <div className="drop-hint">Drop to reference this task</div>
+            <div className="drop-hint">{t("ui.dropToReferenceThisTask")}</div>
           )}
           {!!references.length && (
             <div className="reference-list">
@@ -370,7 +377,7 @@ export function Conversation({
                         prior.filter((item) => item.id !== todo.id),
                       )
                     }
-                    aria-label={`Remove reference #${todo.number}`}
+                    aria-label={t("text.reference", { number: todo.number })}
                   >
                     <X size={11} />
                   </button>
@@ -380,11 +387,11 @@ export function Conversation({
           )}
           <textarea
             ref={textarea}
-            aria-label="Message"
+            aria-label={t("ui.message")}
             value={text}
             rows={3}
             placeholder={
-              disabled ?? placeholder ?? "Ask Chief, or drop a task here…"
+              disabled ?? placeholder ?? t("ui.askChiefOrDropATaskHere")
             }
             disabled={!!disabled || !conversationId}
             onChange={(event) => setText(event.target.value)}
@@ -393,11 +400,12 @@ export function Conversation({
           <div className="composer-footer">
             <span className="hint">
               {todoId ? agentName : "Chief"}
-              <span className="composer-shortcut"> · ↵ send · ⇧↵ new line</span>
+              <span className="composer-shortcut"> {t("ui.sendNewLine")}
+              </span>
             </span>
             <button
               className="send-button"
-              aria-label="Send message"
+              aria-label={t("ui.sendMessage")}
               disabled={
                 !!disabled ||
                 !conversationId ||
@@ -412,8 +420,8 @@ export function Conversation({
         </div>
         <div className="composer-caption">
           {todoId
-            ? "Guide the agent with feedback and context"
-            : "One conversation. A whole team of agents."}
+            ? t("ui.guideTheAgentWithFeedbackAndContext")
+            : t("ui.oneConversationAWholeTeamOfAgents")}
         </div>
       </div>
     </div>

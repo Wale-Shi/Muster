@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -20,6 +21,7 @@ export function TodoActions({
   todo: TodoDetail;
   onDone: () => void;
 }) {
+  const { t } = useI18n();
   const [menu, setMenu] = useState<"start" | "rerun" | null>(null);
   const client = useQueryClient();
   const mutation = useMutation({
@@ -49,8 +51,7 @@ export function TodoActions({
             onClick={() => setMenu("start")}
           >
             <Play size={13} />
-            Start
-            <ChevronDown size={12} />
+            {t("ui.start")}<ChevronDown size={12} />
           </button>
         )}
         {todo.phase === "confirm" && (
@@ -60,7 +61,7 @@ export function TodoActions({
             onClick={() => run("confirm")}
           >
             <Check size={14} />
-            Confirm plan
+            {t("ui.confirmPlan")}
           </button>
         )}
         {todo.phase === "review" && (
@@ -70,7 +71,7 @@ export function TodoActions({
             onClick={onDone}
           >
             <Check size={14} />
-            Done
+            {t("ui.done")}
           </button>
         )}
         {todo.phase === "failed" && (
@@ -80,8 +81,7 @@ export function TodoActions({
             onClick={() => setMenu("rerun")}
           >
             <RotateCcw size={13} />
-            Rerun
-            <ChevronDown size={12} />
+            {t("ui.rerun")}<ChevronDown size={12} />
           </button>
         )}
         {isRunning(todo.phase) && (
@@ -91,10 +91,10 @@ export function TodoActions({
               pending || todo.builds.at(-1)?.turns.at(-1)?.status !== "running"
             }
             onClick={() => run("stop")}
-            title="Request a cooperative stop"
+            title={t("ui.requestACooperativeStop")}
           >
             <Pause size={13} />
-            Stop
+            {t("ui.stop")}
           </button>
         )}
         {["done", "closed"].includes(todo.phase) ? (
@@ -104,7 +104,7 @@ export function TodoActions({
             onClick={() => run("reopen")}
           >
             <RotateCcw size={13} />
-            Reopen
+            {t("ui.reopen")}
           </button>
         ) : (
           <button
@@ -113,22 +113,22 @@ export function TodoActions({
             onClick={() => run("close")}
           >
             <X size={13} />
-            Close
+            {t("ui.close")}
           </button>
         )}
-        {pending && <span className="hint">Updating…</span>}
+        {pending && <span className="hint">{t("ui.updating")}</span>}
       </div>
       <ErrorNotice error={menu ? null : mutation.error} />
       {menu && (
         <Dialog
-          title={menu === "start" ? "Start task" : "Rerun task"}
+          title={menu === "start" ? t("ui.startTask") : t("ui.rerunTask")}
           onClose={() => setMenu(null)}
         >
           <div className="dialog-body form-stack">
             <p className="muted">
               {menu === "start"
-                ? "Choose how your agent should approach this task."
-                : "Continue the existing build or begin a fresh build."}
+                ? t("ui.chooseHowYourAgentShouldApproachThisTask")
+                : t("ui.continueTheExistingBuildOrBeginAFreshBuild")}
             </p>
             <ErrorNotice error={mutation.error} />
             {menu === "start" ? (
@@ -140,8 +140,8 @@ export function TodoActions({
                 >
                   <FileText size={18} />
                   <span>
-                    <strong>Plan first</strong>
-                    <small>Review a plan before the agent writes code.</small>
+                    <strong>{t("ui.planFirst")}</strong>
+                    <small>{t("ui.reviewAPlanBeforeTheAgentWritesCode")}</small>
                   </span>
                 </button>
                 <button
@@ -151,8 +151,8 @@ export function TodoActions({
                 >
                   <Play size={18} />
                   <span>
-                    <strong>Run now</strong>
-                    <small>Start building right away.</small>
+                    <strong>{t("ui.runNow")}</strong>
+                    <small>{t("ui.startBuildingRightAway")}</small>
                   </span>
                 </button>
               </>
@@ -165,8 +165,8 @@ export function TodoActions({
                 >
                   <Play size={18} />
                   <span>
-                    <strong>Continue</strong>
-                    <small>Keep the existing worktree and session.</small>
+                    <strong>{t("ui.continue")}</strong>
+                    <small>{t("ui.keepTheExistingWorktreeAndSession")}</small>
                   </span>
                 </button>
                 <button
@@ -176,8 +176,8 @@ export function TodoActions({
                 >
                   <RotateCcw size={18} />
                   <span>
-                    <strong>Start over</strong>
-                    <small>Create a new build with a fresh session.</small>
+                    <strong>{t("ui.startOver")}</strong>
+                    <small>{t("ui.createANewBuildWithAFreshSession")}</small>
                   </span>
                 </button>
               </>

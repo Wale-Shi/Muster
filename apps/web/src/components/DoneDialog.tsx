@@ -1,3 +1,4 @@
+import { useI18n } from "../i18n";
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Todo } from "@muster/shared";
@@ -12,6 +13,7 @@ export function DoneDialog({
   todo: Todo;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   const [merge, setMerge] = useState(true);
   const client = useQueryClient();
   const done = useMutation({
@@ -25,10 +27,10 @@ export function DoneDialog({
     },
   });
   return (
-    <Dialog title="Mark task as done" onClose={onClose}>
+    <Dialog title={t("ui.markTaskAsDone")} onClose={onClose}>
       <div className="dialog-body">
         <p className="muted">
-          Finish <span className="mono">#{todo.number}</span> {todo.title}
+          {t("text.finish", { number: todo.number, title: todo.title })}
         </p>
         <label className="checkbox-label">
           <input
@@ -36,18 +38,18 @@ export function DoneDialog({
             checked={merge}
             onChange={(event) => setMerge(event.target.checked)}
           />
-          Merge changes into the default branch
+          {t("ui.mergeChangesIntoTheDefaultBranch")}
         </label>
         <p className="hint">
           {merge
-            ? "A machine will merge this build. The task stays in progress until the merge succeeds."
-            : "The task will be completed and its branch kept without merging."}
+            ? t("ui.aMachineWillMergeThisBuildTheTaskStaysInProgressUntilTheMergeSucceeds")
+            : t("ui.theTaskWillBeCompletedAndItsBranchKeptWithoutMerging")}
         </p>
         <ErrorNotice error={done.error} />
       </div>
       <div className="dialog-footer">
         <button onClick={onClose} className="button">
-          Cancel
+          {t("ui.cancel")}
         </button>
         <button
           className="button primary"
@@ -55,7 +57,7 @@ export function DoneDialog({
           onClick={() => done.mutate()}
         >
           <Check size={14} />
-          {done.isPending ? "Finishing…" : "Done"}
+          {done.isPending ? t("ui.finishing") : t("ui.done")}
         </button>
       </div>
     </Dialog>

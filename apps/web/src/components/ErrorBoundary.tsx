@@ -1,3 +1,5 @@
+import { displayError } from "../i18n/errors";
+import { useI18n } from "../i18n";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 export class ErrorBoundary extends Component<
@@ -13,15 +15,15 @@ export class ErrorBoundary extends Component<
   }
   override render() {
     return this.state.error ? (
-      <div className="empty">
-        <h1>Something went wrong</h1>
-        <p>{this.state.error.message}</p>
-        <button className="button" onClick={() => window.location.reload()}>
-          Reload workspace
-        </button>
-      </div>
+      <ErrorFallback error={this.state.error} />
     ) : (
       this.props.children
     );
   }
+}
+
+function ErrorFallback({ error }: { error: Error }) {
+  const { t, label } = useI18n();
+  return <div className="empty"><h1>{t("ui.somethingWentWrong")}</h1><p>{displayError(error, t, label)}</p><button className="button" onClick={() => window.location.reload()}>{t("ui.reloadWorkspace")}
+  </button></div>;
 }

@@ -1,3 +1,4 @@
+import { useI18n } from "./i18n";
 import { useEffect, useState } from "react";
 import { Link, Route, Routes, useLocation, useParams } from "react-router";
 import { Command, PanelLeft } from "lucide-react";
@@ -18,6 +19,7 @@ function NewTaskRouteDialog({ onClose }: { onClose: () => void }) {
   return <NewTaskDialog onClose={onClose} {...(id ? { topicId: id } : {})} />;
 }
 export function App() {
+  const { t } = useI18n();
   const [collapsed, setCollapsed] = useStored("sidebar-collapsed", false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState(false);
@@ -79,7 +81,7 @@ export function App() {
           <button
             className="icon-button"
             onClick={toggleSidebar}
-            aria-label="Open navigation"
+            aria-label={t("ui.openNavigation")}
           >
             <PanelLeft size={18} />
           </button>
@@ -89,8 +91,8 @@ export function App() {
         {collapsed && (
           <button
             className="sidebar-restore icon-button desktop-only"
-            aria-label="Expand sidebar"
-            title="Expand sidebar (⌘B)"
+            aria-label={t("ui.expandSidebar")}
+            title={`${t("ui.expandSidebar")} (⌘B)`}
             onClick={toggleSidebar}
           >
             <PanelLeft size={16} />
@@ -117,9 +119,9 @@ export function App() {
             path="*"
             element={
               <div className="empty">
-                <h2>Page not found</h2>
+                <h2>{t("ui.pageNotFound")}</h2>
                 <Link to="/" className="button">
-                  Back to workspace
+                  {t("ui.backToWorkspace")}
                 </Link>
               </div>
             }
