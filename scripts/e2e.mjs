@@ -72,7 +72,8 @@ try {
   await api(`/agents/${agent.id}/memories`, { content: "E2E persistent memory" });
   await api("/secrets", { scope: "team", name: "SERVICE_TOKEN", value: "muster-e2e-private" }, "PUT");
   const chief = (await api("/agents")).find((item) => item.isChief);
-  assert.equal(chief.model, "gpt-6.1-sol");
+  assert.equal(chief.model, "gpt-6-astra");
+  assert.equal(chief.reasoning, "medium");
   await api(`/agents/${chief.id}`, { runtime: "mock", model: "mock" }, "PATCH");
   const client = new MachineClient({ server: url, home: join(root, "server-data"), name: "e2e", concurrency: 3, runtimes: ["mock"] });
   let lateTodoId;

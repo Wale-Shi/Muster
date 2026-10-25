@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Link } from "react-router";
-import { Circle, CircleHelp, Plus, SlidersHorizontal } from "lucide-react";
+import { CircleCheck, CircleHelp, Hand, ListTodo, Plus, SlidersHorizontal, Sparkles, type LucideIcon } from "lucide-react";
 import type { Agent, Project, Todo } from "@muster/shared";
 import { boardTodos, type ColumnId } from "../lib/board";
 import { Avatar, PhaseDot } from "./ui";
@@ -72,6 +72,7 @@ export function TaskCard({
     </article>
   );
 }
+const columnIcons: Record<ColumnId, LucideIcon> = { backlog: ListTodo, in_progress: Sparkles, needs_you: Hand, done: CircleCheck };
 function Column({
   id,
   title,
@@ -127,12 +128,15 @@ function Column({
             )}
           />
         ))}
-        {!todos.length && (
-          <div className="column-empty">
-            <Circle size={18} strokeWidth={1} />
-            <span>{empty}</span>
-          </div>
-        )}
+        {!todos.length && (() => {
+          const Icon = columnIcons[id];
+          return (
+            <div className="column-empty">
+              <span className="column-empty-icon"><Icon size={15} /></span>
+              <span>{empty}</span>
+            </div>
+          );
+        })()}
       </div>
     </section>
   );

@@ -19,7 +19,7 @@ The migration runner uses SQLite `user_version`; migration 1 creates the PLAN §
 - `mcp_tokens` stores per-turn bearer tokens.
 - A build with nullable `todo_id` and branch `chief:<topicId>` is the internal conversation container for Chief turns. Normal todo builds always have a todo and `muster/conv-<buildId>` branch.
 
-On first start, Muster creates a `Chief` agent (`codex`, `gpt-6.1-sol`) and a `General` topic. `chief.autoFollowUp` is represented by the `createApp({autoFollowUp})` server option and defaults to true; a persistent auto-follow-up control is not exposed. Shared `DEFAULT_MODELS` defines Codex `gpt-6.1-sol`, Claude `claude-sonnet-5-5`, and Mock `mock`; the web agent editor uses the same defaults. Existing explicitly configured agents are preserved.
+On first start, Muster creates a `Chief` agent (`codex`, `gpt-6-astra`, reasoning `medium`; shared `CHIEF_MODEL`) and a `General` topic. `chief.autoFollowUp` is represented by the `createApp({autoFollowUp})` server option and defaults to true; a persistent auto-follow-up control is not exposed. Shared `DEFAULT_MODELS` defines Codex `gpt-6.1-sol`, Claude `claude-sonnet-5-5`, and Mock `mock`; the web agent editor uses the same defaults. Existing explicitly configured agents are preserved.
 
 Migration 2 adds per-turn immutable agent/model snapshots, duration, heartbeat leases, and idempotent completion bodies. `event_batches` deduplicates uploads, `machine_claims` recovers claim responses, and `server_events` persists SSE replay. Queued messages link to their source user message and record an in-flight delivery turn. `schema.sql` is a current-schema reference; `migrations.ts` is executed on startup.
 

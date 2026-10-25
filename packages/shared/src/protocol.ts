@@ -45,3 +45,5 @@ export interface ServerEvent {
 }
 
 export const DEFAULT_MODELS: Record<Runtime, string> = { codex: "gpt-6.1-sol", claude: "claude-sonnet-5-5", mock: "mock" };
+// Chief coordinates rather than codes, so it defaults to the stronger planning model.
+export const CHIEF_MODEL = { runtime: "codex", model: "gpt-6-astra", reasoning: "medium" } as const;

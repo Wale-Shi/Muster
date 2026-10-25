@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { DEFAULT_MODELS, permissionsSchema } from "@muster/shared";
+import { CHIEF_MODEL, permissionsSchema } from "@muster/shared";
 import type { Agent, Build, Document, Machine, Message, Project, Todo, Topic, Turn } from "@muster/shared";
 import { migrations } from "./migrations.js";
 
@@ -48,7 +48,7 @@ export class MusterDb {
     const timestamp = now();
     if (Number((this.raw.prepare("SELECT count(*) AS count FROM agents WHERE is_chief = 1").get() as Row).count) === 0) {
       this.raw.prepare("INSERT INTO agents (id,name,role,runtime,model,reasoning,avatar,is_chief,created_at,updated_at,permissions_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(id(), "Chief", "Coordinate work, delegate todos, and report at decision gates.", "codex", DEFAULT_MODELS.codex, null, null, 1, timestamp, timestamp, JSON.stringify({ createSkills: true, updateSkills: true }));
+        .run(id(), "Chief", "Coordinate work, delegate todos, and report at decision gates.", CHIEF_MODEL.runtime, CHIEF_MODEL.model, CHIEF_MODEL.reasoning, null, 1, timestamp, timestamp, JSON.stringify({ createSkills: true, updateSkills: true }));
     }
     if (Number((this.raw.prepare("SELECT count(*) AS count FROM topics").get() as Row).count) === 0) {
       this.raw.prepare("INSERT INTO topics VALUES (?, ?, ?, ?, ?)").run(id(), "General", null, timestamp, timestamp);
