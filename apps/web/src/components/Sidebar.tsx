@@ -170,11 +170,7 @@ export function Sidebar({
               aria-label={expanded ? t("ui.collapseTopics") : t("ui.expandTopics")}
               aria-expanded={expanded}
             >
-              {expanded ? (
-                <ChevronDown size={12} />
-              ) : (
-                <ChevronRight size={12} />
-              )}
+              <ChevronRight size={12} className={`sidebar-chevron ${expanded ? "expanded" : ""}`} />
             </button>
           </div>
           {(expanded || collapsed) && (
@@ -219,9 +215,9 @@ export function Sidebar({
           )}
           <div className="nav-separator" />
           {links.slice(0, 4).map(({ to, title, icon: Icon }) => <NavLink className="nav-item" to={to} key={to} title={title} onClick={onCloseMobile}><Icon size={16} /><span>{title}</span></NavLink>)}
-          <div className="workspace-nav"><NavLink className="nav-item" to="/projects" title={t("ui.projects")} onClick={onCloseMobile}><FolderGit2 size={16} /><span>{t("ui.projects")}</span></NavLink><button className="icon-button topic-expand" aria-label={t("ui.projects")} aria-expanded={projectsOpen} onClick={() => setProjectsOpen(!projectsOpen)}><ChevronDown size={12} /></button></div>
+          <div className="workspace-nav"><NavLink className="nav-item" to="/projects" title={t("ui.projects")} onClick={onCloseMobile}><FolderGit2 size={16} /><span>{t("ui.projects")}</span></NavLink><button className="icon-button topic-expand" aria-label={t("ui.projects")} aria-expanded={projectsOpen} onClick={() => setProjectsOpen(!projectsOpen)}><ChevronRight size={12} className={`sidebar-chevron ${projectsOpen ? "expanded" : ""}`} /></button></div>
           {(projectsOpen || collapsed) && <div className="sidebar-group">{projects.data?.map((p) => <NavLink className="nav-item" key={p.id} to={`/projects/${p.id}`} title={p.name} onClick={onCloseMobile}><ProjectMonogram name={p.name} /><span>{p.name}</span></NavLink>)}<button className="nav-item" title={t("ui.newProject")} onClick={() => setNewProject(true)}><Plus size={16} /><span>{t("ui.newProject")}</span></button></div>}
-          <button className="nav-item" title={t("parity.resources")} aria-expanded={resourcesOpen} onClick={() => setResourcesOpen(!resourcesOpen)}><ChevronDown size={16} /><span>{t("parity.resources")}</span></button>
+          <button className="nav-item" title={t("parity.resources")} aria-expanded={resourcesOpen} onClick={() => setResourcesOpen(!resourcesOpen)}><ChevronRight size={16} className={`sidebar-chevron ${resourcesOpen ? "expanded" : ""}`} /><span>{t("parity.resources")}</span></button>
           {(resourcesOpen || collapsed) && links.slice(4).map(({ to, title, icon: Icon }) => <NavLink className="nav-item" to={to} key={to} title={title} onClick={onCloseMobile}><Icon size={16} /><span>{title}</span></NavLink>)}
         </nav>
         <footer className="sidebar-footer">

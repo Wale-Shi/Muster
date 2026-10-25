@@ -1,3 +1,4 @@
+import { taskMetadata } from "@muster/shared";
 import type { Connections } from "../resources/connections.js";
 import type { Memories } from "../resources/memories.js";
 import type { Secrets } from "../resources/secrets.js";
@@ -73,6 +74,7 @@ export class Scheduler {
       const runtimes = parseJson<Runtime[]>(machine.runtimes_json, []);
       const candidates = this.db.rows(`
         SELECT t.*, b.todo_id, b.branch, b.id AS actual_build_id,
+               td.number AS todo_number, td.title AS todo_title, td.spec AS todo_spec,
                td.project_id, td.agent_id, td.plan_agent_id, td.previous_gate,
                p.repo_url, p.base_branch,
                a.id AS selected_agent_id, a.name, a.runtime, a.model, a.reasoning, a.role,
@@ -114,6 +116,7 @@ export class Scheduler {
       const job: TurnJob = {
         turnId: String(candidate.id), buildId: String(candidate.actual_build_id), todoId: candidate.todo_id as string | null, topicId,
         kind: candidate.kind as TurnKind,
+        ...(isChief ? {} : { task: taskMetadata({ id: String(candidate.todo_id), number: Number(candidate.todo_number), title: String(candidate.todo_title), spec: String(candidate.todo_spec) }, this.orchestrator.publicUrl) }),
         project: isChief ? null : { id: String(candidate.project_id), repoUrl: String(candidate.repo_url), baseBranch: String(candidate.base_branch) },
         branch: isChief ? null : String(candidate.branch), agent, prompt: String(candidate.prompt),
         systemInstructions: instructionsFor(profile) + (this.memories?.instructions(agentId) ?? ""),

@@ -1,3 +1,4 @@
+import { prepareArtifacts } from "./artifacts.js";
 import { prepareAttachments, prepareSkills, redactor, secretEvents, jobCredentials } from "./resources.js";
 import { access, mkdir, readFile, writeFile, rm, rename } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -161,6 +162,7 @@ export class Daemon {
       if (active.stopped) { payload = { status: "stopped" }; return; }
       job = await prepareSkills(job, this.options.client);
       job = await prepareAttachments(job, this.options.client);
+      job = await prepareArtifacts(job, this.options.client.options.home);
       let cwd: string;
       if (job.project) { workspace = await this.worktrees.prepare(job); cwd = workspace.cwd; }
       else {
@@ -171,7 +173,7 @@ export class Daemon {
       }
       if (active.stopped) { payload = { status: "stopped" }; return; }
       if (job.kind === "merge" && workspace) {
-        const merge = await this.worktrees.merge(workspace);
+        const merge = await this.worktrees.merge(workspace, job);
         payload = { status: merge.ok ? "done" : "failed", merge: { ok: merge.ok, ...(merge.error ? { error: merge.error } : {}) }, ...(merge.headCommit ? { headCommit: merge.headCommit } : {}) };
       } else {
         const runtime = this.runtimes[job.agent.runtime].start(job, { cwd, emit: secured.emit });
@@ -196,7 +198,7 @@ export class Daemon {
         const result = await runtime.result;
         payload = { status: active.stopped ? "stopped" : result.status, usage: { ...result.usage, durationMs: Date.now() - started }, sessionState: result.sessionState, ...(result.error ? { error: result.error } : {}) };
         if (job.readOnly) payload.plan = result.text;
-        else if (workspace) { Object.assign(payload, await this.worktrees.checkpoint(workspace, await this.options.client.turnNumber(job))); if (result.status === "done" && !active.stopped && job.pushBranch) await this.worktrees.push(workspace); }
+        else if (workspace) { Object.assign(payload, await this.worktrees.checkpoint(workspace, await this.options.client.turnNumber(job), job)); if (result.status === "done" && !active.stopped && job.pushBranch) await this.worktrees.push(workspace); }
       }
     } catch (error) { payload = { ...payload, status: active.stopped ? "stopped" : "failed", error: errorText(error) }; }
     finally {

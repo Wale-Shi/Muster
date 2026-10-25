@@ -45,6 +45,7 @@ it("debounces successive gates into one Chief turn with every notice", async () 
   expect(f.scheduler.claim(f.machine.token)).toBeNull();
   f.advance(1);
   const job = f.scheduler.claim(f.machine.token)!;
+  expect(job.task).toBeUndefined();
   expect(job.prompt).toMatch(/^Automatic follow-up:/);
   expect(job.prompt).toContain("Todo #1 First entered done.");
   expect(job.prompt).toContain("Todo #2 Second entered review.");

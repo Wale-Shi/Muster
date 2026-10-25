@@ -1,3 +1,5 @@
+import { localImageRoutes } from "./routes/local-images.js";
+import type { ImageMapping } from "./resources/local-images.js";
 import { Attachments } from "./resources/attachments.js";
 import { attachmentRoutes } from "./routes/attachments.js";
 import { projectGitRoutes } from "./routes/project-git.js";
@@ -27,6 +29,7 @@ import type { AppServices } from "./services.js";
 
 export interface CreateAppOptions {
   dataDir?: string;
+  imageMappings?: ImageMapping[];
   githubFetcher?: GithubFetcher;
   databasePath?: string;
   publicUrl?: string;
@@ -60,6 +63,7 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
   app.route("/api", settingsRoutes(services));
   app.route("/api", projectGitRoutes(services));
   app.route("/api", attachmentRoutes(services));
+  app.route("/api", localImageRoutes(services, options.imageMappings));
   app.route("/api", apiRoutes(services));
   app.all("/mcp", (c) => handleMcp(c.req.raw, services));
 

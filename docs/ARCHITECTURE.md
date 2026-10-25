@@ -286,7 +286,13 @@ The main process watches replayable SSE for Confirm/Review/Failed notifications,
 
 `npm run desktop:dev` and the distribution script check the Electron executable and run `node node_modules/electron/install.js` if it is missing (including installs that skipped lifecycle scripts). Download failures report the installer command and network/proxy troubleshooting context.
 
-`npm run desktop:dist` first builds every workspace, stages the server/daemon/shared dist files with production dependencies and built web assets outside ASAR, and packages with electron-builder. npm workspace links are materialized into actual bundled directories, so the application has no checkout dependency. The Electron main/preload code is in ASAR. The icon generator rasterizes the existing Command mark into PNG/ICNS/ICO using Node alone. macOS uses explicit ad-hoc signing (`identity: "-"`) and emits an app plus DMG for the host architecture; no developer identity, notarization or installation is involved. On hosts where DiskImages cannot allocate virtual devices, the packager falls back to `hdiutil makehybrid -hfs`, creating a valid, uncompressed HFS distribution DMG without mounting; it includes the signed app and an Applications shortcut. Windows NSIS and Linux AppImage targets remain configured; their native packaging is not verified by a macOS build.
+`npm run desktop:dist` first builds every workspace, stages the server/daemon/shared dist files with production dependencies and built web assets outside ASAR, and packages with electron-builder. npm workspace links are materialized into actual bundled directories, so the application has no checkout dependency. The `beforeBuild` hook returns false to mark these dependencies as externally handled: unlike `npmRebuild: false`, this also skips redundant dependency collection for main/preload, which have no npm runtime dependencies. This is needed on hosts where `npm prefix -w` returns an invalid workspace root; it does not change the staged runtime dependencies. The Electron main/preload code is in ASAR. The icon generator rasterizes the existing Command mark into PNG/ICNS/ICO using Node alone. macOS uses explicit ad-hoc signing (`identity: "-"`) and emits an app plus DMG for the host architecture; no developer identity, notarization or installation is involved. On hosts where DiskImages cannot allocate virtual devices, the packager falls back to `hdiutil makehybrid -hfs`, creating a valid, uncompressed HFS distribution DMG without mounting; it includes the signed app and an Applications shortcut. Windows NSIS and Linux AppImage targets remain configured; their native packaging is not verified by a macOS build.
+
+macOS packaged startup validates the real bundle path before creating the Muster data directory, acquiring the application lock or starting workers. Only `/Applications` and `~/Applications` installations are accepted; symlinks to release copies do not qualify. Other locations offer localized Move to Applications / Quit actions. Moving is permitted only when neither Applications destination exists, and Electron's conflict handler rejects replacement even if a destination appears during the move. Cancellation/failure never starts services. Existing installations must be updated manually. Development and non-macOS launches retain their existing behavior.
+
+The distribution script checks process executable paths and bundle identities before staging or packaging. A `dev.muster.desktop` process inside this checkout's real release directory blocks packaging with its PID/path; inspection errors also fail the command. It neither stops processes nor changes the fixed output layout. This check is not atomic: do not start old release copies during a build. Both normal and fallback DMG success paths unregister only the generated release bundle with `lsregister -u`. Unregistration is idempotent: `kLSApplicationNotFoundErr` (`-10814`) from a never-registered bundle is success. Other command failures are warnings and do not fail an otherwise completed package; installation-path validation remains the primary defense. The release-boundary check still rejects paths outside release. Unregistration cannot stop an existing instance or permanently prevent registration. Single-instance locking and `open` do not establish the installed path; startup logs include executable, resources and bundle paths.
+
+The smoke harness changes only its temporary macOS copy to `dev.muster.desktop.smoke`, re-signs it ad hoc, and verifies its identity before launch. Only that identity together with smoke arguments and a separate absolute data directory bypasses installation validation. Readiness evidence includes executable/resources paths and bundle identity, which the harness asserts against its copy. The production bundle cannot bypass installation checks using only `--smoke-test`. Worker-only verification retains the packaged Node bridge flow.
 
 `npm run desktop:smoke` runs the packaged app with a hidden window and an isolated temporary data directory. It checks the rendered sidebar and preload, real SQLite server startup, automatic enrollment, a mock Chief turn interrupted by SIGTERM and persisted as `stopped`, then attachment to an externally running server that survives desktop quit. It saves a screenshot and logs in the printed temporary evidence directory. Tests never call real model APIs. The underlying `--smoke-test` flag keeps the window hidden, disables native notifications, and exits after startup verification; `--smoke-hold` allows the harness to exercise graceful shutdown. `MUSTER_DESKTOP_PORT` overrides the starting discovery port for isolated smoke runs.
 
@@ -594,3 +600,72 @@ choices, bridge commands, sidebar persistence, settings, project tabs and task
 input. Mock e2e additionally exercises external MCP over HTTP and actual attachment
 delivery/cache. Visual inspection is deliberately left to manual light/dark,
 English/Chinese and viewport review; no screenshots or desktop distribution build.
+
+### Agent screenshot artifacts and local images
+
+For project turns the daemon prepares `<MUSTER_HOME>/artifacts/<buildId>/` before
+starting the runtime and adds its absolute path and a Markdown example to the
+system instructions (including resumed sessions). Agents should save screenshots
+there, or copy temporary tool output there during writable turns before linking
+it. PLAN remains read-only: preparing the directory does not grant the runtime
+write permission. Directories are reused across turns of the same build, isolated
+between builds, and outside Git checkpoints and read-only cleanup. Creation errors
+fail preparation rather than falling back to `/tmp`. Artifacts are retained; there
+is no automatic retention policy yet. Removing them manually makes historical
+image references unavailable. Prefer unique filenames per revision.
+
+Both clients fetch local Markdown images via
+`POST /api/todos/:todoId/images` with `{buildId,messageId,src}` and
+`X-Muster-Image: 1`. The server joins the persisted Agent message, turn, build and
+todo, checks the Markdown image reference, then applies file restrictions. Stream
+fragments are not fetched until the message is persisted as complete. Relative
+image paths are not resolved against a task worktree; agents must use the absolute
+path from their instructions.
+
+Allowed images are PNG, JPG/JPEG, GIF and WebP, at most 10 MiB each, with matching
+extension/signature and a fixed image MIME type. The allowed roots are the build's
+worktree, its artifact directory and the configured Muster data directory. The
+`artifacts/` and `workspaces/` subtrees are checked **before** the data-directory
+fallback: other builds and repository caches are excluded. Traversal, ambiguous
+encoding, symlinks below trusted roots, hardlinks and non-regular files are denied.
+Reads use no-follow file handles, bounded buffers and before/after path identity,
+file size and modification checks. On Linux the open descriptor's real path is
+also checked. These checks are not an OS sandbox against a malicious process
+running as the same user; do not share writable data roots with untrusted users.
+Malformed image data that passes its format signature still falls back safely if
+the browser cannot decode it. SVG/HTML and arbitrary file downloads are unsupported.
+
+Local provenance is established using `<dataDir>/machine.json`: its machine ID
+must match the build's execution machine and its token must authenticate against
+this server. Default workspaces are `<dataDir>/workspaces`. The default desktop
+sets `MUSTER_HOME` and `MUSTER_DATA_DIR` to the same directory. Missing/mismatched
+registration means **remote**, even if the server has an identical absolute path.
+Custom workspaces, separate daemon/server homes, or shared filesystems require an
+administrator-supplied `MUSTER_IMAGE_MAPPINGS` JSON array on the server, for example:
+
+```json
+[{"machineId":"<enrolled-machine-id>","sourceDataDir":"/daemon/muster","dataDir":"/mounted/muster","sourceWorkspacesDir":"/daemon/workspaces","workspacesDir":"/mounted/workspaces"}]
+```
+
+Each entry explicitly trusts those server-visible roots for that machine; do not
+map unrelated local files onto a remote machine. Source paths should use the
+canonical absolute paths reported by the daemon. Without a mapping, remote images
+show an execution-machine notice and the path. There is no automatic file upload,
+remote file proxy, or client-side access to a daemon's filesystem. Old `/tmp`
+references remain unavailable; the new artifact instructions prevent this for
+future deliverables.
+
+The Web REST interface remains single-user and has no built-in login. Keep the
+server loopback-only, or protect **all** routes (including this endpoint) with an
+authenticated reverse proxy and TLS. Set `MUSTER_PUBLIC_URL` to the public origin
+behind a proxy. The image endpoint requires a custom fetch header, rejects foreign
+origins/cross-site fetches, does not enable CORS, and returns `private, no-store`,
+`nosniff`, and `Cross-Origin-Resource-Policy: same-origin`. These are cross-site
+protections, not user authentication; build IDs are not credentials.
+
+Successful images support an accessible enlargement dialog. Missing, denied,
+oversized, unsupported or undecodable images display a placeholder and a clickable
+path which reveals selectable text. That fallback never invokes the desktop
+`openPath` bridge, navigates to `file://`, or retries through another file API.
+Ordinary non-image path links retain their existing native behavior. Blob URLs
+are revoked when the image changes or unmounts.

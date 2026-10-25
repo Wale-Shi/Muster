@@ -8,6 +8,7 @@ import type { Message } from "@muster/shared";
 import { createI18n, dictionaries, I18nProvider } from ".";
 import { systemMessage } from "./system";
 import { displayError } from "./errors";
+import { PhaseBadge } from "../components/ui";
 import { Board } from "../components/Board";
 import { Sidebar } from "../components/Sidebar";
 import { api } from "../api/client";
@@ -112,4 +113,29 @@ it("formats compact card ages in both languages", () => {
   expect(createI18n("en").formatAge(now - 57 * 60_000, now)).toBe("57m");
   expect(createI18n("en").formatAge(now - 3 * 3_600_000, now)).toBe("3h");
   expect(createI18n("zh-CN").formatAge(now - 57 * 60_000, now)).toBe("57分钟");
+});
+
+
+it.each([
+  { locale: "en" as const, action: "Done", merge: "Done & merge", state: "Done", notice: "Task #5 Action copy is done." },
+  { locale: "zh-CN" as const, action: "完成", merge: "完成并合并", state: "已完成", notice: "任务 #5 Action copy 已完成。" },
+])("preserves completion status copy independently of actions in $locale", ({ locale, action, merge, state, notice }) => {
+  const { t, label } = createI18n(locale);
+  expect(t("ui.completeTask")).toBe(action);
+  expect(t("ui.completeAndMerge")).toBe(merge);
+  expect(t("ui.done")).toBe(state);
+  expect(label("phase", "done")).toBe(state);
+  expect(label("status", "done")).toBe(state);
+  render(<I18nProvider initial={locale}><MemoryRouter>
+    <PhaseBadge phase="done" />
+    <Board todos={[]} agents={[]} projects={[]} onNew={() => {}} />
+  </MemoryRouter></I18nProvider>);
+  expect(screen.getByRole("heading", { name: state })).toBeVisible();
+  expect(document.querySelector(".phase-badge.done")).toHaveTextContent(state);
+  const message: Message = {
+    id: "m", conversationId: "c", turnId: null, role: "system",
+    content: "Todo #5 Action copy entered done.", createdAt: "2026-10-25",
+    meta: { todoId: "task", phase: "done" },
+  };
+  expect(systemMessage(message, t, label)).toBe(notice);
 });

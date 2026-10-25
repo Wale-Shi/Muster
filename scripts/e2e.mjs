@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
@@ -10,9 +11,9 @@ import { MachineClient } from "../apps/daemon/dist/client.js";
 import { MockRuntime } from "../apps/daemon/dist/runtimes/mock.js";
 import { git } from "../apps/daemon/dist/worktree.js";
 
-const root = await mkdtemp(join(tmpdir(), "muster-e2e-"));
+const root = await realpath(await mkdtemp(join(tmpdir(), "muster-e2e-")));
 const repo = join(root, "repo");
-const workspaces = join(root, "workspaces");
+const workspaces = join(root, "server-data", "workspaces");
 let daemon;
 let server;
 let stderr = "";
@@ -73,7 +74,7 @@ try {
   const chief = (await api("/agents")).find((item) => item.isChief);
   assert.equal(chief.model, "gpt-6.1-sol");
   await api(`/agents/${chief.id}`, { runtime: "mock", model: "mock" }, "PATCH");
-  const client = new MachineClient({ server: url, home: join(root, "daemon"), name: "e2e", concurrency: 3, runtimes: ["mock"] });
+  const client = new MachineClient({ server: url, home: join(root, "server-data"), name: "e2e", concurrency: 3, runtimes: ["mock"] });
   let lateTodoId;
   let lateTurnId;
   const complete = client.complete.bind(client);
@@ -105,7 +106,22 @@ try {
         if (job.attachments?.length) assert(job.prompt.includes("attachments-cache"));
         context.emit({ type: "tool.completed", tool: "resource-fixture", output: job.env.SERVICE_TOKEN });
       }
-      return super.start(job, context);
+      const artifactMatch = job.systemInstructions.match(/Build artifact directory: (.+)\n/);
+      if (job.todoId) {
+        assert(artifactMatch, "artifact directory is in system instructions");
+        assert(existsSync(JSON.parse(artifactMatch[1])), "artifact directory exists before runtime start");
+      }
+      const running = super.start(job, context);
+      return { ...running, result: running.result.then(async (result) => {
+        if (job.todoId && !job.readOnly) {
+          const artifact = join(JSON.parse(artifactMatch[1]), `${job.turnId}.png`);
+          const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGMoKPgPRAwQCgAyNgd9JQZITgAAAABJRU5ErkJggg==", "base64");
+          await writeFile(artifact, png);
+          context.emit({ type: "message.completed", content: `![Artifact](<${artifact}>)\n![Temporary](/tmp/muster-screen.png)\n![Other](<${join(root, "server-data", "artifacts", "other", "screen.png")}>)` });
+        }
+        return result;
+      }) };
+
     }
   }
   daemon = new Daemon({ client, workspacesDir: workspaces, log: (level, message, meta) => { if (level === "error") stderr += `${message}: ${JSON.stringify(meta)}\n`; },
@@ -123,7 +139,7 @@ try {
   assert(!resourceMessages.includes("muster-e2e-private"));
   assert(resourceMessages.includes("[secret:SERVICE_TOKEN]"));
   const attachment = (await api(`/todos/${todo.id}/attachments`))[0];
-  assert.equal(await readFile(join(root, "daemon", "attachments-cache", `${attachment.id}-${attachment.hash}`), "utf8"), "E2E attachment");
+  assert.equal(await readFile(join(root, "server-data", "attachments-cache", `${attachment.id}-${attachment.hash}`), "utf8"), "E2E attachment");
   console.log("PASS attachment upload → authenticated machine download → cache + prompt");
   console.log("PASS agent memory + skill cache + permission-gated env + upload redaction");
   assert(planned.builds[0].documents.some((doc) => doc.kind === "plan"));
@@ -132,14 +148,36 @@ try {
   await api(`/todos/${todo.id}/message`, { content: "MID_TURN_STEER" });
   const reviewed = await phase(todo.id, "review");
   const build = reviewed.builds[0];
+  const taskTree = join(workspaces, build.id);
+  assert.equal(await git(taskTree, "log", "-1", "--format=%s"), `#${todo.number} ${todo.title}`);
+  assert.match(await git(taskTree, "log", "-1", "--format=%b"), /Turn: \d+/);
   assert(build.documents.some((doc) => doc.kind === "changes" && doc.content.includes("MUSTER_MOCK.md")));
   assert((await api(`/conversations/${build.id}/messages`)).some((message) => message.content.includes("Steer: MID_TURN_STEER")));
   assert.equal((await api(`/conversations/${build.id}/queued-messages`)).length, 0);
+  const imageMessage = (await api(`/conversations/${build.id}/messages`)).find((message) => message.content.startsWith("![Artifact]"));
+  assert(imageMessage, "mock image Markdown persisted");
+  const imagePath = imageMessage.content.match(/!\[Artifact\]\(<(.+)>\)/)[1];
+  const imageRequest = (src, buildId = build.id) => fetch(`${url}/api/todos/${todo.id}/images`, { method: "POST", headers: { "Content-Type": "application/json", "X-Muster-Image": "1", Origin: url }, body: JSON.stringify({ buildId, messageId: imageMessage.id, src }) });
+  const imageResponse = await imageRequest(imagePath);
+  assert.equal(imageResponse.status, 200);
+  assert.equal(imageResponse.headers.get("content-type"), "image/png");
+  assert.deepEqual(Buffer.from(await imageResponse.arrayBuffer()), await readFile(imagePath));
+  assert.equal((await imageRequest("/tmp/muster-screen.png")).status, 403);
+  assert.equal((await imageRequest(join(root, "server-data", "artifacts", "other", "screen.png"))).status, 403);
+  assert.equal((await imageRequest(imagePath, "other")).status, 404);
+  assert(!(await git(join(workspaces, build.id), "ls-files")).includes(".png"));
+  console.log("PASS build artifact directory → mock screenshot → persisted Markdown → scoped image bytes, cross-build and temporary path denial");
   await api(`/todos/${todo.id}/done`, { merge: true });
   await phase(todo.id, "done");
   assert.notEqual(await git(repo, "rev-parse", "HEAD"), original);
   assert((await readFile(join(repo, "MUSTER_MOCK.md"), "utf8")).includes("Plan and merge"));
   assert.equal(await git(repo, "status", "--porcelain"), "");
+  const mergeMessage = await git(repo, "log", "-1", "--format=%B");
+  assert.equal(mergeMessage.split("\n")[0], `Merge #${todo.number}: ${todo.title}`);
+  assert(mergeMessage.includes("Write a deterministic integration fixture."));
+  assert(mergeMessage.includes(`Task: ${url}/todos/${todo.id}`));
+  assert(mergeMessage.includes(`Task ID: ${todo.id}`));
+  console.log("PASS task checkpoint and merge subjects, summary, URL and ID");
   console.log("PASS plan → confirm → build + steer → review → merge → done");
 
   const late = await create("Late completion steer");
@@ -148,6 +186,7 @@ try {
   const lateReviewed = await phase(late.id, "review");
   const lateBuild = lateReviewed.builds[0];
   assert(lateTurnId, "completion boundary hook ran");
+  assert.deepEqual((await git(join(workspaces, lateBuild.id), "log", "-2", "--format=%s")).split("\n"), Array(2).fill(`#${late.number} ${late.title}`));
   assert.equal(lateBuild.turns.length, 2);
   assert.equal(lateBuild.turns[0].id, lateTurnId);
   assert.equal(lateBuild.turns[1].kind, "revise");

@@ -3,9 +3,11 @@ import { spawn } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ensureElectron } from "./electron.js";
+import { assertReleaseIdle, unregisterRelease } from "./mac-bundle.js";
 import { build, Platform } from "electron-builder";
 const desktop = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const root = resolve(desktop, "../..");
+if (process.platform === "darwin") await assertReleaseIdle(join(desktop, "release"));
 await ensureElectron(root);
 const stage = join(desktop, ".stage");
 await rm(stage, { recursive: true, force: true });
@@ -43,7 +45,9 @@ await build({
     files: ["dist/src/**/*", "package.json"],
     // electron-builder always drops node_modules nested inside an extraResources source, so copy it as its own entry.
     extraResources: [{ from: stage, to: "runtime", filter: ["**/*", "!package-lock.json"] }, { from: join(stage, "node_modules"), to: "runtime/node_modules", filter: ["**/*"] }, { from: "assets", to: "assets", filter: ["*.png"] }],
-    asar: true, npmRebuild: false, electronDist: join(root, "node_modules/electron/dist"),
+    // Dependencies are already materialized in extraResources. Unlike npmRebuild:false,
+    // this also skips redundant workspace dependency collection (npm prefix may return an invalid root).
+    asar: true, beforeBuild: async () => false, electronDist: join(root, "node_modules/electron/dist"),
     mac: { target: ["dir", "dmg"], icon: "assets/icon.icns", category: "public.app-category.developer-tools", identity: "-", hardenedRuntime: false },
     win: { icon: "assets/icon.ico" }, linux: { icon: "assets/icon.png", category: "Development" },
     dmg: { sign: false },
@@ -69,3 +73,5 @@ await build({
   await rm(folder, { recursive: true, force: true });
   console.log(`Built HFS DMG: ${image}`);
 }
+
+if (process.platform === "darwin") await unregisterRelease(join(desktop, "release"), join(desktop, "release", process.arch === "arm64" ? "mac-arm64" : "mac", "Muster.app"));

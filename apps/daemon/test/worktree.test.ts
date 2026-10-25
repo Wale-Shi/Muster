@@ -87,3 +87,29 @@ it("pushes the checkpointed task branch without changing the base branch", async
   await writeFile(join(tree.cwd, "pushed.txt"), "task branch only\n"); const checkpoint = await manager.checkpoint(tree); await manager.push(tree);
   expect(await git(origin, "rev-parse", tree.branch)).toBe(checkpoint.headCommit); expect(await git(origin, "rev-parse", "main")).toBe(original);
 });
+
+it("writes task messages safely and preserves history across revisions and repeated merges", async () => {
+  const { manager, job, origin } = await setup();
+  const title = '修复 "引号" `touch injected` $(touch injected)\n第二行\u0000';
+  job.task = { number: 7, title, summary: "First paragraph\nwith details", url: "https://muster.example/todos/todo-1" };
+  const tree = await manager.prepare(job);
+  const original = await git(origin, "rev-parse", "HEAD");
+  await writeFile(join(tree.cwd, "feature.txt"), "first\n");
+  const first = await manager.checkpoint(tree, 2, job);
+  const subject = '#7 修复 "引号" `touch injected` $(touch injected) 第二行';
+  expect(await git(tree.cwd, "log", "-1", "--format=%B")).toBe(`${subject}\n\nTurn: 2`);
+  expect((await manager.checkpoint(tree, 2, job)).headCommit).toBe(first.headCommit);
+  await writeFile(join(tree.cwd, "feature.txt"), "revised\n");
+  const second = await manager.checkpoint(tree, 3, job);
+  expect(await git(tree.cwd, "log", "-1", "--format=%B")).toBe(`${subject}\n\nTurn: 3`);
+  expect(await git(tree.cwd, "rev-parse", "HEAD^")).toBe(first.headCommit);
+  expect(await git(tree.cwd, "rev-parse", "HEAD^^")).toBe(original);
+  await expect(readFile(join(tree.cwd, "injected"))).rejects.toThrow();
+  const merged = await manager.merge(tree, job);
+  expect(merged.ok).toBe(true);
+  expect(await git(origin, "log", "-1", "--format=%B")).toBe(`Merge ${subject.replace("#7 ", "#7: ")}\n\nFirst paragraph with details\n\nTask: https://muster.example/todos/todo-1\nTask ID: todo-1`);
+  expect(await git(origin, "rev-parse", "HEAD^1")).toBe(original);
+  expect(await git(origin, "rev-parse", "HEAD^2")).toBe(second.headCommit);
+  expect((await manager.merge(tree, job)).headCommit).toBe(merged.headCommit);
+  expect(await git(origin, "status", "--porcelain")).toBe("");
+});

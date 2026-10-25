@@ -1,3 +1,4 @@
+import { parseImageMappings } from "./routes/local-images.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,6 +14,7 @@ if (isMain) {
   const publicUrl = process.env.MUSTER_PUBLIC_URL ?? `http://127.0.0.1:${port}`;
   const { app, services } = createApp({
     databasePath: join(dataDir, "muster.db"),
+    imageMappings: parseImageMappings(process.env.MUSTER_IMAGE_MAPPINGS),
     publicUrl,
     claimWaitMs: Number(process.env.MUSTER_CLAIM_WAIT_MS ?? 25_000),
     enrollKey: process.env.MUSTER_ENROLL_KEY ?? null,

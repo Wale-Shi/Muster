@@ -1,3 +1,4 @@
+import { LocalImage, type ImageContext } from "./LocalImage";
 import { useNavigate } from "react-router";
 import { ProjectDialog } from "../pages/Projects";
 import { MentionInput } from "./MentionInput";
@@ -30,7 +31,9 @@ import { useMessages } from "../api/queries";
 import { useRealtime } from "../api/realtime";
 import { Avatar, ErrorNotice, Loading } from "./ui";
 
-export function Markdown({ children }: { children: string }) {
+const isLocalImage = (value: unknown): value is string => typeof value === "string" && Boolean(absolutePath(value) || /^(file:|muster-local:)/.test(value));
+
+export function Markdown({ children, imageContext }: { children: string; imageContext?: ImageContext | undefined }) {
   const { t } = useI18n();
   const [pathError, setPathError] = useState<unknown>(null);
   const openPath = (path: string) => { void window.muster?.openPath(path).then((error) => { if (error) setPathError(new Error(error)); }).catch(setPathError); };
@@ -38,9 +41,13 @@ export function Markdown({ children }: { children: string }) {
     <div className="markdown">
       <ReactMarkdown
         remarkPlugins={window.muster?.desktop ? [remarkGfm, localPathLinks] : [remarkGfm]}
-        urlTransform={(url) => window.muster?.desktop && absolutePath(url) ? url : defaultUrlTransform(url)}
+        urlTransform={(url, key) => (key === "src" && isLocalImage(url)) || (window.muster?.desktop && absolutePath(url)) ? url : defaultUrlTransform(url)}
         components={{
-          a: ({ href, children }) => {
+          img: ({ src, alt }) => isLocalImage(src) ? <LocalImage src={src} alt={alt} context={imageContext} /> : <img src={src} alt={alt} />,
+          a: ({ href, children, node }) => {
+            const containsLocalImage = (element: typeof node): boolean => Boolean(element?.children.some((child) => child.type === "element" && (child.tagName === "img" && isLocalImage(child.properties.src) || containsLocalImage(child))));
+            // An image wrapped in a link must not reopen a denied path via mouse or keyboard.
+            if (containsLocalImage(node)) return <span>{children}</span>;
             const path = window.muster?.desktop && href ? absolutePath(href) : null;
             return path ? <a href={href} title={t("text.open", { path })} onClick={(event) => { event.preventDefault(); openPath(path); }}>{children}</a> : <a href={href} target="_blank" rel="noreferrer">{children}</a>;
           },
@@ -112,7 +119,9 @@ function ToolGroup({ messages }: { messages: Message[] }) {
 function MessageStream({
   messages,
   agentName,
+  todoId,
 }: {
+  todoId?: string | undefined;
   messages: Message[];
   agentName: string;
 }) {
@@ -149,7 +158,7 @@ function MessageStream({
               </time>
             </div>
             <div className="message-content">
-              <Markdown>{item.content}</Markdown>
+              <Markdown imageContext={todoId && item.role === "agent" ? { todoId, buildId: item.conversationId, messageId: item.id, streaming: item.meta.streaming === true } : undefined}>{item.content}</Markdown>
               {item.meta.streaming === true && (
                 <span className="stream-caret" />
               )}
@@ -174,7 +183,7 @@ export function Conversation({
   initialSpec,
 }: {
   conversationId: string;
-  todoId?: string;
+  todoId?: string | undefined;
   agentName?: string;
   status?: "queued" | "running" | "idle";
   disabled?: string | undefined;
@@ -325,7 +334,7 @@ export function Conversation({
             </div>
           )
         ) : (
-          <MessageStream messages={messages.data} agentName={agentName} />
+          <MessageStream messages={messages.data} agentName={agentName} todoId={todoId} />
         )}
         {currentStatus !== "idle" && (
           <div className="live-status" role="status">

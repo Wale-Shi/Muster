@@ -1,4 +1,5 @@
 export const en = {
+  localImage: { loading: "Loading image…", unavailable: "Image unavailable", remote: "Image is on the execution machine", enlarge: "Enlarge image", path: "Local image path" },
   phaseC: {
     deviceOnly: "Saved on this device.",
     "settings": "Settings",
@@ -410,6 +411,8 @@ export const en = {
     "aPlanStartsHere": "A plan starts here",
     "theAgentsPlanWillAppearHereForYourReview": "The agent’s plan will appear here for your review.",
     "completedBuildsWillIncludeADiffOfEveryChangedFile": "Completed builds will include a diff of every changed file.",
+    "completeTask": "Done",
+    "completeAndMerge": "Done & merge",
     "markTaskAsDone": "Mark task as done",
     "mergeChangesIntoTheDefaultBranch": "Merge changes into the default branch",
     "aMachineWillMergeThisBuildTheTaskStaysInProgressUntilTheMergeSucceeds": "A machine will merge this build. The task stays in progress until the merge succeeds.",

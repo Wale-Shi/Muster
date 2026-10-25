@@ -71,7 +71,7 @@ export function TodoActions({
             onClick={onDone}
           >
             <Check size={14} />
-            {t("ui.done")}
+            {t("ui.completeTask")}
           </button>
         )}
         {todo.phase === "failed" && (

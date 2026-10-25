@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process";
+import { basename } from "node:path";
+import { needsInstallation, moveWithoutReplacement } from "./install-location.js";
 import { shouldNotify, badgeCount, defaultNotificationPreferences } from "./notifications.js";
 import type { NotificationPreferences } from "@muster/shared";
 import { viewMenuRoles, commandAccelerators } from "./menu.js";
@@ -18,6 +21,24 @@ import { desktopError, desktopText, isLocale, notificationTitle, resolveLocale }
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../../../..");
 const runtime = app.isPackaged ? join(process.resourcesPath, "runtime") : root;
+const currentBundle = resolve(process.execPath, "../../..");
+const currentBundleId = process.platform === "darwin" && app.isPackaged
+  ? execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleIdentifier", join(currentBundle, "Contents/Info.plist")], { encoding: "utf8" }).trim() : "";
+if (needsInstallation({ platform: process.platform, packaged: app.isPackaged, executable: process.execPath, home: homedir(), bundleId: currentBundleId, smoke: process.argv.includes("--smoke-test"), data: process.env.MUSTER_DATA_DIR })) {
+  await app.whenReady();
+  const installLocale = resolveLocale(app.getPreferredSystemLanguages());
+  const copy = (key: Parameters<typeof desktopText>[1]) => desktopText(installLocale, key);
+  const choice = await dialog.showMessageBox({ type: "info", message: copy("installRequired"), detail: currentBundle, buttons: [copy("moveApp"), copy("quitApp")], defaultId: 0, cancelId: 1 });
+  if (choice.response === 0) {
+    try {
+      const moved = moveWithoutReplacement([join("/Applications", basename(currentBundle)), join(homedir(), "Applications", basename(currentBundle))], (options) => app.moveToApplicationsFolder(options));
+      if (!moved) dialog.showErrorBox(copy("installRequired"), copy("manualInstall"));
+    } catch (error) { dialog.showErrorBox(copy("installRequired"), `${copy("manualInstall")}\n${String(error)}`); }
+  }
+  app.exit(0);
+  // Do not initialize services even if Electron has not finished exiting yet.
+  await new Promise(() => {});
+}
 const data = process.env.MUSTER_DATA_DIR ?? join(homedir(), ".muster");
 const logs = join(data, "logs");
 mkdirSync(logs, { recursive: true, mode: 0o700 });
@@ -162,6 +183,7 @@ async function refreshStatus() {
 }
 
 async function launch() {
+  log(`Executable=${process.execPath} resources=${process.resourcesPath} bundle=${currentBundle} bundleId=${currentBundleId}`);
   locale = resolveLocale(app.getPreferredSystemLanguages());
   const env = { ...process.env, PATH: await resolvePath(), MUSTER_DATA_DIR: data, MUSTER_HOME: data };
   // Retry discovery when another application wins the bind race.
@@ -208,7 +230,7 @@ async function launch() {
       if (daemon && daemon.code !== undefined) throw new Error("Daemon failed in smoke test");
       const response = await fetch(`${origin}/api/machines`);
       const machines = await response.json() as { data: { online: boolean }[] };
-      if (machines.data.some((m) => m.online)) { log(`SMOKE OK ${origin} electron=${process.versions.electron} node=${process.versions.node}`); writeFileSync(join(logs, "smoke-ready.json"), JSON.stringify({ origin, electron: process.versions.electron, node: process.versions.node })); if (!process.argv.includes("--smoke-hold")) app.quit(); return; }
+      if (machines.data.some((m) => m.online)) { log(`SMOKE OK ${origin} electron=${process.versions.electron} node=${process.versions.node}`); writeFileSync(join(logs, "smoke-ready.json"), JSON.stringify({ origin, electron: process.versions.electron, node: process.versions.node, executable: process.execPath, resources: process.resourcesPath, bundleId: currentBundleId })); if (!process.argv.includes("--smoke-hold")) app.quit(); return; }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     throw new Error("Daemon did not enroll in smoke test");

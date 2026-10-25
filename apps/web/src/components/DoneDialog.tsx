@@ -57,7 +57,7 @@ export function DoneDialog({
           onClick={() => done.mutate()}
         >
           <Check size={14} />
-          {done.isPending ? t("ui.finishing") : t("ui.done")}
+          {done.isPending ? t("ui.finishing") : merge ? t("ui.completeAndMerge") : t("ui.completeTask")}
         </button>
       </div>
     </Dialog>

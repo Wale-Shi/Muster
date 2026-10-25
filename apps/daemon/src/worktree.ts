@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { mkdir, realpath } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { TurnJob } from "@muster/shared";
+import { taskCommitMessage, type TurnJob } from "@muster/shared";
 import { Mutex, safeId, errorText } from "./util.js";
 
 const execute = promisify(execFile);
@@ -59,13 +59,13 @@ export class Worktrees {
     });
   }
 
-  async checkpoint(workspace: Workspace, turnNumber?: number): Promise<{ headCommit: string; diff: string }> {
+  async checkpoint(workspace: Workspace, turnNumber?: number, job?: Pick<TurnJob, "todoId" | "task">): Promise<{ headCommit: string; diff: string }> {
     return this.mutex.run(workspace.project.id, async () => {
       await git(workspace.cwd, "add", "-A");
       if (await git(workspace.cwd, "diff", "--cached", "--name-only")) {
         const base = await git(workspace.cwd, "merge-base", "HEAD", `refs/remotes/origin/${workspace.project.baseBranch}`);
         const count = Number(await git(workspace.cwd, "rev-list", "--count", `${base}..HEAD`)) + 1;
-        await git(workspace.cwd, "commit", "-m", `muster: turn ${turnNumber ?? count}`);
+        await git(workspace.cwd, "commit", "-m", job ? taskCommitMessage(job, "checkpoint", `muster: turn ${turnNumber ?? count}`, turnNumber ?? count) : `muster: turn ${turnNumber ?? count}`);
       }
       const mergeBase = await git(workspace.cwd, "merge-base", "HEAD", `refs/remotes/origin/${workspace.project.baseBranch}`);
       return { headCommit: await git(workspace.cwd, "rev-parse", "HEAD"), diff: await git(workspace.cwd, "diff", "--binary", mergeBase, "HEAD", "--") };
@@ -74,7 +74,7 @@ export class Worktrees {
 
   async push(workspace: Workspace): Promise<void> { await git(workspace.cwd, "push", "origin", `HEAD:refs/heads/${workspace.branch}`); }
 
-  async merge(workspace: Workspace): Promise<{ ok: boolean; headCommit?: string; error?: string }> {
+  async merge(workspace: Workspace, job?: Pick<TurnJob, "todoId" | "task">): Promise<{ ok: boolean; headCommit?: string; error?: string }> {
     return this.mutex.run(workspace.project.id, async () => {
       const { repo, branch, project } = workspace;
       let original: string | undefined;
@@ -83,7 +83,7 @@ export class Worktrees {
         await git(repo, "checkout", project.baseBranch);
         await git(repo, "merge", "--ff-only", `refs/remotes/origin/${project.baseBranch}`);
         original = await git(repo, "rev-parse", "HEAD");
-        await git(repo, "merge", "--no-ff", "-m", `muster: merge ${branch}`, branch);
+        await git(repo, "merge", "--no-ff", "-m", job ? taskCommitMessage(job, "merge", `muster: merge ${branch}`) : `muster: merge ${branch}`, branch);
         const local = project.repoUrl.startsWith("file://") ? fileURLToPath(project.repoUrl) : resolve(project.repoUrl);
         if (existsSync(local)) {
           // Pushing into a checked-out branch is unsafe. Fetch into a private ref,

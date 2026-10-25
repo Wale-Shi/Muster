@@ -1,3 +1,5 @@
+import { prepareSmokeBundle } from "./mac-bundle.js";
+import { smokeId } from "../src/install-location.js";
 import { spawn, type ChildProcess } from "node:child_process";
 import { rmSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
@@ -18,6 +20,7 @@ const copy = await mkdtemp(join(copies, "smoke-app-"));
 const outside = join(copy, basename(bundle));
 await cp(bundle, outside, { recursive: true, verbatimSymlinks: true });
 process.once("exit", () => rmSync(copy, { recursive: true, force: true }));
+if (process.platform === "darwin") await prepareSmokeBundle(outside);
 const executable = join(outside, relative(bundle, built));
 const runtime = process.platform === "darwin" ? resolve(executable, "../../Resources/runtime") : resolve(dirname(executable), "resources/runtime");
 const home = await mkdtemp(join(tmpdir(), "muster-desktop-smoke-"));
@@ -62,7 +65,12 @@ try {
   const first = child;
   await until(async () => {
     if (first.exitCode !== null || first.signalCode !== null) throw new Error(`App quit early: ${first.exitCode ?? first.signalCode}`);
-    try { return JSON.parse(await readFile(join(home, "logs/smoke-ready.json"), "utf8")) as { node: string }; } catch { return false; }
+    let ready: { executable: string; resources: string; bundleId: string };
+    try { ready = JSON.parse(await readFile(join(home, "logs/smoke-ready.json"), "utf8")); } catch { return false; }
+    assert.equal(ready.executable, executable);
+    assert.equal(ready.resources, dirname(runtime));
+    if (process.platform === "darwin") assert.equal(ready.bundleId, smokeId);
+    return ready;
   }, "packaged UI + preload + SQLite server + machine enrollment");
   }
   console.log(workersOnly ? "PASS packaged worker bridge, bundled SQLite and automatic enrollment" : "PASS packaged UI, isolated preload, bundled SQLite and automatic enrollment");

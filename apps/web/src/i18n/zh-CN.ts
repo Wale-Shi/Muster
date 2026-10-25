@@ -1,5 +1,6 @@
 import type { Messages } from "./en";
 export const messages: Messages = {
+  localImage: { loading: "正在加载图片…", unavailable: "图片不可用", remote: "图片位于执行机器", enlarge: "放大图片", path: "本地图片路径" },
   phaseC: {
     deviceOnly: "仅保存在这台设备上。",
     "settings": "设置",
@@ -411,6 +412,8 @@ export const messages: Messages = {
     "aPlanStartsHere": "计划将显示在这里",
     "theAgentsPlanWillAppearHereForYourReview": "Agent 的计划会显示在这里，供你评审。",
     "completedBuildsWillIncludeADiffOfEveryChangedFile": "构建完成后，可查看每个文件的变更。",
+    "completeTask": "完成",
+    "completeAndMerge": "完成并合并",
     "markTaskAsDone": "将任务标记为已完成",
     "mergeChangesIntoTheDefaultBranch": "将变更合并到默认分支",
     "aMachineWillMergeThisBuildTheTaskStaysInProgressUntilTheMergeSucceeds": "机器将合并本次构建。合并成功前，任务会保持进行中。",

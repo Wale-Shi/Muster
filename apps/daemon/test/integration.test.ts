@@ -58,7 +58,7 @@ describe("daemon against the real M1 HTTP server", () => {
     const review = await f.phase(todo.id, "review");
     const changes = review.builds[0]!.documents.find((doc) => doc.kind === "changes");
     expect(changes?.content).toContain("MUSTER_MOCK.md");
-    expect(await git(join(f.ws, build.id), "log", "-1", "--format=%s")).toBe("muster: turn 2");
+    expect(await git(join(f.ws, build.id), "log", "-1", "--format=%B")).toBe(`#${todo.number} ${todo.title}\n\nTurn: 2`);
     const messages = await f.api<Array<{ content: string }>>(`/conversations/${build.id}/messages`);
     expect(messages.some((message) => message.content.includes("Steer: Include tests"))).toBe(true);
     expect(JSON.parse(String(f.services.db.row("SELECT session_state_json FROM turns WHERE id = ?", review.builds[0]!.turns[1]!.id)!.session_state_json))).toMatchObject({ turns: 2 });

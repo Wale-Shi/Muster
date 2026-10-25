@@ -522,6 +522,13 @@ kbd {
   right: 3px;
   top: 2px;
 }
+.sidebar-chevron {
+  transform: rotate(0deg);
+  transition: transform 150ms ease;
+}
+.sidebar-chevron.expanded {
+  transform: rotate(90deg);
+}
 .topic-list {
   margin: 5px 0 6px 17px;
   padding-left: 8px;
@@ -2890,3 +2897,12 @@ input.lg, select.lg { min-height: var(--control-lg); height: var(--control-lg); 
 ::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
 
 .composer:has(textarea:focus-visible), .file-filter:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Local image bytes are fetched through the task-scoped server endpoint. */
+.local-image { display: inline-flex; flex-direction: column; gap: 6px; max-width: 100%; vertical-align: top; }
+.local-image-preview { padding: 0; cursor: zoom-in; border: 1px solid var(--border-default); background: transparent; border-radius: 6px; overflow: hidden; }
+.local-image-preview img { display: block; max-width: 100%; max-height: 360px; object-fit: contain; }
+.local-image-path { text-align: left; overflow-wrap: anywhere; font-size: 12px; }
+.local-image > input { width: 100%; min-width: 0; }
+.local-image > [role="status"] { color: var(--text-tertiary); font-size: 12px; }
+.local-image-full { display: block; max-width: 100%; max-height: 80vh; object-fit: contain; margin: auto; }

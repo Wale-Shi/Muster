@@ -7,3 +7,4 @@ export * from "./schedules.js";
 export * from "./connections.js";
 export * from "./connection-catalog.js";
 export * from "./settings.js";
+export * from "./task-commit.js";

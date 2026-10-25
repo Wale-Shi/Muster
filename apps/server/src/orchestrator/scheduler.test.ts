@@ -34,6 +34,7 @@ describe("scheduler", () => {
     expect(merge.prompt).toMatch(/^PHASE: MERGE\. Merging the build branch/);
     expect(merge.prompt).toContain("now authorized");
     for (const job of [plan, confirmRevision, build, reviewRevision, merge]) {
+      expect(job.task).toEqual({ number: 1, title: "Test todo", summary: "Implement the test", url: `http://127.0.0.1:7420/todos/${todoId}` });
       expect(job.systemInstructions).toBe(plan.systemInstructions);
       expect(job.systemInstructions).toContain("Test agent");
       expect(job.systemInstructions).toContain("overrides any earlier phase instruction");
@@ -109,4 +110,22 @@ describe("scheduler", () => {
     expect((await requestJson(app, `/api/todos/${todoId}`)).json.data.phase).toBe("failed");
     expect(services.db.row("SELECT status, error FROM turns WHERE id = ?", job.turnId)).toMatchObject({ status: "failed", error: "Machine went offline: no heartbeat for 30 seconds." });
   });
+});
+
+
+it("snapshots task metadata on claim and refreshes it only for the next turn", async () => {
+  const { app, services } = createApp({ publicUrl: "https://muster.example/team/", autoFollowUp: false }); databases.push(services.db);
+  const { projectId, agentId } = await seedProjectAndAgent(app); const machine = await enroll(app);
+  const todoId = await createTodo(app, projectId, agentId, "run");
+  const { db, scheduler, orchestrator } = services;
+  db.run("UPDATE todos SET spec=? WHERE id=?", "First paragraph\ncontinued\n\nSecond paragraph", todoId);
+  orchestrator.start(todoId, "run");
+  const first = scheduler.claim(machine.token, "same-request")!;
+  expect(first.task).toEqual({ number: 1, title: "Test todo", summary: "First paragraph continued", url: `https://muster.example/team/todos/${todoId}` });
+  db.run("UPDATE todos SET title=?, spec='' WHERE id=?", "Updated title", todoId);
+  orchestrator.publicUrl = "";
+  expect(scheduler.claim(machine.token, "same-request")).toEqual(first);
+  scheduler.complete(machine.token, first.turnId, { status: "done" });
+  orchestrator.message(todoId, "Revise");
+  expect(scheduler.claim(machine.token)!.task).toEqual({ number: 1, title: "Updated title", summary: "Updated title", url: `/todos/${todoId}` });
 });
