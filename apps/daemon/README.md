@@ -11,8 +11,9 @@ npm exec -- muster-daemon start --server http://localhost:7420
 `start` accepts `--name` (hostname), `--concurrency` (6, range 1–64), and
 `--workspaces-dir` (`$MUSTER_HOME/workspaces`). `MUSTER_HOME` defaults to
 `~/.muster`. `~` in CLI directory options is expanded. Set `MUSTER_ENROLL_KEY`
-when the server requires an enrollment key. Only installed executables on PATH
-are advertised for Codex/Claude; mock is always available.
+when the server requires an enrollment key. Only runtimes whose executable is
+found (PATH, common install directories, or `MUSTER_<ID>_BIN`) are advertised;
+mock is always available. See the root README for the runtime list.
 
 The home directory contains a private `machine.json` registration, a
 `running.json` journal, a single-daemon lock, and JSON-lines `daemon.log`.

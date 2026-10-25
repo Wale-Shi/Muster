@@ -1,5 +1,6 @@
 import type { Message, Runtime, TurnKind } from "./types.js";
 import type { z } from "zod";
+import { RUNTIMES } from "./runtimes.js";
 import type { agentEventSchema, turnCompleteSchema, eventUploadSchema } from "./schemas.js";
 
 export interface TurnJob {
@@ -44,6 +45,6 @@ export interface ServerEvent {
   payload: unknown;
 }
 
-export const DEFAULT_MODELS: Record<Runtime, string> = { codex: "gpt-6.1-sol", claude: "claude-sonnet-5-5", mock: "mock" };
+export const DEFAULT_MODELS = Object.fromEntries(RUNTIMES.map((runtime) => [runtime.id, runtime.defaultModel])) as Record<Runtime, string>;
 // Chief coordinates rather than codes, so it defaults to the stronger planning model.
 export const CHIEF_MODEL = { runtime: "codex", model: "gpt-6-astra", reasoning: "medium" } as const;

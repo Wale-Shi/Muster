@@ -1,7 +1,8 @@
 import { z } from "zod";
+import { RUNTIME_IDS } from "./runtimes.js";
 
 export const idSchema = z.string().min(1);
-export const runtimeSchema = z.enum(["codex", "claude", "mock"]);
+export const runtimeSchema = z.enum(RUNTIME_IDS);
 export const todoPhaseSchema = z.enum([
   "todo", "queued", "planning", "confirm", "building", "review", "failed", "done", "closed",
 ]);

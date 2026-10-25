@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL,
-  runtime TEXT NOT NULL CHECK(runtime IN ('codex','claude','mock')),
+  runtime TEXT NOT NULL,
   model TEXT NOT NULL, reasoning TEXT, avatar TEXT,
   is_chief INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL,
   permissions_json TEXT NOT NULL DEFAULT '{}', default_skill_ids_json TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL DEFAULT ''

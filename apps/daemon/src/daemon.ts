@@ -3,30 +3,58 @@ import { prepareAttachments, prepareSkills, redactor, secretEvents, jobCredentia
 import { access, mkdir, readFile, writeFile, rm, rename } from "node:fs/promises";
 import { constants } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
-import type { Runtime as RuntimeName, TurnCompletePayload, TurnJob } from "@muster/shared";
+import { homedir } from "node:os";
+import { RUNTIMES, runtimeBinEnv, type Runtime as RuntimeName, type TurnCompletePayload, type TurnJob } from "@muster/shared";
 import { MachineClient, HttpError } from "./client.js";
 import { EventBatcher } from "./events.js";
 import { Worktrees, type Workspace } from "./worktree.js";
 import { MockRuntime } from "./runtimes/mock.js";
 import { CodexRuntime } from "./runtimes/codex.js";
 import { ClaudeRuntime } from "./runtimes/claude.js";
+import { PiRuntime } from "./runtimes/pi.js";
+import { AcpRuntime } from "./runtimes/acp.js";
 import type { Runtime, RunningTurn } from "./runtimes/types.js";
 import type { Logger } from "./log.js";
 import { delay, errorText, Mutex, safeId } from "./util.js";
 
-export async function detectRuntimes(path = process.env.PATH ?? ""): Promise<RuntimeName[]> {
-  const found: RuntimeName[] = ["mock"];
-  for (const name of ["codex", "claude"] as const) {
-    for (const directory of path.split(delimiter)) {
-      try { await access(join(directory, name), constants.X_OK); found.push(name); break; } catch { /* next PATH directory */ }
+// Installers that do not always land on a service's PATH.
+const INSTALL_DIRS = [".local/bin", ".npm-global/bin", ".bun/bin", ".opencode/bin", ".kiro/bin"].map((dir) => join(homedir(), dir)).concat("/opt/homebrew/bin", "/usr/local/bin");
+
+/** Absolute executable per installed runtime; `MUSTER_<ID>_BIN` overrides the search. */
+export async function locateRuntimes(path = process.env.PATH ?? "", env: NodeJS.ProcessEnv = process.env): Promise<Partial<Record<RuntimeName, string>>> {
+  const found: Partial<Record<RuntimeName, string>> = {};
+  const directories = [...new Set([...path.split(delimiter).filter(Boolean), ...INSTALL_DIRS])];
+  for (const runtime of RUNTIMES) {
+    if (runtime.protocol === "mock") continue;
+    const override = env[runtimeBinEnv(runtime.id)];
+    const candidates = override ? [override] : runtime.commands.flatMap((command) => directories.map((directory) => join(directory, command)));
+    for (const candidate of candidates) {
+      try { await access(candidate, constants.X_OK); found[runtime.id] = candidate; break; } catch { /* next candidate */ }
     }
   }
   return found;
+}
+export async function detectRuntimes(path?: string, env?: NodeJS.ProcessEnv): Promise<RuntimeName[]> {
+  return ["mock", ...Object.keys(await locateRuntimes(path, env)) as RuntimeName[]];
+}
+export function createRuntimes(commands: Partial<Record<RuntimeName, string>> = {}): Record<RuntimeName, Runtime> {
+  const runtimes = {} as Record<RuntimeName, Runtime>;
+  for (const info of RUNTIMES) {
+    const command = commands[info.id] ?? info.commands[0] ?? info.id;
+    runtimes[info.id] = info.protocol === "codex" ? new CodexRuntime(command)
+      : info.protocol === "claude" ? new ClaudeRuntime(command)
+      : info.protocol === "pi" ? new PiRuntime(command, [...info.args])
+      : info.protocol === "acp" ? new AcpRuntime(command, [...info.args], info.label)
+      : new MockRuntime();
+  }
+  return runtimes;
 }
 interface Active { stopped: boolean; runtime?: RunningTurn; task: Promise<void> }
 export interface DaemonOptions {
   client: MachineClient; workspacesDir: string; log: Logger;
   runtimes?: Partial<Record<RuntimeName, Runtime>>;
+  /** Executables found by `locateRuntimes`. */
+  commands?: Partial<Record<RuntimeName, string>>;
   heartbeatMs?: number; inboxMs?: number; flushMs?: number;
 }
 export class Daemon {
@@ -42,7 +70,7 @@ export class Daemon {
   private stopping: Promise<void> | undefined;
   constructor(readonly options: DaemonOptions) {
     this.worktrees = new Worktrees(resolve(options.workspacesDir));
-    this.runtimes = { codex: new CodexRuntime(), claude: new ClaudeRuntime(), mock: new MockRuntime(), ...options.runtimes };
+    this.runtimes = { ...createRuntimes(options.commands), ...options.runtimes };
     this.lock = join(options.client.options.home, "daemon.lock");
   }
   get running(): string[] { return [...this.active.keys()]; }

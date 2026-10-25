@@ -3,10 +3,11 @@ import { useI18n } from "../i18n";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Plus } from "lucide-react";
-import { DEFAULT_MODELS, type Agent, type Runtime } from "@muster/shared";
+import { CLI_DEFAULT_MODEL, DEFAULT_MODELS, type Agent, type Runtime } from "@muster/shared";
 import { api, type AgentInput } from "../api/client";
 import { useAgents, useTodos } from "../api/queries";
 import { Avatar, Dialog, Empty, ErrorNotice, Loading } from "../components/ui";
+import { RuntimeOptions } from "../components/RuntimeOptions";
 
 function AgentDialog({
   agent,
@@ -83,9 +84,7 @@ function AgentDialog({
                   setInput({ ...input, runtime: event.target.value as Runtime, model: DEFAULT_MODELS[event.target.value as Runtime] })
                 }
               >
-                <option value="codex">Codex</option>
-                <option value="claude">Claude Code</option>
-                <option value="mock">{t("ui.mockLocalTest")}</option>
+                <RuntimeOptions />
               </select>
             </label>
             <label>
@@ -99,6 +98,7 @@ function AgentDialog({
                   setInput({ ...input, model: event.target.value })
                 }
               />
+              {input.model === CLI_DEFAULT_MODEL && <small className="muted">{t("ui.cliDefaultModel")}</small>}
             </label>
           </div>
           <label>

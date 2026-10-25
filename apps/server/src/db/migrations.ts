@@ -52,4 +52,11 @@ export const migrations = [
   CREATE TABLE api_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, prefix TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, scopes_json TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT, revoked_at TEXT);
   ALTER TABLE projects ADD COLUMN description TEXT NOT NULL DEFAULT '';
   CREATE TABLE attachments (id TEXT PRIMARY KEY, todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE, name TEXT NOT NULL, size INTEGER NOT NULL, hash TEXT NOT NULL);`,
+  // Runtimes are validated by the shared catalog, so drop the fixed CHECK list.
+  // SQLite needs a table rebuild for that, which must run with foreign keys off.
+  { foreignKeysOff: true, sql: `
+  CREATE TABLE agents_new (id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, runtime TEXT NOT NULL, model TEXT NOT NULL, reasoning TEXT, avatar TEXT, is_chief INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, permissions_json TEXT NOT NULL DEFAULT '{}', default_skill_ids_json TEXT NOT NULL DEFAULT '[]', updated_at TEXT NOT NULL DEFAULT '', connection_ids_json TEXT NOT NULL DEFAULT '[]');
+  INSERT INTO agents_new SELECT id, name, role, runtime, model, reasoning, avatar, is_chief, created_at, permissions_json, default_skill_ids_json, updated_at, connection_ids_json FROM agents;
+  DROP TABLE agents;
+  ALTER TABLE agents_new RENAME TO agents;` },
 ] as const;

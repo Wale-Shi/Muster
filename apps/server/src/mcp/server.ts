@@ -96,21 +96,31 @@ export async function handleMcp(request: Request, services: AppServices): Promis
   if (!sessions) { sessions = new Map(); sessionStores.set(services, sessions); }
   for (const [savedToken, saved] of sessions) {
     if (!services.db.row("SELECT mt.token FROM mcp_tokens mt JOIN turns t ON t.id=mt.turn_id WHERE mt.token=? AND t.status='running' AND t.stop_requested=0", savedToken)) {
-      sessions.delete(savedToken); await saved.server.close();
+      sessions.delete(savedToken); await Promise.all([...saved.values()].map((session) => session.server.close()));
     }
   }
-  let session = sessions.get(token);
-  if (!session) {
-    const transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true, sessionIdGenerator: () => crypto.randomUUID() });
-    const server = createMcpServer(services, assignment.todo_id ? null : String(assignment.branch).replace(/^chief:/, ""), String(JSON.parse(String(assignment.agent_snapshot_json)).id), String(assignment.turn_id));
-    await server.connect(transport);
-    session = { server, transport };
-    sessions.set(token, session);
-  }
+  // A turn may connect more than once (ACP agents restart their MCP servers), so
+  // each initialize gets its own session; later requests carry its session id.
+  let byToken = sessions.get(token);
+  if (!byToken) { byToken = new Map(); sessions.set(token, byToken); }
+  const sessionId = request.headers.get("mcp-session-id");
+  const existing = sessionId ? byToken.get(sessionId) : undefined;
+  if (existing) return existing.transport.handleRequest(request);
+  if (sessionId) return Response.json({ jsonrpc: "2.0", error: { code: -32001, message: "Session not found" }, id: null }, { status: 404 });
+  const sessionsForToken = byToken;
+  const server = createMcpServer(services, assignment.todo_id ? null : String(assignment.branch).replace(/^chief:/, ""), String(JSON.parse(String(assignment.agent_snapshot_json)).id), String(assignment.turn_id));
+  const session = { server, transport: undefined as unknown as WebStandardStreamableHTTPServerTransport };
+  session.transport = new WebStandardStreamableHTTPServerTransport({ enableJsonResponse: true, sessionIdGenerator: () => crypto.randomUUID(), onsessioninitialized: (id) => {
+    sessionsForToken.set(id, session);
+    // Bound reconnect churn: drop the oldest session beyond a handful per turn.
+    for (const [oldId, old] of sessionsForToken) { if (sessionsForToken.size <= MAX_SESSIONS_PER_TURN) break; sessionsForToken.delete(oldId); void old.server.close(); }
+  } });
+  await server.connect(session.transport);
   return session.transport.handleRequest(request);
 }
 
-const sessionStores = new WeakMap<AppServices, Map<string, { server: McpServer; transport: WebStandardStreamableHTTPServerTransport }>>();
+const MAX_SESSIONS_PER_TURN = 8;
+const sessionStores = new WeakMap<AppServices, Map<string, Map<string, { server: McpServer; transport: WebStandardStreamableHTTPServerTransport }>>>();
 
 // Stateless external requests avoid long-lived sessions retaining revoked credentials.
 const authFailures = new WeakMap<AppServices, { count: number; until: number }>();

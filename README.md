@@ -4,7 +4,7 @@ Muster is an open-source, self-hostable [todos.dev](https://todos.dev)-style wor
 
 - Run agents in parallel, each in an isolated Git worktree and branch.
 - Choose **Plan first** with a Confirm gate, or **Run now**; review versioned plans and diffs before accepting and merging changes.
-- Use **Codex** and **Claude Code** runtimes, send feedback during a run, and track basic token usage and duration.
+- Drive 14 coding-agent CLIs already installed on your machine — **Codex**, **Claude Code**, **pi**, **omp**, **Gemini CLI**, **OpenCode**, **Qwen Code**, **Devin**, **Cline**, **dsh**, **Hermes Agent**, **OpenClaw**, **Kiro CLI** and **Auggie** — send feedback during a run, and track basic token usage and duration.
 - Connect Chief and external agents through the same authenticated **MCP** endpoint.
 
 ![Muster workspace: Chief on the left, Kanban on the right](docs/screenshot.png)
@@ -167,7 +167,7 @@ npm run desktop:dist
 npm run desktop:smoke
 ```
 
-Builds are written to `apps/desktop/release/` (`mac-arm64/Muster.app` on Apple Silicon, `mac/Muster.app` on Intel). The app bundles Electron's Node, server, daemon and web UI; users do not need a system Node installation to run it. Install/authenticate Git and any desired `codex` or `claude` CLIs separately. Windows NSIS and Linux AppImage targets are configured for native builds on those platforms.
+Builds are written to `apps/desktop/release/` (`mac-arm64/Muster.app` on Apple Silicon, `mac/Muster.app` on Intel). The app bundles Electron's Node, server, daemon and web UI; users do not need a system Node installation to run it. Install/authenticate Git and any desired agent CLIs (`codex`, `claude`, `pi`, `gemini`, …) separately. Windows NSIS and Linux AppImage targets are configured for native builds on those platforms.
 
 On macOS, install the app in `/Applications` or `~/Applications` before running it. Launching a packaged app elsewhere (including the DMG, Downloads or `release`) offers **Move to Applications** or **Quit** before starting services. Moving never replaces an existing installation: quit that installation and update it manually. Custom installation directories are not supported; `desktop:dev` is exempt.
 
@@ -205,11 +205,31 @@ For remote daemons, set `HOST` and a reachable `MUSTER_PUBLIC_URL` on the server
 
 ## Runtime setup
 
-Install and authenticate the CLIs you want to use on the **daemon machine**, under the user running the daemon. Confirm `codex --version` or `claude --version` works in that shell, then start or restart the daemon. It advertises installed executables from `PATH`; `mock` is always available. Muster reuses the CLI's authentication and does not manage provider credentials.
+Install and authenticate the CLIs you want to use on the **daemon machine**, under the user running the daemon, then start or restart the daemon. It looks for each CLI on `PATH` and in common install directories (`~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.opencode/bin`, `~/.kiro/bin`, `/opt/homebrew/bin`, `/usr/local/bin`), re-enrolls when the set changes, and advertises what it found; `mock` is always available. Point `MUSTER_<ID>_BIN` (for example `MUSTER_PI_BIN`, `MUSTER_KIRO_BIN`) at an executable it cannot find. The agent editor lists runtimes an enrolled machine reported first. Muster reuses each CLI's own sign-in and does not manage provider credentials.
+
+| Runtime (id) | Install | Driven through |
+| --- | --- | --- |
+| Codex (`codex`) | `npm i -g @openai/codex` | `codex app-server` |
+| Claude Code (`claude`) | [claude.com/claude-code](https://claude.com/claude-code) | `claude -p` stream-json |
+| pi (`pi`) | `npm i -g @mariozechner/pi-coding-agent` | `pi --mode rpc` |
+| omp (`omp`) | `curl -fsSL https://omp.sh/install \| sh` | `omp --mode rpc` |
+| Gemini CLI (`gemini`) | `npm i -g @google/gemini-cli` | `gemini --acp` |
+| OpenCode (`opencode`) | `curl -fsSL https://opencode.ai/install \| bash` | `opencode acp` |
+| Qwen Code (`qwen`) | `npm i -g @qwen-code/qwen-code` | `qwen --acp` |
+| Devin (`devin`) | `curl -fsSL https://cli.devin.ai/install.sh \| bash` | `devin acp` |
+| Cline (`cline`) | `npm i -g cline` | `cline --acp` |
+| dsh (`dsh`) | `npm i -g @deepseek-ai/dsh` | `dsh --profile acp` |
+| Hermes Agent (`hermes`) | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh \| bash` | `hermes acp` |
+| OpenClaw (`openclaw`) | `npm i -g openclaw`, keep its Gateway running | `openclaw acp` |
+| Kiro CLI (`kiro`) | `curl -fsSL https://cli.kiro.dev/install \| bash` | `kiro-cli acp` |
+| Auggie (`auggie`) | `npm i -g @augmentcode/auggie` | `auggie --acp` |
 
 - **Codex:** the adapter launches `codex app-server` over stdio, resumes threads, and injects the Muster MCP configuration per turn. The integration was checked against codex-cli 0.162.1. Plan turns use a read-only sandbox; writable turns use `danger-full-access` with approvals disabled.
 - **Claude Code:** the adapter launches `claude` with stream-json input/output, partial messages, and per-process MCP configuration. The integration was checked against Claude Code 2.1.310. Plan turns use permission mode `plan`; writable turns use `bypassPermissions`.
-- Choose a model available to your CLI account in the Agents editor. The seeded Chief uses Codex; change its runtime/model there if you use Claude or mock instead.
+- **pi / omp:** the adapter speaks pi's JSONL RPC protocol (checked against pi-coding-agent 0.73 `docs/rpc.md`): instructions go to `--append-system-prompt`, sessions resume with `--session <file>`, and messages sent mid-run use pi's `steer`. pi has no MCP client, so each turn loads a generated extension (`-e`) that registers Muster's MCP tools and the agent's granted connections as `mcp__<server>__<tool>`. Plan turns restrict tools to `read`, `grep`, `find`, `ls` plus those MCP tools. omp is assumed to share pi's RPC protocol.
+- **ACP runtimes** (Gemini CLI, OpenCode, Qwen Code, Devin, Cline, dsh, Hermes, OpenClaw, Kiro, Auggie): one adapter speaks the [Agent Client Protocol](https://agentclientprotocol.com). Sessions resume with `session/resume` or `session/load` when the agent supports it. ACP has no system prompt, so Muster's instructions lead the first prompt of a session (and again when they change). Permission requests are approved automatically; plan turns reject `edit`/`delete`/`move`/`execute` tool calls and switch to the agent's plan/read-only mode when it has one. Agents that cannot take HTTP MCP servers get them through a small stdio proxy. Messages sent mid-run are queued as the next prompt in the same turn. Usage is counted only when the agent reports it. Checked by handshake against Hermes Agent 0.22.5 (`initialize`, `session/new`, stdio MCP); the other CLIs follow their documented ACP commands but were not installed here.
+- Choose a model available to your CLI account in the Agents editor. `default` (the default for the new runtimes) lets the CLI use its own configured model; an ACP agent that lists its models rejects an unknown id with the list. The seeded Chief uses Codex; change its runtime/model there if you prefer another.
+- Not yet supported (todos.dev drives them too): Cursor, Qoder CLI, Grok Build, Amp, GitHub Copilot, Droid and Antigravity. Their headless/SDK protocols and MCP wiring still need verification.
 
 Live provider calls are outside automated validation. Adapter tests use local protocol peers and mock runs. See the [daemon guide](apps/daemon/README.md) for protocol details and Git merge behavior.
 
@@ -224,7 +244,7 @@ flowchart LR
   Daemon --> Chief[Chief session]
   Daemon --> Agents[Parallel coding agents]
   Agents --> Trees[Isolated Git worktrees]
-  Chief --> Runtimes[Codex / Claude Code / Mock]
+  Chief --> Runtimes[Codex / Claude Code / pi / ACP CLIs / Mock]
   Agents --> Runtimes
   Runtimes <-->|MCP tools| MCP[MCP /mcp]
   External[External agent with active turn token] <-->|MCP| MCP

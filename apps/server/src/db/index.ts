@@ -32,14 +32,21 @@ export class MusterDb {
   private migrate(): void {
     const version = Number((this.raw.prepare("PRAGMA user_version").get() as Row).user_version ?? 0);
     for (let index = version; index < migrations.length; index += 1) {
+      const migration = migrations[index]!;
+      const rebuild = typeof migration !== "string";
+      // foreign_keys cannot change inside a transaction; table rebuilds need it off.
+      if (rebuild) this.raw.exec("PRAGMA foreign_keys = OFF");
       this.raw.exec("BEGIN IMMEDIATE");
       try {
-        this.raw.exec(migrations[index] ?? "");
+        this.raw.exec(rebuild ? migration.sql : migration);
+        if (rebuild && this.raw.prepare("PRAGMA foreign_key_check").all().length) throw new Error(`Migration ${index + 1} broke foreign keys`);
         this.raw.exec(`PRAGMA user_version = ${index + 1}`);
         this.raw.exec("COMMIT");
       } catch (error) {
         this.raw.exec("ROLLBACK");
         throw error;
+      } finally {
+        if (rebuild) this.raw.exec("PRAGMA foreign_keys = ON");
       }
     }
   }

@@ -1,7 +1,8 @@
 export type Id = string;
 export type Timestamp = string;
 
-export type Runtime = "codex" | "claude" | "mock";
+export type { Runtime } from "./runtimes.js";
+import type { Runtime } from "./runtimes.js";
 export type TodoPhase =
   | "todo"
   | "queued"

@@ -3,14 +3,14 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
-import { DEFAULT_MODELS, type Agent, type AgentMemory, type AgentPermissions, type Skill, type Todo } from "@muster/shared";
+import { CLI_DEFAULT_MODEL, DEFAULT_MODELS, type Agent, type AgentMemory, type AgentPermissions, type Skill, type Todo } from "@muster/shared";
 import { request } from "../api/client";
 import { useI18n } from "../i18n";
 import { Avatar, ErrorNotice, Loading, PhaseBadge, Section, Segmented, SettingRow, Switch } from "../components/ui";
+import { RuntimeOptions } from "../components/RuntimeOptions";
 
 type Profile = Agent & { inProgress: Todo[]; memoryCount: number; skillCount: number };
 const permissionKeys: (keyof AgentPermissions)[] = ["pushBranch", "secrets", "createSkills", "updateSkills"];
-const runtimes = ["codex", "claude", "mock"] as const;
 
 export function AgentPage() {
   const { id = "" } = useParams(); const { t, formatDate, label } = useI18n(); const navigate = useNavigate(); const client = useQueryClient();
@@ -56,9 +56,9 @@ export function AgentPage() {
             </Section>
             <Section title={t("parity.configuration")} description={t("parity.configurationHelp")}>
               <SettingRow label={t("parity.runtime")}>
-                <select value={a.runtime} disabled={save.isPending} onChange={(e) => { const runtime = e.target.value as Agent["runtime"]; save.mutate({ runtime, model: DEFAULT_MODELS[runtime] }); }}>{runtimes.map((r) => <option key={r} value={r}>{r === "mock" ? t("ui.mockLocalTest") : label("runtime", r)}</option>)}</select>
+                <select value={a.runtime} disabled={save.isPending} onChange={(e) => { const runtime = e.target.value as Agent["runtime"]; save.mutate({ runtime, model: DEFAULT_MODELS[runtime] }); }}><RuntimeOptions /></select>
               </SettingRow>
-              <SettingRow label={t("parity.model")}><input key={a.model} className="mono" defaultValue={a.model} aria-label={t("parity.model")} onBlur={(e) => { const model = e.target.value.trim(); if (model && model !== a.model) save.mutate({ model }); }} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} /></SettingRow>
+              <SettingRow label={t("parity.model")} {...(a.model === CLI_DEFAULT_MODEL ? { help: t("ui.cliDefaultModel") } : {})}><input key={a.model} className="mono" defaultValue={a.model} aria-label={t("parity.model")} onBlur={(e) => { const model = e.target.value.trim(); if (model && model !== a.model) save.mutate({ model }); }} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} /></SettingRow>
               <SettingRow label={t("parity.reasoning")} help={t("parity.reasoningHelp")}><input key={a.reasoning ?? ""} defaultValue={a.reasoning ?? ""} placeholder={t("ui.egHighOptional")} aria-label={t("parity.reasoning")} onBlur={(e) => { const reasoning = e.target.value.trim() || null; if (reasoning !== a.reasoning) save.mutate({ reasoning }); }} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} /></SettingRow>
             </Section>
             <Section title={t("parity.defaultSkills")} description={t("parity.defaultSkillsHelp")}>

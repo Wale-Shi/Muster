@@ -494,6 +494,9 @@ export const en = {
     "mockLocalTest": "Mock (local test)",
     "modelRequired": "Model (required)",
     "modelIdentifier": "Model identifier",
+    "runtimeInstalled": "Installed on a machine",
+    "runtimeNotDetected": "Not detected on any machine",
+    "cliDefaultModel": "“default” uses the model configured in the CLI",
     "reasoning": "Reasoning",
     "egHighOptional": "e.g. high (optional)",
     "saving": "Saving…",
@@ -572,6 +575,18 @@ export const en = {
   "runtime": {
     "codex": "Codex",
     "claude": "Claude Code",
+    "pi": "pi",
+    "omp": "omp",
+    "gemini": "Gemini CLI",
+    "opencode": "OpenCode",
+    "qwen": "Qwen Code",
+    "devin": "Devin",
+    "cline": "Cline",
+    "dsh": "dsh (DeepSeek)",
+    "hermes": "Hermes Agent",
+    "openclaw": "OpenClaw",
+    "kiro": "Kiro CLI",
+    "auggie": "Auggie",
     "mock": "Mock"
   },
   "status": {

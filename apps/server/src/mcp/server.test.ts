@@ -31,6 +31,27 @@ describe("MCP server", () => {
     expect(started.json.result.isError).not.toBe(true);
     expect((await requestJson(app, `/api/todos/${createdTodo.id}`)).json.data.phase).toBe("queued");
   });
+
+  it("lets a turn reconnect with a fresh session, as ACP agents do", async () => {
+    const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
+    const { projectId, agentId } = await seedProjectAndAgent(app); const todoId = await createTodo(app, projectId, agentId, "run"); const machine = await enroll(app);
+    await requestJson(app, `/api/todos/${todoId}/start`, "POST", { mode: "run" });
+    const job = services.scheduler.claim(machine.token)!;
+    const initialize = { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" } } };
+    const sessions: string[] = [];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const response = await requestJson(app, "/mcp", "POST", initialize, job.mcp.token);
+      expect(response.response.status).toBe(200);
+      sessions.push(response.response.headers.get("mcp-session-id")!);
+    }
+    expect(new Set(sessions).size).toBe(2);
+    for (const sessionId of sessions) {
+      const headers = { "mcp-session-id": sessionId, "mcp-protocol-version": "2025-03-26" };
+      await requestJson(app, "/mcp", "POST", { jsonrpc: "2.0", method: "notifications/initialized" }, job.mcp.token, headers);
+      expect((await requestJson(app, "/mcp", "POST", { jsonrpc: "2.0", id: 2, method: "tools/list" }, job.mcp.token, headers)).json.result.tools.length).toBeGreaterThan(0);
+    }
+    expect((await requestJson(app, "/mcp", "POST", { jsonrpc: "2.0", id: 3, method: "tools/list" }, job.mcp.token, { "mcp-session-id": "unknown", "mcp-protocol-version": "2025-03-26" })).response.status).toBe(404);
+  });
 });
 
 describe("MCP authentication boundaries", () => {
@@ -62,6 +83,6 @@ describe("MCP authentication boundaries", () => {
     const initial = await requestJson(app, "/mcp", "POST", initialize, first.mcp.token);
     const stolenSession = initial.response.headers.get("mcp-session-id")!;
     const result = await requestJson(app, "/mcp", "POST", { jsonrpc: "2.0", id: 2, method: "tools/list" }, second.mcp.token, { "mcp-session-id": stolenSession });
-    expect(result.response.status).toBe(400);
+    expect(result.response.status).toBe(404);
   });
 });

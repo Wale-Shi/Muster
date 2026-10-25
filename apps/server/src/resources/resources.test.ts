@@ -14,10 +14,24 @@ afterEach(() => { dbs.splice(0).forEach((db) => db.close()); roots.splice(0).for
 function setup() { const dataDir = mkdtempSync(join(tmpdir(), "muster-resources-")); roots.push(dataDir); const app = createApp({ dataDir, claimWaitMs: 0, autoFollowUp: false, githubFetcher: async () => [{ path: "SKILL.md", content: Buffer.from("---\nname: Imported\ndescription: Useful\n---\nDo the work").toString("base64") }] }); dbs.push(app.services.db); return { ...app, dataDir }; }
 it("migrates v3 data forward and preserves duties with Chief permissions", () => {
   const root = mkdtempSync(join(tmpdir(), "muster-v3-")); roots.push(root); const file = join(root, "db"); const old = new DatabaseSync(file);
-  migrations.slice(0, 3).forEach((sql) => old.exec(sql)); old.exec("PRAGMA user_version=3"); old.prepare("INSERT INTO agents VALUES (?,?,?,?,?,?,?,?,?)").run("chief", "Chief", "Keep this duty", "mock", "mock", null, null, 1, "2026-01-01"); old.close();
+  migrations.slice(0, 3).forEach((sql) => { if (typeof sql === "string") old.exec(sql); }); old.exec("PRAGMA user_version=3"); old.prepare("INSERT INTO agents VALUES (?,?,?,?,?,?,?,?,?)").run("chief", "Chief", "Keep this duty", "mock", "mock", null, null, 1, "2026-01-01"); old.close();
   const db = new MusterDb(file); dbs.push(db); const chief = db.agent(db.row("SELECT * FROM agents WHERE id='chief'")!);
   expect(chief).toMatchObject({ role: "Keep this duty", permissions: { pushBranch: false, secrets: false, createSkills: true, updateSkills: true }, defaultSkillIds: [], updatedAt: "2026-01-01" });
   expect(db.row("PRAGMA user_version")?.user_version).toBe(migrations.length);
+});
+it("rebuilds agents without the runtime CHECK and keeps references intact", () => {
+  const root = mkdtempSync(join(tmpdir(), "muster-runtime-")); roots.push(root); const file = join(root, "db"); const old = new DatabaseSync(file);
+  const last = migrations.length - 1;
+  migrations.slice(0, last).forEach((sql) => { if (typeof sql === "string") old.exec(sql); }); old.exec(`PRAGMA user_version=${last}`);
+  old.prepare("INSERT INTO agents (id,name,role,runtime,model,is_chief,created_at) VALUES (?,?,?,?,?,?,?)").run("a1", "Builder", "Build", "codex", "gpt", 0, "2026-01-01");
+  old.prepare("INSERT INTO agent_memories VALUES (?,?,?,?,?,?)").run("m1", "a1", "Remember", "user", "2026-01-01", "2026-01-01");
+  expect(() => old.prepare("UPDATE agents SET runtime='pi' WHERE id='a1'").run()).toThrow(); old.close();
+  const db = new MusterDb(file); dbs.push(db);
+  db.raw.prepare("UPDATE agents SET runtime='pi' WHERE id='a1'").run();
+  expect(db.row("SELECT runtime FROM agents WHERE id='a1'")?.runtime).toBe("pi");
+  expect(db.row("SELECT count(*) AS n FROM agent_memories WHERE agent_id='a1'")?.n).toBe(1);
+  expect(db.row("PRAGMA foreign_keys")?.foreign_keys).toBe(1);
+  expect(() => db.raw.prepare("INSERT INTO agent_memories VALUES ('m2','missing','x','user','t','t')").run()).toThrow();
 });
 it("validates profiles and scopes memories, with a bounded newest-first prompt", async () => {
   const { app, services } = setup(); const { agentId } = await seedProjectAndAgent(app);

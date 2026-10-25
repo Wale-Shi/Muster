@@ -495,6 +495,9 @@ export const messages: Messages = {
     "mockLocalTest": "Mock（本地测试）",
     "modelRequired": "模型（必填）",
     "modelIdentifier": "模型标识符",
+    "runtimeInstalled": "已在机器上安装",
+    "runtimeNotDetected": "未在任何机器上检测到",
+    "cliDefaultModel": "“default” 表示使用 CLI 自己配置的模型",
     "reasoning": "推理强度",
     "egHighOptional": "例如 high（可选）",
     "saving": "正在保存…",
@@ -573,6 +576,18 @@ export const messages: Messages = {
   "runtime": {
     "codex": "Codex",
     "claude": "Claude Code",
+    "pi": "pi",
+    "omp": "omp",
+    "gemini": "Gemini CLI",
+    "opencode": "OpenCode",
+    "qwen": "Qwen Code",
+    "devin": "Devin",
+    "cline": "Cline",
+    "dsh": "dsh (DeepSeek)",
+    "hermes": "Hermes Agent",
+    "openclaw": "OpenClaw",
+    "kiro": "Kiro CLI",
+    "auggie": "Auggie",
     "mock": "Mock"
   },
   "status": {
