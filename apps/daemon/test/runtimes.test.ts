@@ -164,6 +164,25 @@ process.stdin.on('data',d=>{b+=d;let i;while((i=b.indexOf('\n'))>=0){const m=JSO
   expect((await running.result).status).toBe("stopped");
 });
 
+it("ACP picks the most permissive build mode and a spec/plan mode for plan turns", async () => {
+  const peer = String.raw`
+const send=x=>process.stdout.write(JSON.stringify(x)+'\n'); let b='';
+process.stdin.on('data',d=>{b+=d;let i;while((i=b.indexOf('\n'))>=0){const m=JSON.parse(b.slice(0,i));b=b.slice(i+1);
+ const reply=r=>send({jsonrpc:'2.0',id:m.id,result:r});
+ if(m.method==='initialize')reply({protocolVersion:1,agentCapabilities:{mcpCapabilities:{http:true}}});
+ else if(m.method==='session/new')reply({sessionId:'s',modes:{currentModeId:'normal',availableModes:['normal','spec','auto-low','auto-medium','auto-high'].map(id=>({id,name:id}))}});
+ else if(m.method==='session/set_mode'){send({jsonrpc:'2.0',method:'session/update',params:{sessionId:'s',update:{sessionUpdate:'agent_thought_chunk',content:{type:'text',text:m.params.modeId}}}});reply({});}
+ else if(m.method==='session/prompt'){send({jsonrpc:'2.0',method:'session/update',params:{sessionId:'s',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'mode set'}}}});reply({stopReason:'end_turn'});}}});`;
+  const modes: string[] = [];
+  for (const readOnly of [false, true]) {
+    const ctx = await context();
+    const result = await new AcpRuntime(process.execPath, ["-e", peer, "--"], "Droid").start(makeJob({ readOnly, agent: { runtime: "droid", model: "default", reasoning: null, role: "test" } }), ctx).result;
+    expect(result.status).toBe("done");
+    modes.push(...ctx.events.flatMap((event) => event.type === "reasoning.delta" ? [event.content] : []));
+  }
+  expect(modes).toEqual(["auto-high", "spec"]);
+});
+
 it("the pi bridge extension registers MCP tools over Streamable HTTP and restricts plan turns", async () => {
   const calls: string[] = [];
   const server = createServer((request, response) => {

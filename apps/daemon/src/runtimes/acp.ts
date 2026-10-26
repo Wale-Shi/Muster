@@ -12,7 +12,7 @@ const find = (values: Wire[] | undefined, pattern: RegExp, key = "id") => values
 
 /**
  * Agent Client Protocol (JSON-RPC 2.0 over stdio), spoken by Gemini CLI,
- * OpenCode, Qwen Code, Devin, Cline, dsh, Hermes, OpenClaw, Kiro and Auggie.
+ * OpenCode, Qwen Code, Devin, Cline, dsh, Hermes, OpenClaw, Kiro, Auggie, Qoder and Droid.
  * ACP has no system prompt, so instructions lead the first prompt of a session
  * (again whenever they change). Messages sent mid-turn queue as the next prompt.
  */
@@ -100,7 +100,9 @@ export class AcpRuntime implements Runtime {
       if (job.agent.reasoning && effort) await rpc("session/set_config_option", { sessionId, configId: effort.id, value: job.agent.reasoning }).catch(() => undefined);
       // Plan turns use a read-only mode when the agent has one; builds leave it.
       const modes = session.modes?.availableModes as Wire[] | undefined;
-      const mode = job.readOnly ? find(modes, /plan|read.?only|^ask$/i) : find(modes, /yolo|bypass|full.?access|^auto/i) ?? find(modes, /^(default|code|agent|build)$/i);
+      // Builds take the most permissive mode on offer (Droid's auto-high over auto-low).
+      const mode = job.readOnly ? find(modes, /plan|read.?only|^ask$|^spec$/i)
+        : find(modes, /yolo|bypass|full.?access/i) ?? find(modes, /^auto.?high$/i) ?? find(modes, /^auto/i) ?? find(modes, /^(default|code|agent|build)$/i);
       if (mode && mode.id !== session.modes?.currentModeId) await rpc("session/set_mode", { sessionId, modeId: mode.id }).catch(() => undefined);
     };
     const run = async (content: string): Promise<void> => {

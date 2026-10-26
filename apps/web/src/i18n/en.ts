@@ -587,6 +587,8 @@ export const en = {
     "openclaw": "OpenClaw",
     "kiro": "Kiro CLI",
     "auggie": "Auggie",
+    "qoder": "Qoder CLI",
+    "droid": "Droid",
     "mock": "Mock"
   },
   "status": {

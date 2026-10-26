@@ -32,6 +32,8 @@ export const RUNTIMES = [
   { id: "hermes", label: "Hermes Agent", commands: ["hermes"], args: ["acp"], protocol: "acp", defaultModel: CLI_DEFAULT_MODEL, install: "curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash" },
   { id: "openclaw", label: "OpenClaw", commands: ["openclaw"], args: ["acp"], protocol: "acp", defaultModel: CLI_DEFAULT_MODEL, install: "npm i -g openclaw" },
   { id: "kiro", label: "Kiro CLI", commands: ["kiro-cli"], args: ["acp"], protocol: "acp", defaultModel: CLI_DEFAULT_MODEL, install: "curl -fsSL https://cli.kiro.dev/install | bash" },
+  { id: "qoder", label: "Qoder CLI", commands: ["qodercli", "qoderclicn"], args: ["--acp"], protocol: "acp", defaultModel: CLI_DEFAULT_MODEL, install: "npm i -g @qoder-ai/qodercli" },
+  { id: "droid", label: "Droid", commands: ["droid"], args: ["exec", "--output-format", "acp"], protocol: "acp", defaultModel: CLI_DEFAULT_MODEL, install: "curl -fsSL https://app.factory.ai/cli | sh" },
   { id: "auggie", label: "Auggie", commands: ["auggie"], args: ["--acp"], protocol: "acp", defaultModel: CLI_DEFAULT_MODEL, install: "npm i -g @augmentcode/auggie" },
   { id: "mock", label: "Mock", commands: [], args: [], protocol: "mock", defaultModel: "mock", install: "" },
 ] as const satisfies readonly RuntimeInfo[];

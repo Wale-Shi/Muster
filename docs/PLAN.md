@@ -14,7 +14,7 @@
 | Build | 一次执行；分支 `tds/conv-<id>`，独立 worktree，每轮提交 checkpoint | ✅（分支 `muster/conv-<id>`） |
 | Plan / Changes 文档 | 右侧面板，版本化（v1, v2…），diff 按文件展示 | ✅（版本化，简化版 diff 视图） |
 | Agents | 名字、角色描述、runtime + model、记忆、技能、权限开关 | ✅ 名字/角色/runtime/model；❌ 记忆、技能、权限 |
-| Runtimes | 内置 pi + 20 种外部 CLI（Codex 走 `codex app-server`，Claude Code 走 Agent SDK，多数走 ACP） | ✅ Codex、Claude Code、pi、omp（RPC）、Gemini CLI、OpenCode、Qwen Code、Devin、Cline、dsh、Hermes、OpenClaw、Kiro、Auggie（ACP）；❌ Cursor、Qoder、Grok Build、Amp、Copilot、Droid、Antigravity |
+| Runtimes | 内置 pi + 20 种外部 CLI（Codex 走 `codex app-server`，Claude Code 走 Agent SDK，多数走 ACP） | ✅ Codex、Claude Code、pi、omp（RPC）、Gemini CLI、OpenCode、Qwen Code、Devin、Cline、dsh、Hermes、OpenClaw、Kiro、Auggie、Qoder、Droid（ACP）；❌ Cursor、Grok Build、Amp、Copilot、Antigravity |
 | Machines | `tds start` 守护进程注册机器，按并发上限（默认 6）认领任务 | ✅ `muster-daemon` |
 | 中途插话 (steer) | 运行中发送的消息排队，下一个工具调用后注入 | ✅（Codex `turn/steer`；Claude 下轮注入） |
 | Chief | 常驻编排会话，通过 MCP 工具读写看板、创建/启动/确认/合并 todo | ✅（单 Topic 起步，结构支持多 Topic） |
