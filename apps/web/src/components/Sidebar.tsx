@@ -1,6 +1,7 @@
 import { useWorkspaceSettings } from "../pages/Settings";
 import { ProjectDialog } from "../pages/Projects";
 import { ProjectMonogram } from "./ProjectMonogram";
+import { MusterMark } from "./MusterMark";
 import { useI18n } from "../i18n";
 import { useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router";
@@ -12,7 +13,6 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
-  Command,
   FolderGit2,
   LayoutDashboard,
   LoaderCircle,
@@ -107,7 +107,7 @@ export function Sidebar({
         <div className="sidebar-brand">
           <NavLink to="/agents" onClick={onCloseMobile} className="brand" title={settings.data?.workspaceName ?? "Muster"}>
             <span className="brand-icon">
-              <Command size={17} />
+              <MusterMark size={18} />
             </span>
             <strong>{settings.data?.workspaceName ?? "Muster"}</strong>
             <ChevronDown size={13} className="dim" />
