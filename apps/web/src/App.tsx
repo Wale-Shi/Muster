@@ -5,10 +5,9 @@ import { SchedulesPage } from "./pages/Schedules";
 import { ConnectionsPage } from "./pages/Connections";
 import { AgentPage } from "./pages/Agent";
 import { SkillsPage, NewSkillPage, SkillPage } from "./pages/Skills";
-import { SecretsPage } from "./pages/Secrets";
 import { useI18n } from "./i18n";
 import { useEffect, useState } from "react";
-import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
+import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 import { Command, PanelLeft } from "lucide-react";
 import { DesktopIntegration } from "./components/DesktopIntegration";
 import { Sidebar } from "./components/Sidebar";
@@ -19,8 +18,6 @@ import { Workspace } from "./pages/Workspace";
 import { TodoPage } from "./pages/Todo";
 import { Agents } from "./pages/Agents";
 import { Projects } from "./pages/Projects";
-import { Machines } from "./pages/Machines";
-import { Usage } from "./pages/Usage";
 
 function NewTaskRouteDialog({ onClose }: { onClose: () => void }) {
   const { id } = useParams();
@@ -114,14 +111,14 @@ export function App() {
           <Route path="/skills/:slug" element={<SkillPage key={location.pathname} />} />
           <Route path="/schedules" element={<SchedulesPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
-          <Route path="/secrets" element={<SecretsPage />} />
+          <Route path="/secrets" element={<Navigate replace to="/settings?tab=secrets" />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectPage key={location.pathname} />} />
           <Route path="/projects/:id/settings" element={<ProjectSettingsPage key={location.pathname} />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/machines" element={<Machines />} />
-          <Route path="/usage" element={<Usage />} />
+          <Route path="/machines" element={<Navigate replace to="/settings?tab=machines" />} />
+          <Route path="/usage" element={<Navigate replace to="/settings?tab=usage" />} />
           <Route
             path="*"
             element={

@@ -37,7 +37,6 @@ function sidebar(collapsed = false) {
 
 const groups = [
   { name: "Projects", key: "projects", content: ["Example project", "New project"] },
-  { name: "Resources", key: "resources", content: ["Agents", "Machines", "Secrets"] },
   { name: /topics/i, key: "topics", content: ["Example topic", "New topic"] },
 ] as const;
 
@@ -89,16 +88,12 @@ describe("sidebar groups", () => {
     const user = userEvent.setup();
     const view = render(sidebar());
     await user.click(screen.getByRole("button", { name: "Projects" }));
-    expectGroup(screen.getByRole("button", { name: "Resources" }), true, groups[1].content);
-    expectGroup(screen.getByRole("button", { name: /topics/i }), true, groups[2].content);
-    await user.click(screen.getByRole("button", { name: "Resources" }));
+    expectGroup(screen.getByRole("button", { name: /topics/i }), true, groups[1].content);
     expect(localStorage.getItem("muster.projects-expanded")).toBe("false");
-    expect(localStorage.getItem("muster.resources-expanded")).toBe("false");
     view.unmount();
     render(sidebar());
     expectGroup(screen.getByRole("button", { name: "Projects" }), false, groups[0].content);
-    expectGroup(screen.getByRole("button", { name: "Resources" }), false, groups[1].content);
-    expectGroup(screen.getByRole("button", { name: /topics/i }), true, groups[2].content);
+    expectGroup(screen.getByRole("button", { name: /topics/i }), true, groups[1].content);
   });
 
   it("keeps navigation available in the icon rail and restores closed groups", async () => {
@@ -109,8 +104,10 @@ describe("sidebar groups", () => {
     expect(view.container.querySelector("aside")).toHaveClass("collapsed");
     for (const [title, href] of [
       ["Example project", "/projects/project"], ["Example topic", "/topics/topic"],
-      ["Agents", "/agents"], ["Machines", "/machines"], ["Secrets", "/secrets"],
+      ["Agents", "/agents"], ["Skills", "/skills"], ["Connections", "/connections"], ["Schedules", "/schedules"],
     ] as const) expect(screen.getByTitle(title)).toHaveAttribute("href", href);
+    expect(screen.queryByRole("button", { name: "Resources" })).not.toBeInTheDocument();
+    expect(screen.getByText("No machines online").closest("a")).toHaveAttribute("href", "/settings?tab=machines");
     expect(screen.getByTitle("New project")).toBeInTheDocument();
     expect(screen.getByTitle("New topic")).toBeInTheDocument();
     view.rerender(sidebar());

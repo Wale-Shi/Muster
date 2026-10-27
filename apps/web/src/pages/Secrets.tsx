@@ -49,7 +49,7 @@ export function SecretsPage() {
       <header className="page-header"><h1>{t("parity.secrets")}</h1><button className="button primary" onClick={() => setEditing({ scope: "team", name: "" })}><Plus size={14} />{t("parity.addSecret")}</button></header>
       <div className="page-content">
         <div className="profile-content">
-          <div className="page-intro"><h2>{t("parity.secretsTitle")}</h2><p>{t("parity.secretHelp")}</p></div>
+
           <ErrorNotice error={secrets.error || projects.error || remove.error} />
           {groups.map(({ title, description, input }) => {
             const items = secrets.data?.filter((s) => s.scope === input.scope && s.projectId === (input.projectId ?? null)) ?? [];

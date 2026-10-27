@@ -9,8 +9,6 @@ import {
   BookOpen,
   Clock,
   Plug,
-  KeyRound,
-  BarChart3,
   Bot,
   ChevronDown,
   ChevronRight,
@@ -19,7 +17,6 @@ import {
   LayoutDashboard,
   LoaderCircle,
   MessageSquare,
-  Monitor,
   Settings,
   PanelLeftClose,
   Plus,
@@ -63,7 +60,6 @@ export function Sidebar({
   const settings = useWorkspaceSettings();
   const projects = useProjects();
   const [projectsOpen, setProjectsOpen] = useStored("projects-expanded", true);
-  const [resourcesOpen, setResourcesOpen] = useStored("resources-expanded", true);
   const [newProject, setNewProject] = useState(false);
   const onlineCount = machines.data?.filter((machine) => machine.online).length;
   const connection = connectionStatus(realtime.connected, machines.isError ? undefined : onlineCount);
@@ -93,14 +89,10 @@ export function Sidebar({
     return "idle";
   };
   const links = [
-    { to: "/schedules", title: t("phaseB.schedules"), icon: Clock },
-    { to: "/connections", title: t("phaseB.connections"), icon: Plug },
-    { to: "/skills", title: t("parity.skills"), icon: BookOpen },
-
-    { to: "/usage", title: t("ui.usage"), icon: BarChart3 },
     { to: "/agents", title: t("ui.agents"), icon: Bot },
-    { to: "/machines", title: t("ui.machines"), icon: Monitor },
-    { to: "/secrets", title: t("parity.secrets"), icon: KeyRound },
+    { to: "/skills", title: t("parity.skills"), icon: BookOpen },
+    { to: "/connections", title: t("phaseB.connections"), icon: Plug },
+    { to: "/schedules", title: t("phaseB.schedules"), icon: Clock },
   ];
   return (
     <>
@@ -214,14 +206,13 @@ export function Sidebar({
             </div>
           )}
           <div className="nav-separator" />
-          {links.slice(0, 4).map(({ to, title, icon: Icon }) => <NavLink className="nav-item" to={to} key={to} title={title} onClick={onCloseMobile}><Icon size={16} /><span>{title}</span></NavLink>)}
           <div className="workspace-nav"><NavLink className="nav-item" to="/projects" title={t("ui.projects")} onClick={onCloseMobile}><FolderGit2 size={16} /><span>{t("ui.projects")}</span></NavLink><button className="icon-button topic-expand" aria-label={t("ui.projects")} aria-expanded={projectsOpen} onClick={() => setProjectsOpen(!projectsOpen)}><ChevronRight size={12} className={`sidebar-chevron ${projectsOpen ? "expanded" : ""}`} /></button></div>
           {(projectsOpen || collapsed) && <div className="sidebar-group">{projects.data?.map((p) => <NavLink className="nav-item" key={p.id} to={`/projects/${p.id}`} title={p.name} onClick={onCloseMobile}><ProjectMonogram name={p.name} /><span>{p.name}</span></NavLink>)}<button className="nav-item" title={t("ui.newProject")} onClick={() => setNewProject(true)}><Plus size={16} /><span>{t("ui.newProject")}</span></button></div>}
-          <button className="nav-item" title={t("parity.resources")} aria-expanded={resourcesOpen} onClick={() => setResourcesOpen(!resourcesOpen)}><ChevronRight size={16} className={`sidebar-chevron ${resourcesOpen ? "expanded" : ""}`} /><span>{t("parity.resources")}</span></button>
-          {(resourcesOpen || collapsed) && links.slice(4).map(({ to, title, icon: Icon }) => <NavLink className="nav-item" to={to} key={to} title={title} onClick={onCloseMobile}><Icon size={16} /><span>{title}</span></NavLink>)}
+          <div className="nav-separator" />
+          {links.map(({ to, title, icon: Icon }) => <NavLink className="nav-item" to={to} key={to} title={title} onClick={onCloseMobile}><Icon size={16} /><span>{title}</span></NavLink>)}
         </nav>
         <footer className="sidebar-footer">
-          <div
+          <NavLink to="/settings?tab=machines" onClick={onCloseMobile}
             className={`connection-label ${connection === "offline" ? "warning" : ""}`}
             title={
               realtime.connected
@@ -238,15 +229,8 @@ export function Sidebar({
                 : connection === "offline" ? t("ui.noMachinesOnline")
                 : t("count.online", { count: onlineCount ?? 0 })}
             </span>
-          </div>
+          </NavLink>
           <NavLink className="nav-item" to="/settings" title={`${t("phaseC.settings")} (⌘,)`} onClick={onCloseMobile}><Settings size={16} /><span>{t("phaseC.settings")}</span><kbd>⌘,</kbd></NavLink>
-          <div className="user-row" title={t("ui.localWorkspace")}>
-            <span className="avatar small" aria-hidden="true"><Command size={13} /></span>
-            <div>
-              <strong title={t("ui.localWorkspace")}>{t("ui.localWorkspace")}</strong>
-              <span>{t("ui.selfhostedPersonal")}</span>
-            </div>
-          </div>
         </footer>
       </aside>
       {newProject && <ProjectDialog onClose={() => setNewProject(false)} />}

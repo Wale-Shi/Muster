@@ -13,7 +13,7 @@ type Profile = Agent & { inProgress: Todo[]; memoryCount: number; skillCount: nu
 const permissionKeys: (keyof AgentPermissions)[] = ["pushBranch", "secrets", "createSkills", "updateSkills"];
 
 export function AgentPage() {
-  const { id = "" } = useParams(); const { t, formatDate, label } = useI18n(); const navigate = useNavigate(); const client = useQueryClient();
+  const { id = "" } = useParams(); const { t, label } = useI18n(); const navigate = useNavigate(); const client = useQueryClient();
   const [tab, setTab] = useState<"overview" | "memory">("overview"); const [copied, setCopied] = useState(false);
   const agent = useQuery({ queryKey: ["agent", id], queryFn: () => request<Profile>(`/agents/${id}`) });
   const connections = useConnections();
@@ -31,7 +31,6 @@ export function AgentPage() {
       <div className="page-content">
         <div className="profile-content">
           <section className="profile-hero">
-            <div className="profile-banner" />
             <div className="profile-identity">
               <Avatar name={a.name} />
               <input key={a.name} className="profile-name" aria-label={t("parity.name")} defaultValue={a.name} readOnly={a.isChief} onBlur={(e) => rename(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
@@ -42,19 +41,14 @@ export function AgentPage() {
               </div>
               <textarea key={a.role} className="profile-duty" rows={1} aria-label={t("field.role")} title={t("parity.dutyHelp")} defaultValue={a.role} onBlur={(e) => { const role = e.target.value.trim(); if (role && role !== a.role) save.mutate({ role }); }} />
             </div>
-            <div className="profile-stats">
-              <div><strong>{a.memoryCount}</strong><span>{t("parity.memory")}</span></div>
-              <div><strong>{a.skillCount}</strong><span>{t("parity.skills")}</span></div>
-              <div><strong>{formatDate(a.createdAt, { year: "numeric", month: "short" })}</strong><span>{t("parity.created")}</span></div>
-            </div>
           </section>
           <ErrorNotice error={save.error || remove.error || skills.error} />
-          <Segmented label={t("parity.overview")} value={tab} onChange={setTab} options={[{ value: "overview", label: t("parity.overview") }, { value: "memory", label: t("parity.memory") }]} />
+          <Segmented label={t("parity.overview")} value={tab} onChange={setTab} options={[{ value: "overview", label: t("parity.overview") }, { value: "memory", label: `${t("parity.memory")} (${a.memoryCount})` }]} />
           {tab === "memory" ? <MemoryTab agentId={id} /> : <>
-            <Section title={t("parity.inProgress")}>
+            <Section className="agent-progress" title={t("parity.inProgress")}>
               {a.inProgress.length ? a.inProgress.map((todo) => <SettingRow key={todo.id} label={<Link to={`/todos/${todo.id}`}>#{todo.number} {todo.title}</Link>}><PhaseBadge phase={todo.phase} /></SettingRow>) : <div className="settings-empty">{t("parity.noWork")}</div>}
             </Section>
-            <Section title={t("parity.configuration")} description={t("parity.configurationHelp")}>
+            <Section className="agent-configuration" title={t("parity.configuration")} description={t("parity.configurationHelp")}>
               <SettingRow label={t("parity.runtime")}>
                 <select value={a.runtime} disabled={save.isPending} onChange={(e) => { const runtime = e.target.value as Agent["runtime"]; save.mutate({ runtime, model: DEFAULT_MODELS[runtime] }); }}><RuntimeOptions /></select>
               </SettingRow>

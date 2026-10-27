@@ -22,10 +22,6 @@ export function Projects() {
         </button>
       </header>
       <div className="page-content">
-        <div className="page-intro">
-          <h2>{t("ui.aHomeForEveryTask")}</h2>
-          <p>{t("ui.connectARepositoryYourAgentsWorkInIsolatedBranches")}</p>
-        </div>
         <ErrorNotice error={projects.error || todos.error} />
         {projects.isPending ? (
           <Loading />

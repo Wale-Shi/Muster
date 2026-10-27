@@ -152,10 +152,6 @@ export function Agents() {
         </button>
       </header>
       <div className="page-content">
-        <div className="page-intro">
-          <h2>{t("ui.yourTeamReadyToBuild")}</h2>
-          <p>{t("ui.giveEachAgentARoleARuntimeAndALittleDirection")}</p>
-        </div>
         <ErrorNotice error={agents.error || todos.error} />
         {agents.isPending ? (
           <Loading />

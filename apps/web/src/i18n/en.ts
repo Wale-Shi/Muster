@@ -1,4 +1,5 @@
 export const en = {
+  settingsNav: { workspace: "Workspace", system: "System", developer: "Developer", help: "Help" },
   localImage: { loading: "Loading image…", unavailable: "Image unavailable", remote: "Image is on the execution machine", enlarge: "Enlarge image", path: "Local image path" },
   phaseC: {
     deviceOnly: "Saved on this device.",

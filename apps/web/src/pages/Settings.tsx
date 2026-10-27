@@ -1,4 +1,8 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router";
+import { Machines } from "./Machines";
+import { SecretsPage } from "./Secrets";
+import { Usage } from "./Usage";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ApiKey, WorkspaceSettings } from "@muster/shared";
 import { request } from "../api/client";
@@ -24,15 +28,21 @@ export function clientSnippets(origin: string) {
 }
 export function SettingsPage() {
   const { t, locale, setLocale, formatDate } = useI18n(); const { theme, setTheme } = useTheme(); const client = useQueryClient(); const settings = useWorkspaceSettings();
-  const [tab, setTab] = useState<"general" | "notifications" | "apiKeys" | "mcp" | "shortcuts">("general");
+  const [params, setParams] = useSearchParams();
+  const tabs = ["general", "notifications", "machines", "secrets", "usage", "apiKeys", "mcp", "shortcuts"] as const;
+  type Tab = typeof tabs[number];
+  const requested = params.get("tab");
+  const tab: Tab = tabs.find((value) => value === requested) ?? "general";
+  const setTab = (value: Tab) => setParams({ tab: value });
   const [showCreate, setShowCreate] = useState(false); const [fullKey, setFullKey] = useState<string | null>(null);
   const keys = useQuery({ queryKey: ["api-keys"], queryFn: () => request<ApiKey[]>("/api-keys") });
   const save = useMutation({ mutationFn: (patch: Partial<WorkspaceSettings>) => request<WorkspaceSettings>("/settings", "PATCH", patch), onSuccess: (data) => client.setQueryData(["settings"], data) });
   const revoke = useMutation({ mutationFn: (id: string) => request(`/api-keys/${id}`, "DELETE"), onSuccess: () => { void client.invalidateQueries({ queryKey: ["api-keys"] }); } });
   const s = settings.data;
-  return <div className="management-page"><header className="page-header"><h1>{t("phaseC.settings")}</h1></header><div className="page-content"><div className="profile-content">
-    <div className="page-intro"><h2>{t("phaseC.settings")}</h2><p>{t("phaseC.settingsIntro")}</p></div>
-    <Segmented label={t("phaseC.settings")} value={tab} onChange={setTab} options={(["general", "notifications", "apiKeys", "mcp", "shortcuts"] as const).map((value) => ({ value, label: t(`phaseC.${value}`) }))} />
+  return <div className="management-page"><header className="page-header"><h1>{t("phaseC.settings")}</h1></header><div className="page-content"><div className="settings-layout">
+    <nav className="settings-nav" aria-label={t("phaseC.settings")} role="tablist">
+      {([ ["workspace", ["general", "notifications"]], ["system", ["machines", "secrets", "usage"]], ["developer", ["apiKeys", "mcp"]], ["help", ["shortcuts"]] ] as const).map(([group, items]) => <div className="settings-nav-group" key={group}><h2>{t(`settingsNav.${group}`)}</h2>{items.map((value) => <button type="button" role="tab" aria-selected={tab === value} className={tab === value ? "active" : ""} key={value} onClick={() => setTab(value)}>{value === "machines" ? t("ui.machines") : value === "secrets" ? t("parity.secrets") : value === "usage" ? t("ui.usage") : t(`phaseC.${value}`)}</button>)}</div>)}
+    </nav><div className="settings-content">
     <ErrorNotice error={settings.error || save.error || revoke.error} />
     {tab === "general" && s && <Section title={t("phaseC.general")}>
       <SettingRow label={t("phaseC.workspaceName")}><form className="input-with-action" onSubmit={(e) => { e.preventDefault(); save.mutate({ workspaceName: String(new FormData(e.currentTarget).get("name")) }); }}><input name="name" aria-label={t("phaseC.workspaceName")} required maxLength={100} defaultValue={s.workspaceName} /><button className="button ghost sm" disabled={save.isPending}>{t("parity.save")}</button></form></SettingRow>
@@ -43,10 +53,13 @@ export function SettingsPage() {
     {tab === "notifications" && s && <Section title={t("phaseC.notifications")} description={!window.muster?.desktop ? t("phaseC.desktopOnly") : undefined}>{(["confirm", "review", "failed", "done", "dockBadge"] as const).map((key) => <SettingRow key={key} label={t(`phaseC.${key}`)}><Switch label={t(`phaseC.${key}`)} checked={s.notifications[key]} disabled={save.isPending} onChange={(checked) => save.mutate({ notifications: { ...s.notifications, [key]: checked } })} /></SettingRow>)}</Section>}
     {tab === "apiKeys" && <Section title={t("phaseC.apiKeys")} actions={<button className="button primary" onClick={() => setShowCreate(true)}>{t("phaseC.createKey")}</button>}><ErrorNotice error={keys.error} />{!keys.data?.length && <div className="settings-empty">{t("phaseC.noKeys")}</div>}{keys.data?.map((key) => <SettingRow key={key.id} label={key.name} help={`${key.prefix}… · ${key.scopes.join(", ")} · ${t("phaseC.created")}: ${formatDate(key.createdAt)} · ${t("phaseC.lastUsed")}: ${key.lastUsedAt ? formatDate(key.lastUsedAt) : t("phaseC.never")}`}>{key.revokedAt ? <span className="muted">{t("phaseC.revoked")}</span> : <button className="button danger" aria-label={`${t("phaseC.revoke")} ${key.name}`} disabled={revoke.isPending} onClick={() => { if (window.confirm(t("parity.deleteConfirm"))) revoke.mutate(key.id); }}>{t("phaseC.revoke")}</button>}</SettingRow>)}</Section>}
     {tab === "mcp" && <><p>{t("phaseC.mcpIntro")}</p><span className={`status-dot ${keys.data?.some((k) => !k.revokedAt) ? "ok" : ""}`}>{t(keys.data?.some((k) => !k.revokedAt) ? "phaseC.mcpReady" : "phaseC.mcpMissing")}</span><Section title={t("phaseC.stepKey")}><SettingRow label={t("phaseC.apiKeys")}><button className="button" onClick={() => setShowCreate(true)}>{t("phaseC.createKey")}</button></SettingRow></Section><Section title={t("phaseC.stepEndpoint")}><SettingRow label={<code>{location.origin}/api/mcp</code>}><CopyButton value={`${location.origin}/api/mcp`} /></SettingRow></Section><Section title={t("phaseC.stepClient")} description={t("phaseC.keyPlaceholder")}>{clientSnippets(location.origin).map((snippet) => <div className="settings-snippet" key={snippet.name}><div className="row"><strong>{snippet.name}</strong><CopyButton value={snippet.content} /></div><pre>{snippet.content}</pre></div>)}</Section><p className="hint">{t("phaseC.cliVersions")}</p></>}
+    {tab === "machines" && <div className="settings-embedded"><Machines /></div>}
+    {tab === "secrets" && <div className="settings-embedded"><SecretsPage /></div>}
+    {tab === "usage" && <div className="settings-embedded"><Usage /></div>}
     {tab === "shortcuts" && <ShortcutsList />}
     {showCreate && <CreateKey onClose={() => setShowCreate(false)} onCreated={(key) => { setShowCreate(false); setFullKey(key); void client.invalidateQueries({ queryKey: ["api-keys"] }); }} />}
     {fullKey && <Dialog title={t("phaseC.apiKeys")} onClose={() => setFullKey(null)}><div className="dialog-body form-stack"><p>{t("phaseC.keyOnce")}</p><code className="key-value">{fullKey}</code><CopyButton value={fullKey} /></div></Dialog>}
-  </div></div></div>;
+  </div></div></div></div>;
 }
 function CreateKey({ onClose, onCreated }: { onClose: () => void; onCreated: (key: string) => void }) {
   const { t } = useI18n(); const [name, setName] = useState(""); const [scope, setScope] = useState<"chief" | "read">("read");

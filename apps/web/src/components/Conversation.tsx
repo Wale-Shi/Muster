@@ -432,11 +432,6 @@ export function Conversation({
             </button>
           </div>
         </div>
-        <div className="composer-caption">
-          {todoId
-            ? t("ui.guideTheAgentWithFeedbackAndContext")
-            : t("ui.oneConversationAWholeTeamOfAgents")}
-        </div>
       </div>
     </div>
   );

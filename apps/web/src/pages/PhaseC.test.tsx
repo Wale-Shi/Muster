@@ -20,7 +20,7 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 function setup(element: React.ReactNode, path = "/", data: Record<string, unknown> = {}) {
-  const fetcher = vi.fn(async (url: string, init?: RequestInit) => Response.json({ data: init?.method === "POST" ? { id: "task", key: "mst_test" } : data[url] ?? ({ "/api/settings": workspaceSettingsSchema.parse({}), "/api/api-keys": [], "/api/projects": [project], "/api/projects/p": project, "/api/projects/p/tree?path=": [{ name: "README.md", path: "README.md", type: "blob" }], "/api/projects/p/file?path=README.md": { content: "# Preview", notice: null }, "/api/projects/p/commits": [], "/api/agents": [], "/api/topics": [], "/api/todos": [], "/api/machines": [] } as Record<string, unknown>)[url] ?? [] }));
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => data[url] instanceof Response ? data[url] : Response.json({ data: init?.method === "POST" ? { id: "task", key: "mst_test" } : data[url] ?? ({ "/api/settings": workspaceSettingsSchema.parse({}), "/api/api-keys": [], "/api/projects": [project], "/api/projects/p": project, "/api/projects/p/tree?path=": [{ name: "README.md", path: "README.md", type: "blob" }], "/api/projects/p/file?path=README.md": { content: "# Preview", notice: null }, "/api/projects/p/commits": [], "/api/agents": [], "/api/topics": [], "/api/todos": [], "/api/machines": [] } as Record<string, unknown>)[url] ?? [] }));
   vi.stubGlobal("fetch", fetcher);
   const view = render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><MemoryRouter initialEntries={[path]}>{element}</MemoryRouter></QueryClientProvider>);
   return { ...view, user: userEvent.setup(), fetcher };
@@ -33,6 +33,15 @@ it("shows all Settings tabs, native notification explanation, and current-origin
   await user.click(screen.getByRole("tab", { name: "MCP" })); expect(screen.getByText(`${location.origin}/api/mcp`)).toBeInTheDocument(); expect(screen.getByText(/claude mcp add --transport/)).toBeInTheDocument();
   expect(clientSnippets("https://workspace.test")[1]!.content).toContain('url = "https://workspace.test/api/mcp"');
   await user.click(screen.getByRole("tab", { name: "Keyboard shortcuts" })); for (const shortcut of shortcuts) expect(screen.getByText(shortcut.keys)).toBeInTheDocument();
+});
+it("renders grouped settings navigation and selects deep links", async () => {
+  setup(<SettingsPage />, "/settings?tab=usage");
+  for (const heading of ["Workspace", "System", "Developer", "Help"]) expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "Usage", selected: true })).toBeInTheDocument();
+});
+it.each([["machines", "Machines"], ["secrets", "Secrets"], ["usage", "Usage"]])("redirects /%s to its Settings tab", async (path, label) => {
+  setup(<App />, `/${path}`);
+  expect(await screen.findByRole("tab", { name: label, selected: true })).toBeInTheDocument();
 });
 it("uses one shortcut table for display and matching, preserving input typing", () => {
   setup(<ShortcutsList />);
@@ -49,13 +58,21 @@ it("persists sidebar groups and highlights a project on nested settings routes",
   const { user, unmount } = setup(<Sidebar {...props} />, "/projects/p/settings");
   const link = await screen.findByRole("link", { name: "Studio" }); expect(link).toHaveClass("active");
   await user.click(screen.getByRole("button", { name: "Projects" })); expect(localStorage.getItem("muster.projects-expanded")).toBe("false"); expect(screen.queryByRole("link", { name: "Studio" })).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Resources" })); expect(localStorage.getItem("muster.resources-expanded")).toBe("false"); unmount();
-  setup(<Sidebar {...props} collapsed />, "/projects/p/settings"); expect(await screen.findByTitle("Studio")).toBeInTheDocument(); expect(screen.getByTitle("Machines")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Resources" })).not.toBeInTheDocument(); unmount();
+  setup(<Sidebar {...props} collapsed />, "/projects/p/settings"); expect(await screen.findByTitle("Studio")).toBeInTheDocument(); expect(screen.getByTitle("Agents")).toBeInTheDocument();
 });
 it("switches project Files / History / Tasks and uses the markdown viewer", async () => {
   const { user } = setup(<Routes><Route path="/projects/:id" element={<ProjectPage />} /></Routes>, "/projects/p");
+  expect(screen.getAllByRole("tablist")).toHaveLength(1);
+  expect(within(screen.getByRole("tablist")).getAllByRole("tab")).toHaveLength(3);
   await user.click(await screen.findByRole("button", { name: "README.md" })); expect(await screen.findByRole("heading", { name: "Preview" })).toBeInTheDocument();
   await user.click(screen.getByRole("tab", { name: "History" })); await user.click(screen.getByRole("tab", { name: "Tasks" })); expect(screen.getByLabelText("Search tasks")).toBeInTheDocument(); expect(screen.getByLabelText("All phases")).toBeInTheDocument();
+});
+it("shows one quiet notice and no browser panes for an unreadable repository", async () => {
+  setup(<Routes><Route path="/projects/:id" element={<ProjectPage />} /></Routes>, "/projects/p", { "/api/projects/p/tree?path=": Response.json({ error: "unreadable" }, { status: 403 }) });
+  expect(await screen.findByText("/tmp/repo")).toBeInTheDocument();
+  expect(screen.getAllByText(/File browsing is available for repositories on this computer/)).toHaveLength(1);
+  expect(document.querySelector(".project-browser")).not.toBeInTheDocument();
 });
 it("creates a task with template, tags, attachments and remembered split action", async () => {
   const { user, fetcher } = setup(<NewTaskDialog initialProjectId="p" onClose={() => {}} />);

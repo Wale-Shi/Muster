@@ -1,5 +1,6 @@
 import type { Messages } from "./en";
 export const messages: Messages = {
+  settingsNav: { workspace: "工作区", system: "系统", developer: "开发者", help: "帮助" },
   localImage: { loading: "正在加载图片…", unavailable: "图片不可用", remote: "图片位于执行机器", enlarge: "放大图片", path: "本地图片路径" },
   phaseC: {
     deviceOnly: "仅保存在这台设备上。",

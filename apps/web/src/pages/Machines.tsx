@@ -1,11 +1,11 @@
 import { useI18n } from "../i18n";
 import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Cpu, Monitor, Server } from "lucide-react";
+import { Cpu, Server } from "lucide-react";
 import type { Machine } from "@muster/shared";
 import { useMachines } from "../api/queries";
 import { api } from "../api/client";
-import { Empty, ErrorNotice, Loading } from "../components/ui";
+import { Empty, ErrorNotice, Loading, Section, SettingRow } from "../components/ui";
 
 function MachineCard({ machine }: { machine: Machine }) {
   const { t, label, formatDate, formatNumber } = useI18n();
@@ -21,67 +21,8 @@ function MachineCard({ machine }: { machine: Machine }) {
     mutationFn: () => api.updateMachine(machine.id, concurrency),
     onSuccess: () => client.invalidateQueries({ queryKey: ["machines"] }),
   });
-  return (
-    <article className="machine-card">
-      <div className="machine-top">
-        <span className="machine-icon">
-          <Monitor size={21} />
-        </span>
-        <div>
-          <h3 title={machine.name}>{machine.name}</h3>
-          <div className="machine-status">
-            <span className="muted">
-              <span className={`status-dot ${machine.online ? "online" : ""}`} />
-              {machine.online ? t("ui.online") : t("ui.offline")}
-            </span>
-            <span className="badge mono">
-              {t("count.running", { count: machine.running ?? 0 })}
-            </span>
-          </div>
-        </div>
-      </div>
-      <div className="machine-runtimes">
-        {machine.runtimes.map((runtime) => (
-          <span className="badge" key={label("runtime", runtime)}>
-            <Cpu size={12} />
-            {label("runtime", runtime)}
-          </span>
-        ))}
-      </div>
-      <div className="concurrency-label">
-        <label htmlFor={`concurrency-${machine.id}`}>{t("ui.concurrency")}</label>
-        <span className="mono">{formatNumber(concurrency)}</span>
-      </div>
-      <input
-        id={`concurrency-${machine.id}`}
-        type="range"
-        min={1}
-        max={10}
-        value={concurrency}
-        onChange={(event) => setConcurrency(Number(event.target.value))}
-      />
-      <div className="row concurrency-footer">
-        <span className="hint">
-          {machine.concurrency > 10
-            ? t("text.limit", { current: machine.concurrency, next: concurrency })
-            : t("ui.maximumSimultaneousTurns")}
-        </span>
-        <button
-          className="button"
-          disabled={update.isPending || concurrency === machine.concurrency}
-          onClick={() => update.mutate()}
-        >
-          {update.isPending ? t("ui.saving") : t("ui.save")}
-        </button>
-      </div>
-      <ErrorNotice error={update.error} />
-      <div className="machine-seen hint">
-        {machine.lastSeenAt
-          ? t("text.lastSeen", { date: formatDate(machine.lastSeenAt) })
-          : t("ui.noHeartbeatYet")}
-      </div>
-    </article>
-  );
+  return <SettingRow label={machine.name} help={<><span className={`status-dot ${machine.online ? "online" : ""}`} /> {machine.online ? t("ui.online") : t("ui.offline")} · {t("count.running", { count: machine.running ?? 0 })}<br />{machine.runtimes.map((runtime) => <span className="badge" key={runtime}><Cpu size={12} /> {label("runtime", runtime)}</span>)}<br />{machine.lastSeenAt ? t("text.lastSeen", { date: formatDate(machine.lastSeenAt) }) : t("ui.noHeartbeatYet")}</>}><div className="machine-control"><label htmlFor={`concurrency-${machine.id}`}>{t("ui.concurrency")}: {formatNumber(concurrency)}</label><input id={`concurrency-${machine.id}`} type="range" min={1} max={10} value={concurrency} onChange={(event) => setConcurrency(Number(event.target.value))} /><span className="hint">{machine.concurrency > 10 ? t("text.limit", { current: machine.concurrency, next: concurrency }) : t("ui.maximumSimultaneousTurns")}</span><button className="button" disabled={update.isPending || concurrency === machine.concurrency} onClick={() => update.mutate()}>{update.isPending ? t("ui.saving") : t("ui.save")}</button><ErrorNotice error={update.error} /></div></SettingRow>;
+
 }
 export function Machines() {
   const { t } = useI18n();
@@ -95,10 +36,6 @@ export function Machines() {
         </span>
       </header>
       <div className="page-content">
-        <div className="page-intro">
-          <h2>{t("ui.putYourMachinesToWork")}</h2>
-          <p>{t("ui.connectedMachinesPickUpTasksAndRunYourAgentsLocally")}</p>
-        </div>
         <ErrorNotice error={machines.error} />
         {machines.isPending ? (
           <Loading />
@@ -110,11 +47,11 @@ export function Machines() {
             </code>
           </Empty>
         ) : (
-          <div className="machine-grid">
+          <Section title={t("ui.machines")}>
             {machines.data.map((machine) => (
               <MachineCard key={machine.id} machine={machine} />
             ))}
-          </div>
+          </Section>
         )}
       </div>
     </div>

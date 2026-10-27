@@ -87,10 +87,6 @@ export function Usage() {
         <span className="muted">{t("ui.allTime")}</span>
       </header>
       <div className="page-content usage-page">
-        <div className="page-intro">
-          <h2>{t("ui.aLittlePerspectiveOnTheWork")}</h2>
-          <p>{t("ui.tokenUsageAndTimeAcrossYourWorkspace")}</p>
-        </div>
         <ErrorNotice error={usage.error} />
         {usage.isPending ? (
           <Loading />
