@@ -13,7 +13,7 @@ const SEGMENTS = NODES.slice(1).map((b, i) => {
 
 export function MusterMark({ size = 16 }: { size?: number }) {
   return (
-    <svg className="muster-mark" width={size} height={size} viewBox="0 0 24 24" fill="none" strokeWidth={1.25} strokeLinecap="round" aria-hidden="true">
+    <svg className="muster-mark" width={size} height={size} viewBox="0 0 24 24" fill="none" strokeWidth={1.6} strokeLinecap="round" aria-hidden="true">
       <path d={SEGMENTS} stroke="currentColor" />
       {NODES.map(([cx, cy], i) => <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r={RING} stroke="var(--accent)" fill={i === LEAD ? "var(--accent)" : "none"} />)}
     </svg>

@@ -12,10 +12,10 @@ type Point = readonly [number, number];
 // Mark coordinates on a 24-unit grid, matching the web SVG viewBox.
 const NODES: readonly Point[] = [[5, 19.5], [5.8, 4.8], [11.2, 14.2], [18.2, 7.4], [19.2, 18.8]];
 const LEAD = 1; // the solid node
-const RING = 1.15;
+const RING = 1.3;
 // Hairline weights for the app icon; small sizes scale them up to stay visible.
-const LINE = 0.6;
-const RING_STROKE = 0.55;
+const LINE = 0.9;
+const RING_STROKE = 0.8;
 
 function crc32(data: Buffer) {
   let crc = 0xffffffff;
