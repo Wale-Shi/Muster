@@ -1,5 +1,6 @@
-// Rasterize the Muster mark — an "M" of four strokes whose five joints are small
-// rings, like connected nodes — without an image service or native dependencies.
+// Rasterize the Muster mark — a loose, asymmetric "M" of four fine strokes whose
+// joints are small rings, the first one solid like a lead node — without an image
+// service or native dependencies.
 // Keep the geometry in sync with apps/web/src/components/MusterMark.tsx.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { deflateSync } from "node:zlib";
@@ -9,9 +10,12 @@ mkdirSync(assets, { recursive: true });
 
 type Point = readonly [number, number];
 // Mark coordinates on a 24-unit grid, matching the web SVG viewBox.
-const NODES: readonly Point[] = [[5, 18], [5, 6], [12, 13.5], [19, 6], [19, 18]];
-const RING = 1.7;
-const STROKE = 1.1;
+const NODES: readonly Point[] = [[5, 19.5], [5.8, 4.8], [11.2, 14.2], [18.2, 7.4], [19.2, 18.8]];
+const LEAD = 1; // the solid node
+const RING = 1.15;
+// Hairline weights for the app icon; small sizes scale them up to stay visible.
+const LINE = 0.6;
+const RING_STROKE = 0.55;
 
 function crc32(data: Buffer) {
   let crc = 0xffffffff;
@@ -34,15 +38,16 @@ const SEGMENTS = NODES.slice(1).map((b, i) => {
   return [[a[0] + ux * RING, a[1] + uy * RING], [b[0] - ux * RING, b[1] - uy * RING]] as const;
 });
 /** Which part of the mark covers grid point p: "line", "ring" or nothing. */
-function mark(p: Point, stroke: number): "line" | "ring" | null {
-  if (NODES.some((n) => Math.abs(Math.hypot(p[0] - n[0], p[1] - n[1]) - RING) < stroke / 2)) return "ring";
-  if (SEGMENTS.some(([a, b]) => segment(p, a, b) < stroke / 2)) return "line";
+function mark(p: Point, weight: number): "line" | "ring" | null {
+  const ring = RING_STROKE * weight;
+  if (NODES.some((n, i) => { const d = Math.hypot(p[0] - n[0], p[1] - n[1]); return i === LEAD ? d < RING + ring / 2 : Math.abs(d - RING) < ring / 2; })) return "ring";
+  if (SEGMENTS.some(([a, b]) => segment(p, a, b) < (LINE * weight) / 2)) return "line";
   return null;
 }
 
 type Rgb = readonly [number, number, number];
 const TILE: Rgb = [24, 24, 27];
-const LINE: Rgb = [228, 228, 236];
+const STROKE_COLOR: Rgb = [228, 228, 236];
 const NODE: Rgb = [139, 140, 248];
 
 function png(size: number, kind: "app" | "tray") {
@@ -51,8 +56,9 @@ function png(size: number, kind: "app" | "tray") {
   // App icons follow the macOS grid: an 824/1024 rounded tile with the mark inset.
   const tile = kind === "app" ? 0.805 : 1;
   const inset = (1 - tile) / 2;
-  const scale = kind === "app" ? 0.64 : 1; // mark width relative to the tile
-  const stroke = kind === "tray" ? STROKE * 1.6 : STROKE;
+  const scale = kind === "app" ? 0.72 : 1; // mark width relative to the tile
+  // Keep strokes about a pixel wide or more at small sizes (16px icons, menu bar).
+  const weight = Math.max(1, (24 / (size * (kind === "app" ? tile * scale : 1))) / LINE * 0.9);
   for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
     let a = 0, r = 0, g = 0, b = 0;
     for (let sy = 0; sy < samples; sy++) for (let sx = 0; sx < samples; sx++) {
@@ -60,8 +66,8 @@ function png(size: number, kind: "app" | "tray") {
       const tx = (px - inset) / tile, ty = (py - inset) / tile;
       const inTile = kind === "app" && Math.hypot(Math.max(0, Math.abs(tx - 0.5) - 0.275), Math.max(0, Math.abs(ty - 0.5) - 0.275)) < 0.225;
       const grid: Point = [12 + ((tx - 0.5) / scale) * 24, 12 + ((ty - 0.5) / scale) * 24];
-      const part = kind === "app" && !inTile ? null : mark(grid, stroke);
-      const color = kind === "tray" ? [0, 0, 0] as Rgb : part === "ring" ? NODE : part === "line" ? LINE : TILE;
+      const part = kind === "app" && !inTile ? null : mark(grid, weight);
+      const color = kind === "tray" ? [0, 0, 0] as Rgb : part === "ring" ? NODE : part === "line" ? STROKE_COLOR : TILE;
       if (part || inTile) { a += 255; r += color[0]; g += color[1]; b += color[2]; }
     }
     const offset = y * (size * 4 + 1) + 1 + x * 4;
