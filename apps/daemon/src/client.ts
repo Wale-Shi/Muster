@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
-import type { EventUpload, Runtime, TurnCompletePayload, TurnJob } from "@muster/shared";
+import type { EventUpload, MachineModels, Runtime, TurnCompletePayload, TurnJob } from "@muster/shared";
 import { delay } from "./util.js";
 
 export class HttpError extends Error {
@@ -55,7 +55,8 @@ export class MachineClient {
     await rename(`${file}.tmp`, file);
     return this.registration;
   }
-  heartbeat(running: string[], signal?: AbortSignal, retry = true): Promise<{ stop: string[] }> { return this.request("/api/machine/heartbeat", { running }, signal, retry); }
+  heartbeat(running: string[], signal?: AbortSignal, retry = true): Promise<{ stop: string[]; refreshModels?: boolean }> { return this.request("/api/machine/heartbeat", { running }, signal, retry); }
+  reportModels(models: MachineModels, signal?: AbortSignal): Promise<{ accepted: boolean }> { return this.request("/api/machine/models", { models }, signal); }
   claim(signal?: AbortSignal): Promise<TurnJob | null> { return this.request("/api/machine/claim", { requestId: crypto.randomUUID() }, signal); }
   events(turnId: string, upload: EventUpload): Promise<{ accepted: number }> { return this.request(`/api/machine/turns/${turnId}/events`, upload); }
   inbox(turnId: string, signal?: AbortSignal): Promise<Array<{ id: string; content: string }>> { return this.request(`/api/machine/turns/${turnId}/inbox`, undefined, signal); }

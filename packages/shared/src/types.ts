@@ -50,11 +50,18 @@ export interface Agent {
   createdAt: Timestamp;
 }
 
+/** A model a runtime CLI offers, as reported by a machine. */
+export interface RuntimeModel { id: string; name?: string | undefined; reasoning?: string[] | undefined }
+/** What one machine found when it asked a runtime CLI for its models. */
+export interface RuntimeModels { models: RuntimeModel[]; error?: string | undefined; checkedAt: Timestamp }
+export type MachineModels = Partial<Record<Runtime, RuntimeModels>>;
+
 export interface Machine {
   id: Id;
   name: string;
   concurrency: number;
   runtimes: Runtime[];
+  models?: MachineModels;
   lastSeenAt: Timestamp | null;
   createdAt: Timestamp;
   online?: boolean;

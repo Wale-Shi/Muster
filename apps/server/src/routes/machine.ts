@@ -1,7 +1,7 @@
 import type { ServerResponse } from "node:http";
 import type { TurnJob } from "@muster/shared";
 import { Hono } from "hono";
-import { eventUploadSchema, claimSchema, inboxAckSchema, enrollMachineSchema, heartbeatSchema, turnCompleteSchema } from "@muster/shared";
+import { eventUploadSchema, claimSchema, inboxAckSchema, enrollMachineSchema, heartbeatSchema, machineModelsSchema, turnCompleteSchema } from "@muster/shared";
 import type { TurnCompletePayload } from "@muster/shared";
 import type { AppServices } from "../services.js";
 import { bearer, body } from "./helpers.js";
@@ -25,6 +25,7 @@ export function machineRoutes(services: AppServices): Hono {
   app.get("/attachments/:id", (c) => c.json(services.attachments.download(c.req.param("id"))));
   app.get("/skills/:slug/archive", (c) => c.json(services.skills.archive(c.req.param("slug"), c.req.query("version"))));
   app.post("/heartbeat", async (c) => { const input = await body(c, heartbeatSchema); return c.json(services.scheduler.heartbeat(machineToken(c.req.header("authorization")), input.running)); });
+  app.post("/models", async (c) => { const input = await body(c, machineModelsSchema); services.scheduler.reportModels(machineToken(c.req.header("authorization")), input.models); return c.json({ accepted: true }); });
   app.post("/claim", async (c) => {
     const token = machineToken(c.req.header("authorization"));
     const input = await body(c, claimSchema);

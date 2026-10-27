@@ -3,7 +3,7 @@ import type { Connections } from "../resources/connections.js";
 import type { Memories } from "../resources/memories.js";
 import type { Secrets } from "../resources/secrets.js";
 import type { Skills } from "../resources/skills.js";
-import type { AgentEvent, Runtime, TurnCompletePayload, TurnJob, TurnKind } from "@muster/shared";
+import type { AgentEvent, MachineModels, Runtime, TurnCompletePayload, TurnJob, TurnKind } from "@muster/shared";
 import { id, MusterDb, now } from "../db/index.js";
 import type { EventBus } from "../events.js";
 import { instructionsFor } from "./prompts.js";
@@ -21,7 +21,7 @@ export class Scheduler {
     const machineId = id();
     const token = `mst_machine_${crypto.randomUUID().replaceAll("-", "")}`;
     const timestamp = now();
-    this.db.run("INSERT INTO machines VALUES (?, ?, ?, ?, ?, ?, ?)", machineId, name, token, concurrency, JSON.stringify(runtimes), timestamp, timestamp);
+    this.db.run("INSERT INTO machines (id, name, token, concurrency, runtimes_json, last_seen_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", machineId, name, token, concurrency, JSON.stringify(runtimes), timestamp, timestamp);
     this.events.emit({ type: "machine.changed", payload: { machineId } });
     return { machineId, token };
   }
@@ -32,7 +32,7 @@ export class Scheduler {
     return machine;
   }
 
-  heartbeat(token: string, running: string[]): { stop: string[] } {
+  heartbeat(token: string, running: string[]): { stop: string[]; refreshModels: boolean } {
     const machine = this.authenticate(token);
     // Expire leases before reviving a machine after a long disconnection.
     this.failOfflineMachines();
@@ -43,7 +43,14 @@ export class Scheduler {
       this.db.run("UPDATE turns SET last_reported_at=? WHERE id=?", now(), turnId);
       return row.stop_requested === 1;
     });
-    return { stop };
+    // Machines report models after starting; later reports happen only on request.
+    const refreshModels = this.db.row("SELECT models_requested FROM machines WHERE id = ?", machine.id)?.models_requested === 1;
+    return { stop, refreshModels };
+  }
+  reportModels(token: string, models: MachineModels): void {
+    const machine = this.authenticate(token);
+    this.db.run("UPDATE machines SET models_json = ?, models_requested = 0 WHERE id = ?", JSON.stringify(models), machine.id);
+    this.events.emit({ type: "machine.changed", payload: { machineId: machine.id } });
   }
 
   failOfflineMachines(): void {

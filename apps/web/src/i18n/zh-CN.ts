@@ -499,6 +499,14 @@ export const messages: Messages = {
     "runtimeInstalled": "已在机器上安装",
     "runtimeNotDetected": "未在任何机器上检测到",
     "cliDefaultModel": "“default” 表示使用 CLI 自己配置的模型",
+    "modelCliDefault": "默认（使用 CLI 当前配置的模型）",
+    "modelCustom": "自定义…",
+    "modelNotReported": "未报告",
+    "modelsNotReported": "还没有机器列出该运行时的模型",
+    "modelsFailed": "无法列出模型（悬停查看原因）",
+    "modelsRefresh": "刷新",
+    "modelsRefreshing": "正在刷新…",
+    "reasoningDefault": "默认",
     "reasoning": "推理强度",
     "egHighOptional": "例如 high（可选）",
     "saving": "正在保存…",
@@ -674,6 +682,10 @@ export const messages: Messages = {
     "running": {
       "one": "{count} 轮运行中",
       "other": "{count} 轮运行中"
+    },
+    "models": {
+      "one": "{count} 个模型",
+      "other": "{count} 个模型"
     },
     "online": {
       "one": "{count} 台在线",

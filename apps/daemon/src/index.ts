@@ -24,8 +24,10 @@ export async function main(args = process.argv.slice(2)): Promise<void> {
   const home = expand(process.env.MUSTER_HOME ?? join(homedir(), ".muster"));
   const log = createLogger(home);
   const commands = await locateRuntimes();
+  // MUSTER_MODEL_DISCOVERY=off skips launching CLIs to list their models.
+  const discoverModels = process.env.MUSTER_MODEL_DISCOVERY !== "off";
   const client = new MachineClient({ server: server.origin, home, name: values.name, concurrency, runtimes: ["mock", ...Object.keys(commands) as Runtime[]], ...(process.env.MUSTER_ENROLL_KEY ? { enrollKey: process.env.MUSTER_ENROLL_KEY } : {}) });
-  const daemon = new Daemon({ client, commands, workspacesDir: expand(values["workspaces-dir"] ?? join(home, "workspaces")), log });
+  const daemon = new Daemon({ client, commands, discoverModels, workspacesDir: expand(values["workspaces-dir"] ?? join(home, "workspaces")), log });
   let stopping: Promise<void> | undefined;
   const stop = () => { stopping ??= daemon.stop().catch((error: unknown) => { log("error", "Shutdown failed", { error: errorText(error) }); process.exitCode = 1; }); };
   await daemon.start();

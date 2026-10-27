@@ -3,11 +3,13 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
-import { CLI_DEFAULT_MODEL, DEFAULT_MODELS, type Agent, type AgentMemory, type AgentPermissions, type Skill, type Todo } from "@muster/shared";
+import { CLI_DEFAULT_MODEL, type Agent, type AgentMemory, type AgentPermissions, type Skill, type Todo } from "@muster/shared";
 import { request } from "../api/client";
 import { useI18n } from "../i18n";
 import { Avatar, ErrorNotice, Loading, PhaseBadge, Section, Segmented, SettingRow, Switch } from "../components/ui";
 import { RuntimeOptions } from "../components/RuntimeOptions";
+import { initialModel, keepReasoning, ModelSelect, ReasoningSelect, reasoningLevels } from "../components/ModelFields";
+import { useMachines } from "../api/queries";
 
 type Profile = Agent & { inProgress: Todo[]; memoryCount: number; skillCount: number };
 const permissionKeys: (keyof AgentPermissions)[] = ["pushBranch", "secrets", "createSkills", "updateSkills"];
@@ -17,6 +19,7 @@ export function AgentPage() {
   const [tab, setTab] = useState<"overview" | "memory">("overview"); const [copied, setCopied] = useState(false);
   const agent = useQuery({ queryKey: ["agent", id], queryFn: () => request<Profile>(`/agents/${id}`) });
   const connections = useConnections();
+  const machines = useMachines();
   const skills = useQuery({ queryKey: ["skills"], queryFn: () => request<Skill[]>("/skills") });
   const save = useMutation({ mutationFn: (value: Partial<Agent>) => request<Agent>(`/agents/${id}`, "PATCH", value), onSuccess: () => { void client.invalidateQueries({ queryKey: ["agent", id] }); void client.invalidateQueries({ queryKey: ["agents"] }); } });
   const remove = useMutation({ mutationFn: () => request(`/agents/${id}`, "DELETE"), onSuccess: () => { void client.invalidateQueries({ queryKey: ["agents"] }); navigate("/agents"); } });
@@ -50,10 +53,10 @@ export function AgentPage() {
             </Section>
             <Section className="agent-configuration" title={t("parity.configuration")} description={t("parity.configurationHelp")}>
               <SettingRow label={t("parity.runtime")}>
-                <select value={a.runtime} disabled={save.isPending} onChange={(e) => { const runtime = e.target.value as Agent["runtime"]; save.mutate({ runtime, model: DEFAULT_MODELS[runtime] }); }}><RuntimeOptions /></select>
+                <select value={a.runtime} disabled={save.isPending} onChange={(e) => { const runtime = e.target.value as Agent["runtime"]; save.mutate({ runtime, model: initialModel(machines.data, runtime), reasoning: null }); }}><RuntimeOptions /></select>
               </SettingRow>
-              <SettingRow label={t("parity.model")} {...(a.model === CLI_DEFAULT_MODEL ? { help: t("ui.cliDefaultModel") } : {})}><input key={a.model} className="mono" defaultValue={a.model} aria-label={t("parity.model")} onBlur={(e) => { const model = e.target.value.trim(); if (model && model !== a.model) save.mutate({ model }); }} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} /></SettingRow>
-              <SettingRow label={t("parity.reasoning")} help={t("parity.reasoningHelp")}><input key={a.reasoning ?? ""} defaultValue={a.reasoning ?? ""} placeholder={t("ui.egHighOptional")} aria-label={t("parity.reasoning")} onBlur={(e) => { const reasoning = e.target.value.trim() || null; if (reasoning !== a.reasoning) save.mutate({ reasoning }); }} onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} /></SettingRow>
+              <SettingRow label={t("parity.model")} {...(a.model === CLI_DEFAULT_MODEL ? { help: t("ui.cliDefaultModel") } : {})}><ModelSelect label={t("parity.model")} runtime={a.runtime} value={a.model} onChange={(model) => { if (model !== a.model) save.mutate({ model, reasoning: keepReasoning(machines.data, a.runtime, model, a.reasoning) }); }} /></SettingRow>
+              <SettingRow label={t("parity.reasoning")} help={t("parity.reasoningHelp")}><ReasoningSelect label={t("parity.reasoning")} levels={reasoningLevels(machines.data, a.runtime, a.model)} value={a.reasoning} onChange={(reasoning) => { if (reasoning !== a.reasoning) save.mutate({ reasoning }); }} /></SettingRow>
             </Section>
             <Section title={t("parity.defaultSkills")} description={t("parity.defaultSkillsHelp")}>
               <div className="chip-list">

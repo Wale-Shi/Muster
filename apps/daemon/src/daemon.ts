@@ -13,6 +13,7 @@ import { CodexRuntime } from "./runtimes/codex.js";
 import { ClaudeRuntime } from "./runtimes/claude.js";
 import { PiRuntime } from "./runtimes/pi.js";
 import { AcpRuntime } from "./runtimes/acp.js";
+import { discoverModels } from "./runtimes/models.js";
 import type { Runtime, RunningTurn } from "./runtimes/types.js";
 import type { Logger } from "./log.js";
 import { delay, errorText, Mutex, safeId } from "./util.js";
@@ -55,6 +56,8 @@ export interface DaemonOptions {
   runtimes?: Partial<Record<RuntimeName, Runtime>>;
   /** Executables found by `locateRuntimes`. */
   commands?: Partial<Record<RuntimeName, string>>;
+  /** List each runtime's models at startup and on request (default true). */
+  discoverModels?: boolean;
   heartbeatMs?: number; inboxMs?: number; flushMs?: number;
 }
 export class Daemon {
@@ -65,6 +68,7 @@ export class Daemon {
   private runtimes: Record<RuntimeName, Runtime>;
   private loop: Promise<void> | undefined;
   private heartbeatTask: Promise<void> | undefined;
+  private modelsTask: Promise<void> | undefined;
   private lock: string;
   private ownsLock = false;
   private stopping: Promise<void> | undefined;
@@ -95,6 +99,7 @@ export class Daemon {
       this.options.log("info", "Machine enrolled", { machineId: machine.machineId, runtimes: machine.runtimes });
       this.heartbeatTask = this.heartbeats();
       this.loop = this.claims();
+      this.refreshModels();
     } catch (error) { await this.releaseLock(); throw error; }
   }
   async wait(): Promise<void> { await this.loop; }
@@ -111,6 +116,7 @@ export class Daemon {
     await this.loop;
     await Promise.all([...this.active.values()].map((entry) => entry.task));
     await this.heartbeatTask;
+    await this.modelsTask;
     try { await this.options.client.heartbeat([], AbortSignal.timeout(500), false); }
     catch (error) { this.options.log("error", "Final heartbeat failed", { error: errorText(error) }); }
     await this.journal.run("running", async () => {});
@@ -139,10 +145,22 @@ export class Daemon {
   private async releaseLock(): Promise<void> {
     if (this.ownsLock) { this.ownsLock = false; await rm(this.lock, { recursive: true, force: true }); }
   }
+  /** Lists each runtime's models in the background and reports them; one run at a time. */
+  private refreshModels(): void {
+    if (this.modelsTask || this.options.discoverModels === false) return;
+    this.modelsTask = (async () => {
+      try {
+        const models = await discoverModels(this.options.commands ?? {}, 20_000, this.abort.signal);
+        if (!this.abort.signal.aborted) await this.options.client.reportModels(models, this.abort.signal);
+      } catch (error) { if (!this.abort.signal.aborted) this.options.log("error", "Model discovery failed", { error: errorText(error) }); }
+      finally { this.modelsTask = undefined; }
+    })();
+  }
   private async heartbeats(): Promise<void> {
     while (!this.abort.signal.aborted) {
       try {
-        const { stop } = await this.options.client.heartbeat(this.running, this.abort.signal);
+        const { stop, refreshModels } = await this.options.client.heartbeat(this.running, this.abort.signal);
+        if (refreshModels) this.refreshModels();
         for (const id of stop) {
           const active = this.active.get(id);
           if (active) { active.stopped = true; void active.runtime?.interrupt().catch((error: unknown) => this.options.log("error", "Interrupt failed", { turnId: id, error: errorText(error) })); }

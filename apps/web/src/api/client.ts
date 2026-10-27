@@ -87,6 +87,7 @@ export const api = {
       input,
     ),
   machines: () => request<Machine[]>("/machines"),
+  refreshModels: () => request<{ requested: boolean }>("/machines/refresh-models", "POST", {}),
   updateMachine: (id: string, concurrency: number) =>
     request<Machine>(`/machines/${pathId(id)}`, "PATCH", { concurrency }),
   todos: () => request<Todo[]>("/todos"),

@@ -3,9 +3,10 @@ import { useI18n } from "../i18n";
 import { useState, type FormEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Plus } from "lucide-react";
-import { CLI_DEFAULT_MODEL, DEFAULT_MODELS, type Agent, type Runtime } from "@muster/shared";
+import { DEFAULT_MODELS, type Agent, type Runtime } from "@muster/shared";
 import { api, type AgentInput } from "../api/client";
-import { useAgents, useTodos } from "../api/queries";
+import { useAgents, useMachines, useTodos } from "../api/queries";
+import { initialModel, keepReasoning, ModelSelect, ReasoningSelect, reasoningLevels } from "../components/ModelFields";
 import { Avatar, Dialog, Empty, ErrorNotice, Loading } from "../components/ui";
 import { RuntimeOptions } from "../components/RuntimeOptions";
 
@@ -18,6 +19,7 @@ function AgentDialog({
 }) {
   const { t } = useI18n();
   const navigate = useNavigate();
+  const machines = useMachines();
   const [input, setInput] = useState<AgentInput>({
     name: agent?.name ?? "",
     role: agent?.role ?? "",
@@ -80,35 +82,22 @@ function AgentDialog({
               {t("ui.runtimeRequired")}<select
                 required
                 value={input.runtime}
-                onChange={(event) =>
-                  setInput({ ...input, runtime: event.target.value as Runtime, model: DEFAULT_MODELS[event.target.value as Runtime] })
-                }
+                onChange={(event) => {
+                  const runtime = event.target.value as Runtime;
+                  setInput({ ...input, runtime, model: initialModel(machines.data, runtime), reasoning: null });
+                }}
               >
                 <RuntimeOptions />
               </select>
             </label>
             <label>
-              {t("ui.modelRequired")}<input
-                required
-                value={input.model}
-                placeholder={
-                  input.runtime === "mock" ? "mock" : t("ui.modelIdentifier")
-                }
-                onChange={(event) =>
-                  setInput({ ...input, model: event.target.value })
-                }
-              />
-              {input.model === CLI_DEFAULT_MODEL && <small className="muted">{t("ui.cliDefaultModel")}</small>}
+              {t("ui.modelRequired")}
+              <ModelSelect label={t("ui.modelRequired")} runtime={input.runtime} value={input.model} onChange={(model) => setInput({ ...input, model, reasoning: keepReasoning(machines.data, input.runtime, model, input.reasoning) })} />
             </label>
           </div>
           <label>
-            {t("ui.reasoning")}<input
-              value={input.reasoning ?? ""}
-              placeholder={t("ui.egHighOptional")}
-              onChange={(event) =>
-                setInput({ ...input, reasoning: event.target.value || null })
-              }
-            />
+            {t("ui.reasoning")}
+            <ReasoningSelect label={t("ui.reasoning")} levels={reasoningLevels(machines.data, input.runtime, input.model)} value={input.reasoning ?? null} onChange={(reasoning) => setInput({ ...input, reasoning })} />
           </label>
           <ErrorNotice error={save.error} />
           {missing.length > 0 && (

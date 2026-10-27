@@ -9,6 +9,7 @@ import type { AgentEvent } from "@muster/shared";
 import { PiRuntime } from "../src/runtimes/pi.js";
 import { AcpRuntime } from "../src/runtimes/acp.js";
 import { writeBridge } from "../src/runtimes/bridge.js";
+import { discoverModels } from "../src/runtimes/models.js";
 import { detectRuntimes, locateRuntimes } from "../src/daemon.js";
 import { makeJob, until } from "./helpers.js";
 
@@ -237,4 +238,31 @@ it("detects runtimes on PATH, in install directories and from MUSTER_<ID>_BIN", 
   const found = await locateRuntimes(bin, { MUSTER_GEMINI_BIN: join(root, "custom-gemini") });
   expect(found).toMatchObject({ pi: join(bin, "pi"), kiro: join(bin, "kiro-cli"), gemini: join(root, "custom-gemini") });
   expect(await detectRuntimes(bin, {})).toEqual(expect.arrayContaining(["mock", "pi", "kiro"]));
+});
+
+it("discovers models from Codex, pi and ACP CLIs and reports failures per runtime", async () => {
+  const root = await mkdtemp(join(tmpdir(), "muster-models-test-")); roots.push(root);
+  const script = async (name: string, body: string) => { const file = join(root, name); await writeFile(file, `#!${process.execPath}\n${body}`); await chmod(file, 0o755); return file; };
+  const codex = await script("codex", String.raw`
+if (process.argv.slice(2).join(' ') !== 'debug models') process.exit(2);
+console.log(JSON.stringify({ models: [
+  { slug: 'gpt-a', display_name: 'GPT A', visibility: 'list', supported_reasoning_levels: [{ effort: 'low' }, { effort: 'high' }] },
+  { slug: 'hidden', display_name: 'Hidden', visibility: 'hide', supported_reasoning_levels: [] } ].reverse() }));
+console.log('{"trailing":"lines are ignored"}');`);
+  const pi = await script("pi", String.raw`
+if (!process.argv.includes('--no-session')) process.exit(2);
+let b=''; process.stdin.on('data',d=>{b+=d;let i;while((i=b.indexOf('\n'))>=0){const m=JSON.parse(b.slice(0,i));b=b.slice(i+1);
+ if(m.type==='get_available_models')process.stdout.write(JSON.stringify({id:m.id,type:'response',command:'get_available_models',success:true,data:{models:[{id:'claude-x',provider:'anthropic',name:'Claude X',reasoning:true},{id:'small',provider:'local',name:'Small',reasoning:false}]}})+'\n');}});`);
+  const acp = await script("gemini", String.raw`
+let b=''; const send=x=>process.stdout.write(JSON.stringify(x)+'\n');
+process.stdin.on('data',d=>{b+=d;let i;while((i=b.indexOf('\n'))>=0){const m=JSON.parse(b.slice(0,i));b=b.slice(i+1);
+ if(m.method==='initialize')send({jsonrpc:'2.0',id:m.id,result:{protocolVersion:1}});
+ else if(m.method==='session/new')send({jsonrpc:'2.0',id:m.id,result:{sessionId:'s',models:{currentModelId:'g1',availableModels:[{modelId:'g1',name:'Gemini One'}]},configOptions:[{id:'effort',category:'thought_level',options:[{value:'low'},{value:'high'}]}]}});}});`);
+  const hanging = await script("qwen", "setInterval(() => {}, 1000);");
+  const found = await discoverModels({ codex, pi, gemini: acp, qwen: hanging }, 2000);
+  expect(found.codex?.models).toEqual([{ id: "gpt-a", name: "GPT A", reasoning: ["low", "high"] }, { id: "hidden", name: "Hidden", reasoning: [] }]);
+  expect(found.pi?.models).toEqual([{ id: "anthropic/claude-x", name: "Claude X", reasoning: ["off", "minimal", "low", "medium", "high"] }, { id: "local/small", name: "Small" }]);
+  expect(found.gemini?.models).toEqual([{ id: "g1", name: "Gemini One", reasoning: ["low", "high"] }]);
+  expect(found.qwen).toMatchObject({ models: [], error: "Timed out listing models" });
+  expect(found.mock?.models).toEqual([{ id: "mock", name: "Mock" }]);
 });

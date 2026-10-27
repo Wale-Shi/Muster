@@ -498,6 +498,14 @@ export const en = {
     "runtimeInstalled": "Installed on a machine",
     "runtimeNotDetected": "Not detected on any machine",
     "cliDefaultModel": "“default” uses the model configured in the CLI",
+    "modelCliDefault": "Default (the CLI's configured model)",
+    "modelCustom": "Custom…",
+    "modelNotReported": "not reported",
+    "modelsNotReported": "No machine has listed models for this runtime yet",
+    "modelsFailed": "Could not list models (hover for details)",
+    "modelsRefresh": "Refresh",
+    "modelsRefreshing": "Refreshing…",
+    "reasoningDefault": "Default",
     "reasoning": "Reasoning",
     "egHighOptional": "e.g. high (optional)",
     "saving": "Saving…",
@@ -673,6 +681,10 @@ export const en = {
     "running": {
       "one": "{count} running turn",
       "other": "{count} running turns"
+    },
+    "models": {
+      "one": "{count} model",
+      "other": "{count} models"
     },
     "online": {
       "one": "{count} online",

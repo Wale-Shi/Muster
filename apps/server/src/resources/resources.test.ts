@@ -21,7 +21,7 @@ it("migrates v3 data forward and preserves duties with Chief permissions", () =>
 });
 it("rebuilds agents without the runtime CHECK and keeps references intact", () => {
   const root = mkdtempSync(join(tmpdir(), "muster-runtime-")); roots.push(root); const file = join(root, "db"); const old = new DatabaseSync(file);
-  const last = migrations.length - 1;
+  const last = migrations.findIndex((migration) => typeof migration !== "string");
   migrations.slice(0, last).forEach((sql) => { if (typeof sql === "string") old.exec(sql); }); old.exec(`PRAGMA user_version=${last}`);
   old.prepare("INSERT INTO agents (id,name,role,runtime,model,is_chief,created_at) VALUES (?,?,?,?,?,?,?)").run("a1", "Builder", "Build", "codex", "gpt", 0, "2026-01-01");
   old.prepare("INSERT INTO agent_memories VALUES (?,?,?,?,?,?)").run("m1", "a1", "Remember", "user", "2026-01-01", "2026-01-01");

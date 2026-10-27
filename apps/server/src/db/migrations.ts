@@ -59,4 +59,6 @@ export const migrations = [
   INSERT INTO agents_new SELECT id, name, role, runtime, model, reasoning, avatar, is_chief, created_at, permissions_json, default_skill_ids_json, updated_at, connection_ids_json FROM agents;
   DROP TABLE agents;
   ALTER TABLE agents_new RENAME TO agents;` },
+  `ALTER TABLE machines ADD COLUMN models_json TEXT NOT NULL DEFAULT '{}';
+  ALTER TABLE machines ADD COLUMN models_requested INTEGER NOT NULL DEFAULT 0;`,
 ] as const;

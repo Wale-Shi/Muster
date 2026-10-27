@@ -7,6 +7,19 @@ const databases: Array<ReturnType<typeof createApp>["services"]["db"]> = [];
 afterEach(() => { while (databases.length) databases.pop()?.close(); });
 
 describe("machine protocol", () => {
+  it("stores reported models and asks machines to refresh them on request", async () => {
+    const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
+    const machine = await enroll(app);
+    const models = { codex: { models: [{ id: "gpt-a", name: "GPT A", reasoning: ["low", "high"] }], checkedAt: "2026-10-27T00:00:00.000Z" }, qwen: { models: [], error: "Timed out listing models", checkedAt: "2026-10-27T00:00:00.000Z" } };
+    expect((await requestJson(app, "/api/machine/models", "POST", { models }, machine.token)).response.status).toBe(200);
+    expect((await requestJson(app, "/api/machine/models", "POST", { models: { unknown: { models: [], checkedAt: "x" } } }, machine.token)).response.status).toBe(400);
+    expect((await requestJson(app, "/api/machines")).json.data[0].models).toEqual(models);
+    expect((await requestJson(app, "/api/machine/heartbeat", "POST", { running: [] }, machine.token)).json.refreshModels).toBe(false);
+    expect((await requestJson(app, "/api/machines/refresh-models", "POST", {})).response.status).toBe(202);
+    expect((await requestJson(app, "/api/machine/heartbeat", "POST", { running: [] }, machine.token)).json.refreshModels).toBe(true);
+    await requestJson(app, "/api/machine/models", "POST", { models }, machine.token);
+    expect((await requestJson(app, "/api/machine/heartbeat", "POST", { running: [] }, machine.token)).json.refreshModels).toBe(false);
+  });
   it("accepts and broadcasts warnings without turning them into status or conversation messages", async () => {
     const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
     const { projectId, agentId } = await seedProjectAndAgent(app);

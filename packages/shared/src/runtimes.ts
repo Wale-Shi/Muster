@@ -43,3 +43,14 @@ export const RUNTIME_IDS = RUNTIMES.map((runtime) => runtime.id) as [Runtime, ..
 export const runtimeInfo = (id: Runtime): RuntimeInfo => RUNTIMES.find((runtime) => runtime.id === id)!;
 /** Environment variable that points the daemon at a runtime's executable. */
 export const runtimeBinEnv = (id: Runtime): string => `MUSTER_${id.toUpperCase()}_BIN`;
+
+/** Claude Code has no model listing command; these are its documented aliases and current ids. */
+export const CLAUDE_MODELS = [
+  { id: "claude-fable-5-1", name: "Claude Fable 5.1" },
+  { id: "claude-opus-5-5", name: "Claude Opus 5.5" },
+  { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5" },
+  { id: "claude-haiku-5-5", name: "Claude Haiku 5.5" },
+  { id: "fable", name: "fable (latest)" },
+  { id: "opus", name: "opus (latest)" },
+  { id: "sonnet", name: "sonnet (latest)" },
+].map((model) => ({ ...model, reasoning: ["low", "medium", "high", "xhigh", "max"] }));

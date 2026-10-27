@@ -70,6 +70,10 @@ export const enrollMachineSchema = z.object({
   concurrency: z.number().int().min(1).max(64).default(6),
 });
 export const heartbeatSchema = z.object({ running: z.array(idSchema).default([]) });
+const runtimeModelSchema = z.object({ id: z.string().min(1).max(200), name: z.string().max(200).optional(), reasoning: z.array(z.string().max(40)).max(12).optional() });
+export const machineModelsSchema = z.object({
+  models: z.partialRecord(runtimeSchema, z.object({ models: z.array(runtimeModelSchema).max(500), error: z.string().max(500).optional(), checkedAt: z.string() })),
+});
 export const updateMachineSchema = z.object({ concurrency: z.number().int().min(1).max(64) });
 export const agentEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("message.delta"), content: z.string() }),

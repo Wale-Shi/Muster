@@ -99,7 +99,7 @@ describe("daemon against the real M1 HTTP server", () => {
   it("runs the installed CLI with MUSTER_HOME, logs, and SIGTERM shutdown", async () => {
     const f = await setup(); await f.daemon.stop();
     const home = join(f.root, "cli-home");
-    const child = spawn(process.execPath, [fileURLToPath(new URL("../dist/index.js", import.meta.url)), "start", "--server", f.client.options.server], { env: { ...process.env, MUSTER_HOME: home }, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [fileURLToPath(new URL("../dist/index.js", import.meta.url)), "start", "--server", f.client.options.server], { env: { ...process.env, MUSTER_HOME: home, MUSTER_MODEL_DISCOVERY: "off" }, stdio: ["ignore", "pipe", "pipe"] });
     let stdout = ""; let stderr = "";
     child.stdout.on("data", (data: Buffer) => { stdout += data.toString(); });
     child.stderr.on("data", (data: Buffer) => { stderr += data.toString(); });
