@@ -7,6 +7,7 @@ import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import { z } from "zod";
 import type { AppServices } from "../services.js";
+import { jsonBody } from "./helpers.js";
 import { imagePath, mapImagePath, readImage, safeRead, type ImageMapping } from "../resources/local-images.js";
 import { StateError } from "../orchestrator/state.js";
 
@@ -47,7 +48,7 @@ export function localImageRoutes(services: AppServices, mappings: ImageMapping[]
     const validHost = localHost || requestUrl.hostname === publicUrl.hostname;
     const validOrigin = !origin || origin === publicUrl.origin || localHost && origin === requestUrl.origin;
     if (!validHost || !validOrigin || c.req.header("sec-fetch-site") === "cross-site" || c.req.header("x-muster-image") !== "1") return c.json({ error: "Image request origin denied" }, 403);
-    const input = inputSchema.parse(await c.req.json());
+    const input = inputSchema.parse(await jsonBody(c));
     const row = services.db.row(`SELECT m.content, b.machine_id FROM messages m JOIN builds b ON b.id=m.conversation_id
       JOIN turns t ON t.id=m.turn_id AND t.build_id=b.id
       WHERE m.id=? AND b.id=? AND b.todo_id=? AND m.role='agent' AND t.machine_id=b.machine_id`, input.messageId, input.buildId, c.req.param("todoId"));

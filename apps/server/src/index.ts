@@ -16,6 +16,7 @@ if (isMain) {
     databasePath: join(dataDir, "muster.db"),
     imageMappings: parseImageMappings(process.env.MUSTER_IMAGE_MAPPINGS),
     publicUrl,
+    allowedHosts: (process.env.MUSTER_ALLOWED_HOSTS ?? "").split(",").map((host) => host.trim()).filter(Boolean),
     claimWaitMs: Number(process.env.MUSTER_CLAIM_WAIT_MS ?? 25_000),
     enrollKey: process.env.MUSTER_ENROLL_KEY ?? null,
     autoFollowUp: process.env.MUSTER_CHIEF_AUTO_FOLLOW_UP !== "false",

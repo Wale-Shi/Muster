@@ -5,13 +5,14 @@ import { shouldNotify, badgeCount, defaultNotificationPreferences } from "./noti
 import type { NotificationPreferences } from "@muster/shared";
 import { viewMenuRoles, commandAccelerators } from "./menu.js";
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, screen, shell, systemPreferences, Tray } from "electron";
-import { mkdirSync, readFileSync, writeFileSync, appendFileSync } from "node:fs";
+import { mkdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { existingDaemon } from "./existing-daemon.js";
 import { watchEvents } from "./events.js";
 import { resolvePath } from "./path.js";
+import { revealOnly } from "./open-path.js";
 import { chooseServer } from "./ports.js";
 import { Worker, waitForServer } from "./workers.js";
 import type { DesktopCommand } from "./bridge.js";
@@ -118,6 +119,10 @@ function integrations() {
   });
   ipcMain.handle("muster:open-path", async (event, path: unknown) => {
     if (!trusted(event) || typeof path !== "string" || !isAbsolute(path) || path.includes("\0")) throw new Error(t("path"));
+    const info = (() => { try { return statSync(path); } catch { return null; } })();
+    if (!info) return `Cannot open ${path}`;
+    // Paths come from agent output, so anything runnable is shown in the file manager instead.
+    if (revealOnly(path, info)) { shell.showItemInFolder(path); return ""; }
     return shell.openPath(path);
   });
   rebuildMenu();

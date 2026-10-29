@@ -15,7 +15,9 @@ import { Secrets } from "./resources/secrets.js";
 import { Skills, type GithubFetcher } from "./resources/skills.js";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { security } from "./security.js";
 import { ZodError } from "zod";
 import { MusterDb } from "./db/index.js";
 import { EventBus } from "./events.js";
@@ -33,6 +35,7 @@ export interface CreateAppOptions {
   githubFetcher?: GithubFetcher;
   databasePath?: string;
   publicUrl?: string;
+  allowedHosts?: string[];
   enrollKey?: string | null;
   claimWaitMs?: number;
   autoFollowUp?: boolean;
@@ -57,6 +60,8 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
     console.error(error); return c.json({ error: "Internal server error" }, 500);
   });
   app.get("/health", (c) => c.json({ status: "ok", service: "muster" }));
+  // Registered after /health, which stays reachable for startup and container probes.
+  app.use("/*", security({ publicUrl: () => services.orchestrator.publicUrl, allowedHosts: options.allowedHosts }));
   app.route("/api/machine", machineRoutes(services));
   app.route("/api/events", eventRoutes(services));
   app.all("/api/mcp", (c) => handleExternalMcp(c.req.raw, services));
@@ -66,6 +71,11 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
   app.route("/api", localImageRoutes(services, options.imageMappings));
   app.route("/api", apiRoutes(services));
   app.all("/mcp", (c) => handleMcp(c.req.raw, services));
+  // Unmatched API and MCP paths must not fall through to the SPA document.
+  const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
+  app.all("/api", notFound);
+  app.all("/api/*", notFound);
+  app.all("/mcp/*", notFound);
 
   const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
   if ((options.serveWeb ?? process.env.NODE_ENV === "production") && existsSync(webRoot)) {
