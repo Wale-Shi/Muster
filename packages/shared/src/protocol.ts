@@ -34,6 +34,8 @@ export type AgentEvent = z.infer<typeof agentEventSchema>;
 export type TurnCompletePayload = z.infer<typeof turnCompleteSchema>;
 export type EventUpload = z.infer<typeof eventUploadSchema>;
 
+export const SYNC_RESET_EVENT = "sync.reset" as const;
+
 export interface ServerEvent {
   id?: string;
   turnId?: string;
@@ -44,6 +46,9 @@ export interface ServerEvent {
   conversationId?: string;
   payload: unknown;
 }
+
+/** Sent to one reconnecting client when its cursor predates the retained event log. */
+export interface SyncResetEvent extends ServerEvent { type: typeof SYNC_RESET_EVENT }
 
 export const DEFAULT_MODELS = Object.fromEntries(RUNTIMES.map((runtime) => [runtime.id, runtime.defaultModel])) as Record<Runtime, string>;
 // Chief coordinates rather than codes, so it defaults to the stronger planning model.

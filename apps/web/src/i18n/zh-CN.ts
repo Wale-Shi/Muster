@@ -387,6 +387,8 @@ export const messages: Messages = {
     "planMyNextFeature": "规划下一个功能",
     "whatNeedsMyAttention": "有什么需要我处理？",
     "waitingForAMachine": "等待机器接手",
+    "noMachineIsOnlineStartOneWithNpmRunDaemon": "没有在线机器。请运行 `npm run daemon` 启动一台。",
+    "noOnlineMachineSupportsTheRuntimeRuntime": "没有在线机器支持 {runtime} 运行时。请在守护进程机器上安装它的 CLI 并重启守护进程，或修改 Agent 的运行时。",
     "working": "正在处理…",
     "latestMessages": "最新消息",
     "dismissRuntimeWarning": "忽略运行警告",

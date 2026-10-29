@@ -88,7 +88,10 @@ export function TodoActions({
           <button
             className="button"
             disabled={
-              pending || todo.builds.at(-1)?.turns.at(-1)?.status !== "running"
+              pending ||
+              !["queued", "running"].includes(
+                todo.builds.at(-1)?.turns.at(-1)?.status ?? "",
+              )
             }
             onClick={() => run("stop")}
             title={t("ui.requestACooperativeStop")}

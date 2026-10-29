@@ -24,10 +24,10 @@ import {
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import { absolutePath, localPathLinks } from "../lib/localPaths";
 import remarkGfm from "remark-gfm";
-import type { Message, Todo } from "@muster/shared";
+import type { Message, Runtime, Todo } from "@muster/shared";
 import { QueuedMessages } from "./QueuedMessages";
 import { api } from "../api/client";
-import { useMessages } from "../api/queries";
+import { useMachines, useMessages } from "../api/queries";
 import { useRealtime } from "../api/realtime";
 import { Avatar, ErrorNotice, Loading } from "./ui";
 
@@ -175,6 +175,7 @@ export function Conversation({
   todoId,
   agentName = "Chief",
   status,
+  runtime,
   disabled,
   placeholder,
   reference,
@@ -186,6 +187,7 @@ export function Conversation({
   todoId?: string | undefined;
   agentName?: string;
   status?: "queued" | "running" | "idle";
+  runtime?: Runtime | undefined;
   disabled?: string | undefined;
   placeholder?: string;
   reference?: Todo | null;
@@ -195,9 +197,19 @@ export function Conversation({
 }) {
   const { t, label } = useI18n();
   const messages = useMessages(conversationId);
+  const machines = useMachines();
   const realtime = useRealtime();
   const activity = realtime.activity[conversationId];
   const currentStatus = status ?? activity?.status ?? "idle";
+  const online = machines.data?.filter((machine) => machine.online) ?? [];
+  // "Waiting for a machine" is only truthful when one could eventually claim the turn.
+  const queuedHint = !machines.data
+    ? t("ui.waitingForAMachine")
+    : !online.length
+      ? t("ui.noMachineIsOnlineStartOneWithNpmRunDaemon")
+      : runtime && !online.some((machine) => machine.runtimes.some((item) => item === runtime))
+        ? t("ui.noOnlineMachineSupportsTheRuntimeRuntime", { runtime })
+        : t("ui.waitingForAMachine");
   const [newProject, setNewProject] = useState(false);
   const navigate = useNavigate();
   const [text, setText] = useState("");
@@ -339,7 +351,7 @@ export function Conversation({
         {currentStatus !== "idle" && (
           <div className="live-status" role="status">
             <span className="pulse-dot" />
-            {currentStatus === "queued" ? t("ui.waitingForAMachine") : t("ui.working")}
+            {currentStatus === "queued" ? queuedHint : t("ui.working")}
             {currentStatus === "running" && activity?.detail && (
               <span className="dim">{label("status", activity.detail)}</span>
             )}

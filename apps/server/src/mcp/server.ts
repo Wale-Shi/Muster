@@ -29,6 +29,8 @@ function createMcpServer(services: AppServices, topicId: string | null, agentId:
     inputSchema: createTodoSchema.omit({ createdBy: true }).shape,
   }, async (input) => {
     if (!db.row("SELECT id FROM projects WHERE id=?", input.projectId)) throw new Error("Project not found");
+    for (const ref of [input.agentId, input.planAgentId]) if (ref && !db.row("SELECT id FROM agents WHERE id=?", ref)) throw new Error("Agent not found");
+    if (input.topicId && !db.row("SELECT id FROM topics WHERE id=?", input.topicId)) throw new Error("Topic not found");
     const todoId = id(); const timestamp = now(); const number = Number((db.row("SELECT COALESCE(max(number),0)+1 number FROM todos") ?? {}).number ?? 1);
     db.run("INSERT INTO todos VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, 'chief', ?, NULL, ?, ?, NULL)", todoId, number, input.projectId, input.title, input.spec, input.agentId ?? null, input.planAgentId ?? null, input.mode, JSON.stringify(input.tags), input.topicId ?? topicId, timestamp, timestamp);
     const todo = orchestrator.getTodo(todoId); services.events.emit({ type: "todo.created", todoId, payload: todo }); return result(todo);

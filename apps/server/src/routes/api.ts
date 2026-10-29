@@ -17,6 +17,11 @@ export function apiRoutes(services: AppServices): Hono {
   const app = new Hono();
   const { db, orchestrator, events } = services;
   const validateSkillIds = (ids?: string[]) => { if (ids?.some((id) => !db.row("SELECT id FROM skills WHERE id=?", id))) throw new StateError("Skill not found", 400); };
+  // Check references before inserting so a bad id is a clear 422 rather than a foreign-key 409.
+  const validateTodoRefs = (refs: { agentIds?: Array<string | null | undefined>; topicId?: string | null | undefined }) => {
+    for (const agentId of refs.agentIds ?? []) if (agentId && !db.row("SELECT id FROM agents WHERE id=?", agentId)) throw new StateError("Agent not found", 422);
+    if (refs.topicId && !db.row("SELECT id FROM topics WHERE id=?", refs.topicId)) throw new StateError("Topic not found", 422);
+  };
 
   app.get("/projects", (c) => c.json({ data: db.rows("SELECT * FROM projects ORDER BY created_at").map((row) => db.project(row)) }));
   app.post("/projects", async (c) => {
@@ -85,6 +90,7 @@ export function apiRoutes(services: AppServices): Hono {
   });
   app.post("/todos", async (c) => {
     const input = await body(c, createTodoSchema); if (!db.row("SELECT id FROM projects WHERE id = ?", input.projectId)) return c.json({ error: "Project not found" }, 422);
+    validateTodoRefs({ agentIds: [input.agentId, input.planAgentId], topicId: input.topicId });
     const todoId = id(); const timestamp = now(); const number = Number((db.row("SELECT COALESCE(max(number), 0) + 1 AS number FROM todos") ?? {}).number ?? 1);
     db.run("INSERT INTO todos VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?, NULL, ?, ?, NULL)", todoId, number, input.projectId, input.title, input.spec, input.agentId ?? null, input.planAgentId ?? null, input.mode, JSON.stringify(input.tags), input.createdBy, input.topicId ?? null, timestamp, timestamp);
     const todo = orchestrator.getTodo(todoId); events.emit({ type: "todo.created", todoId, payload: todo }); return c.json({ data: todo }, 201);
@@ -94,7 +100,7 @@ export function apiRoutes(services: AppServices): Hono {
     const builds = db.rows("SELECT * FROM builds WHERE todo_id = ? ORDER BY created_at", todo.id).map((buildRow) => { const build = db.build(buildRow); return { ...build, turns: db.rows("SELECT * FROM turns WHERE build_id = ? ORDER BY rowid", build.id).map((turn) => db.turn(turn)), documents: db.rows("SELECT * FROM documents WHERE build_id = ? ORDER BY kind, version", build.id).map((document) => db.document(document)) }; });
     return c.json({ data: { ...todo, builds } });
   });
-  app.patch("/todos/:id", async (c) => { const input = await body(c, updateTodoSchema); const todoId = c.req.param("id"); const current = db.row("SELECT * FROM todos WHERE id = ?", todoId); if (!current) return c.json({ error: "Todo not found" }, 404); db.run("UPDATE todos SET title=?, spec=?, agent_id=?, plan_agent_id=?, tags_json=?, updated_at=? WHERE id=?", input.title ?? current.title, input.spec ?? current.spec, input.agentId === undefined ? current.agent_id : input.agentId, input.planAgentId === undefined ? current.plan_agent_id : input.planAgentId, input.tags ? JSON.stringify(input.tags) : current.tags_json, now(), todoId); const todo = orchestrator.getTodo(todoId); events.emit({ type: "todo.changed", todoId, payload: todo }); return c.json({ data: todo }); });
+  app.patch("/todos/:id", async (c) => { const input = await body(c, updateTodoSchema); const todoId = c.req.param("id"); const current = db.row("SELECT * FROM todos WHERE id = ?", todoId); if (!current) return c.json({ error: "Todo not found" }, 404); validateTodoRefs({ agentIds: [input.agentId, input.planAgentId] }); db.run("UPDATE todos SET title=?, spec=?, agent_id=?, plan_agent_id=?, tags_json=?, updated_at=? WHERE id=?", input.title ?? current.title, input.spec ?? current.spec, input.agentId === undefined ? current.agent_id : input.agentId, input.planAgentId === undefined ? current.plan_agent_id : input.planAgentId, input.tags ? JSON.stringify(input.tags) : current.tags_json, now(), todoId); const todo = orchestrator.getTodo(todoId); events.emit({ type: "todo.changed", todoId, payload: todo }); return c.json({ data: todo }); });
   app.delete("/todos/:id", (c) => { try { orchestrator.close(c.req.param("id")); services.attachments.delete(c.req.param("id")); return c.body(null, 204); } catch (error) { throw error; } });
 
   app.post("/todos/:id/start", async (c) => { const input = await body(c, startTodoSchema); return c.json({ data: { turnId: orchestrator.start(c.req.param("id"), input.mode, input.agentId) } }, 202); });

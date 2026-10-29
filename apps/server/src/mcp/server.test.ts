@@ -27,6 +27,9 @@ describe("MCP server", () => {
     expect(created.response.status).toBe(200);
     const createdTodo = JSON.parse(created.json.result.content[0].text);
     expect(createdTodo).toMatchObject({ title: "From Chief", createdBy: "chief", phase: "todo" });
+    const missingAgent = await mcp({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "create_todo", arguments: { projectId, title: "Bad agent", spec: "", agentId: "missing", mode: "plan" } } });
+    expect(missingAgent.json.result.isError).toBe(true);
+    expect(missingAgent.json.result.content[0].text).toContain("Agent not found");
     const started = await mcp({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "start_todo", arguments: { todoId: createdTodo.id, mode: "plan" } } });
     expect(started.json.result.isError).not.toBe(true);
     expect((await requestJson(app, `/api/todos/${createdTodo.id}`)).json.data.phase).toBe("queued");

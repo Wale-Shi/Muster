@@ -3,14 +3,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
-import type { ServerEvent } from "@muster/shared";
+import type { Machine, Runtime, ServerEvent } from "@muster/shared";
 import { api } from "../api/client";
 import { RealtimeProvider } from "../api/realtime";
 import { Conversation } from "./Conversation";
 
 afterEach(() => vi.unstubAllGlobals());
 
-async function setup() {
+async function setup({ machines = [], status, runtime }: { machines?: Machine[]; status?: "queued" | "running" | "idle"; runtime?: Runtime } = {}) {
   let receive: ((event: { data: string }) => void) | undefined;
   vi.stubGlobal("EventSource", class {
     set onmessage(handler: (event: { data: string }) => void) { receive = handler; }
@@ -19,8 +19,9 @@ async function setup() {
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.spyOn(api, "messages").mockResolvedValue([]);
   vi.spyOn(api, "queuedMessages").mockResolvedValue([]);
+  vi.spyOn(api, "machines").mockResolvedValue(machines);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><MemoryRouter><RealtimeProvider><Conversation conversationId="topic" /></RealtimeProvider></MemoryRouter></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><MemoryRouter><RealtimeProvider><Conversation conversationId="topic" {...(status ? { status } : {})} {...(runtime ? { runtime } : {})} /></RealtimeProvider></MemoryRouter></QueryClientProvider>);
   await screen.findByText("How can I help?");
   const emit = (type: string, payload: unknown, extra: Partial<ServerEvent> = {}) => {
     act(() => receive?.({ data: JSON.stringify({ type, conversationId: "topic", turnId: "turn", payload, ...extra }) }));
@@ -29,6 +30,23 @@ async function setup() {
   const warn = () => emit("warning", { type: "warning", detail: "Selected model is at capacity." });
   return { emit, warn, user: userEvent.setup() };
 }
+
+const machine = (runtimes: Runtime[]): Machine => ({ id: "machine", name: "Test machine", concurrency: 1, runtimes, lastSeenAt: null, createdAt: "2026-01-01T00:00:00Z", online: true });
+
+it("tells the user when no machine is online for a queued turn", async () => {
+  await setup({ status: "queued", runtime: "devin" });
+  expect(await screen.findByText(/No machine is online\. Start one with/)).toBeInTheDocument();
+});
+
+it("names the runtime that no online machine supports", async () => {
+  await setup({ status: "queued", runtime: "devin", machines: [machine(["mock"])] });
+  expect(await screen.findByText(/No online machine supports the devin runtime\./)).toBeInTheDocument();
+});
+
+it("keeps the ordinary waiting copy when an online machine can run the turn", async () => {
+  await setup({ status: "queued", runtime: "mock", machines: [machine(["mock"])] });
+  expect(await screen.findByText(/Waiting for a machine/)).toBeInTheDocument();
+});
 
 it("shows a dismissible amber warning in the composer separately from Working status", async () => {
   const { emit, warn, user } = await setup();

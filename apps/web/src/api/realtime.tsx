@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Message, ServerEvent } from "@muster/shared";
+import { SYNC_RESET_EVENT, type Message, type ServerEvent } from "@muster/shared";
 
 type Activity = {
   status: "queued" | "running" | "idle";
@@ -92,6 +92,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       }
       const { type, conversationId, todoId } = event;
       const payload = record(event.payload);
+      // The server pruned past the client's cursor; every cached snapshot may be stale.
+      if (type === SYNC_RESET_EVENT) { void client.invalidateQueries(); return; }
       if (type.startsWith("schedule.")) void client.invalidateQueries({ queryKey: ["schedules"] });
       if (type.startsWith("connection.")) void client.invalidateQueries({ queryKey: ["connections"] });
       if (conversationId) {

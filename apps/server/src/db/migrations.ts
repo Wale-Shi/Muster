@@ -61,4 +61,6 @@ export const migrations = [
   ALTER TABLE agents_new RENAME TO agents;` },
   `ALTER TABLE machines ADD COLUMN models_json TEXT NOT NULL DEFAULT '{}';
   ALTER TABLE machines ADD COLUMN models_requested INTEGER NOT NULL DEFAULT 0;`,
+  `ALTER TABLE server_events ADD COLUMN created_at TEXT NOT NULL DEFAULT '';
+  CREATE INDEX server_events_created_idx ON server_events(created_at);`,
 ] as const;

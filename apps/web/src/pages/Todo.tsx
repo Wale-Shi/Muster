@@ -48,6 +48,13 @@ export function TodoPage() {
     todo.phase === "planning"
       ? (todo.planAgentId ?? todo.agentId)
       : todo.agentId;
+  const queuedTurn = todo.phase === "queued" ? build?.turns.at(-1) : undefined;
+  const planAgentQueued =
+    queuedTurn?.kind === "plan" ||
+    (queuedTurn?.kind === "revise" && todo.previousGate === "confirm");
+  const runtime = agents.data?.find(
+    (item) => item.id === (planAgentQueued ? (todo.planAgentId ?? todo.agentId) : agentId),
+  )?.runtime;
   const agent = agents.data?.find((item) => item.id === agentId);
   const project = projects.data?.find((item) => item.id === todo.projectId);
   const tokensIn = todo.builds.reduce((sum, item) => sum + item.tokensIn, 0);
@@ -153,6 +160,7 @@ export function TodoPage() {
             todoId={todo.id}
             agentName={agent?.name ?? t("ui.agent")}
             status={status}
+            runtime={runtime}
             disabled={
               canMessage
                 ? undefined

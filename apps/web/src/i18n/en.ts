@@ -386,6 +386,8 @@ export const en = {
     "planMyNextFeature": "Plan my next feature",
     "whatNeedsMyAttention": "What needs my attention?",
     "waitingForAMachine": "Waiting for a machine",
+    "noMachineIsOnlineStartOneWithNpmRunDaemon": "No machine is online. Start one with `npm run daemon`.",
+    "noOnlineMachineSupportsTheRuntimeRuntime": "No online machine supports the {runtime} runtime. Install its CLI on a daemon machine and restart the daemon, or change the agent’s runtime.",
     "working": "Working…",
     "latestMessages": "Latest messages",
     "dismissRuntimeWarning": "Dismiss runtime warning",

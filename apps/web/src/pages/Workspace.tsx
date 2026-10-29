@@ -179,6 +179,7 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
                 key={topic?.id ?? "none"}
                 conversationId={topic?.id ?? ""}
                 status={topic?.activity ?? "idle"}
+                runtime={agents.data?.find((agent) => agent.isChief)?.runtime}
                 disabled={!topic ? t("ui.createATopicToGetStarted") : undefined}
                 reference={reference}
                 onReferenceConsumed={consumeReference}

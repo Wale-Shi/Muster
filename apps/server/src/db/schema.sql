@@ -94,3 +94,7 @@ CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE api_keys (id TEXT PRIMARY KEY, name TEXT NOT NULL, prefix TEXT NOT NULL, hash TEXT NOT NULL UNIQUE, scopes_json TEXT NOT NULL, created_at TEXT NOT NULL, last_used_at TEXT, revoked_at TEXT);
 ALTER TABLE projects ADD COLUMN description TEXT NOT NULL DEFAULT '';
 CREATE TABLE attachments (id TEXT PRIMARY KEY, todo_id TEXT NOT NULL REFERENCES todos(id) ON DELETE CASCADE, name TEXT NOT NULL, size INTEGER NOT NULL, hash TEXT NOT NULL);
+
+-- Event log retention
+ALTER TABLE server_events ADD COLUMN created_at TEXT NOT NULL DEFAULT '';
+CREATE INDEX server_events_created_idx ON server_events(created_at);

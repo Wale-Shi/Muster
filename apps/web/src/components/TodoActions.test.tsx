@@ -12,7 +12,26 @@ const todo: TodoDetail = {
   createdBy: "user", topicId: null, previousGate: null,
   createdAt: "2026-10-25", updatedAt: "2026-10-25", doneAt: null, builds: [],
 };
+const build = (status: TodoDetail["builds"][number]["turns"][number]["status"]): TodoDetail["builds"] => [{
+  id: "build", todoId: "task", branch: "muster/conv-build", machineId: null, status: "active",
+  baseCommit: null, headCommit: null, tokensIn: 0, tokensOut: 0, durationMs: 0, createdAt: "2026-10-25",
+  turns: [{ id: "turn", buildId: "build", kind: "build", status, machineId: null, prompt: "", startedAt: null, endedAt: null, error: null, tokensIn: 0, tokensOut: 0 }],
+  documents: [],
+}];
 afterEach(() => localStorage.clear());
+
+it.each([
+  { phase: "queued" as const, turn: "queued" as const },
+  { phase: "building" as const, turn: "running" as const },
+])("enables Stop while the last turn is $turn", ({ phase, turn }) => {
+  const client = new QueryClient();
+  render(
+    <I18nProvider initial="en"><QueryClientProvider client={client}>
+      <TodoActions todo={{ ...todo, phase, builds: build(turn) }} onDone={() => {}} />
+    </QueryClientProvider></I18nProvider>,
+  );
+  expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+});
 
 it.each([
   { locale: "en" as const, done: "Done", confirm: "Confirm plan", reopen: "Reopen" },
