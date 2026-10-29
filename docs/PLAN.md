@@ -5,7 +5,7 @@
 
 ## 1. 调研结论（todos.dev 关键机制）
 
-| 概念 | todos.dev 行为 | MVP 是否实现 |
+| 概念 | todos.dev 行为 | 当前是否实现 |
 |---|---|---|
 | Workspace | 左侧 Chief 对话（多 Topic），右侧看板：Backlog / In progress / Needs you / Done(近 7 天)，可拖动分隔条 | ✅ |
 | Todo 阶段 | To Do → Queued → Planning → Confirm → Building → Review → Done，另有 Failed / Closed | ✅ |
@@ -13,7 +13,7 @@
 | Plan first / Run now | 启动时可选先出计划或直接构建 | ✅ |
 | Build | 一次执行；分支 `tds/conv-<id>`，独立 worktree，每轮提交 checkpoint | ✅（分支 `muster/conv-<id>`） |
 | Plan / Changes 文档 | 右侧面板，版本化（v1, v2…），diff 按文件展示 | ✅（版本化，简化版 diff 视图） |
-| Agents | 名字、角色描述、runtime + model、记忆、技能、权限开关 | ✅ 名字/角色/runtime/model；❌ 记忆、技能、权限 |
+| Agents | 名字、角色描述、runtime + model、记忆、技能、权限开关 | ✅ 名字/角色/runtime/model、记忆、技能、权限（push 分支、读取 secrets、新建/修改技能） |
 | Runtimes | 内置 pi + 20 种外部 CLI（Codex 走 `codex app-server`，Claude Code 走 Agent SDK，多数走 ACP） | ✅ Codex、Claude Code、pi、omp（RPC）、Gemini CLI、OpenCode、Qwen Code、Devin、Cline、dsh、Hermes、OpenClaw、Kiro、Auggie、Qoder、Droid（ACP）；❌ Cursor、Grok Build、Amp、Copilot、Antigravity |
 | Machines | `tds start` 守护进程注册机器，按并发上限（默认 6）认领任务 | ✅ `muster-daemon` |
 | 中途插话 (steer) | 运行中发送的消息排队，下一个工具调用后注入 | ✅（Codex `turn/steer`；Claude 下轮注入） |
@@ -21,7 +21,12 @@
 | MCP Server | 外部 Agent 通过 MCP 接入同一工作区 | ✅（Chief 复用同一 MCP 端点） |
 | Usage | token 用量、时长 | ✅ 基础统计 |
 | Teams / 多用户 / 登录 | | ❌（单用户本地，预留 team_id） |
-| Schedules / Skills / Memory / Connections / Secrets / AI review / 移动端 / 云机器 / GitHub PR | | ❌ 后续迭代 |
+| Schedules | 定时重复任务（按小时/天/周或仅一次），每个周期从标题与描述新建构建 | ✅（时区与夏令时正确处理，错过合并为一次） |
+| Skills | 技能库：文件夹/批量上传、公开 GitHub 导入、按内容哈希缓存到各 daemon | ✅ |
+| Memory | 每个 agent 的长期记忆，注入后续轮次 | ✅ |
+| Connections | 内置目录（Linear、GitHub、Notion、Jira/Confluence、Sentry 等）与自定义 HTTP/stdio MCP 服务 | ✅（OAuth 登录未支持） |
+| Secrets | 团队/项目加密 secrets，按权限投放给运行时 shell，输出脱敏 | ✅ |
+| AI review / 移动端 / 云机器 / GitHub PR | | ❌ 后续迭代 |
 
 视觉：暗色优先，zinc 色板（`--surface:#18181b` `--surface-secondary:#1f1f23` `--surface-tertiary:#27272a` `--surface-inset:#09090b` `--text-primary:#fafaf9` `--text-secondary:#d4d4d8` `--text-tertiary:#71717a` `--border-default:#27272a` `--border-strong:#3f3f46`），强调色 indigo-400，字体 Inter + JetBrains Mono，Tailwind。极简、高信息密度、圆角小、细边框。
 

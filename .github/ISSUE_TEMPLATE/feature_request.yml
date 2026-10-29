@@ -1,0 +1,46 @@
+name: Feature request
+description: Propose a capability or workflow change for Muster
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check the deferred list in
+        [PLAN §1](https://github.com/Wale-Shi/Muster/blob/main/docs/PLAN.md#1-调研结论todosdev-关键机制)
+        and the README roadmap before filing; some features are intentionally out of
+        scope for now.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is hard or impossible today, and who runs into it?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you want, including where it fits in the UI or API.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Current workarounds, other tools that solve this, or smaller changes that would be enough.
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Web UI
+        - Server / API / MCP
+        - Daemon / runtimes / worktrees
+        - Desktop app
+        - Docs
+        - Other
+    validations:
+      required: true

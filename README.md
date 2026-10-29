@@ -42,12 +42,14 @@ API contracts, catalog source URLs, verified CLI versions and limits.
 
 ## Settings and external assistants
 
-Open **Settings** from the sidebar or **⌘,**. General stores language, appearance
-and workspace name on the server. Notifications controls desktop alerts for
-confirmation, review, failure and completion, plus the Dock badge. The API keys
-tab creates revocable keys: copy the full key immediately, because it is shown
-only once. `read` grants read-only board tools; `chief` also grants task control,
-topic messages (queueing Chief) and schedule creation. Both scopes can use MCP.
+Open **Settings** from the sidebar or **⌘,**. General stores the workspace name on
+the server; language and appearance are per-device preferences kept in the
+browser's `localStorage`. Notifications (confirmation, review, failure and
+completion alerts plus the Dock badge) are stored on the server, so they apply to
+the desktop app. The API keys tab creates revocable keys: copy the full key
+immediately, because it is shown only once. `read` grants read-only board tools;
+`chief` also grants task control, topic messages (queueing Chief) and schedule
+creation. Both scopes can use MCP.
 
 The MCP tab provides setup and copyable client snippets using the current origin.
 Replace `http://localhost:7420` below with your workspace URL, and `<key>` with your
@@ -152,7 +154,22 @@ npm run build && npm start
 
 Open <http://localhost:7420>. The server serves the built web app and API together. Run `npm run daemon` in a separate terminal or process supervisor to execute tasks. Persist the server data and daemon home directories across restarts.
 
-Muster currently targets a single user on a trusted local machine. Web/API login and multi-user access control are deferred. The enrollment key protects machine enrollment only. Keep the service on loopback or behind your own authenticated access layer when hosting remotely. Writable model turns run with elevated permissions; use repositories and machines you trust.
+Muster currently targets a single user on a trusted local machine. Keep the service on loopback or behind your own authenticated access layer when hosting remotely; see the security model below.
+
+## Security model
+
+Muster has no login on its REST API: anyone who can reach the port can use the
+workspace. It is built for one user on a trusted machine. To keep other websites
+away, the server only accepts requests whose `Host` header is a loopback name, the
+hostname of `MUSTER_PUBLIC_URL`, or one listed in `MUSTER_ALLOWED_HOSTS`, and it
+rejects writes carrying a foreign `Origin` or `Sec-Fetch-Site: cross-site`. That
+stops malicious pages, including DNS rebinding, from driving the API; it is not
+authentication. Machine requests carry a per-machine token, `/api/mcp` requires a
+personal API key, and the optional enrollment key protects enrollment only. Agents
+run with elevated permissions inside their Git worktrees — writable turns use
+full-access or bypass modes — so point Muster only at repositories, CLIs and
+credentials you trust. Report vulnerabilities privately as described in
+[SECURITY.md](SECURITY.md).
 
 ## Desktop app
 
@@ -186,7 +203,8 @@ Set environment variables in the process environment; Muster does not automatica
 | `HOST` | `127.0.0.1` | Server bind address. |
 | `PORT` | `7420` | Server port. Vite's development proxy targets 7420. |
 | `MUSTER_DATA_DIR` | `~/.muster` | Server directory containing `muster.db`. |
-| `MUSTER_PUBLIC_URL` | `http://127.0.0.1:<port>` | Server origin used to construct MCP URLs; must be reachable from the daemon. |
+| `MUSTER_PUBLIC_URL` | `http://127.0.0.1:<port>` | Server origin used to construct MCP URLs; must be reachable from the daemon. Its hostname is also accepted in the `Host` header. |
+| `MUSTER_ALLOWED_HOSTS` | Unset | Comma-separated extra hostnames accepted in the `Host` header, for requests that reach the server under another name or IP. |
 | `MUSTER_ENROLL_KEY` | Unset | Optional enrollment secret; set the same value on server and daemon. |
 | `MUSTER_CLAIM_WAIT_MS` | `25000` | Server long-poll timeout in milliseconds. |
 | `MUSTER_CHIEF_AUTO_FOLLOW_UP` | `true` | Set to `false` to disable automatic Chief follow-up turns. |
@@ -201,7 +219,7 @@ npm run daemon -- --concurrency 2 --name laptop
 npm exec -- muster-daemon start --server http://server-host:7420
 ```
 
-For remote daemons, set `HOST` and a reachable `MUSTER_PUBLIC_URL` on the server. Each machine needs its own daemon home and access to the project repositories. Continued builds stay on their assigned machine; restarting a failed build permits another machine to claim a new worktree.
+For remote daemons, set `HOST` and a reachable `MUSTER_PUBLIC_URL` on the server. The public URL's hostname is allowed automatically; any other hostname or bare IP that reaches the server needs `MUSTER_ALLOWED_HOSTS`. Requests carrying a foreign `Host`, a cross-site `Origin`, or a non-JSON body on a JSON route are refused, so keep those values accurate. Each machine needs its own daemon home and access to the project repositories. Continued builds stay on their assigned machine; restarting a failed build permits another machine to claim a new worktree.
 
 ## Runtime setup
 
@@ -230,7 +248,7 @@ Install and authenticate the CLIs you want to use on the **daemon machine**, und
 - **Claude Code:** the adapter launches `claude` with stream-json input/output, partial messages, and per-process MCP configuration. The integration was checked against Claude Code 2.1.310. Plan turns use permission mode `plan`; writable turns use `bypassPermissions`.
 - **pi / omp:** the adapter speaks pi's JSONL RPC protocol (checked against pi-coding-agent 0.73 `docs/rpc.md`): instructions go to `--append-system-prompt`, sessions resume with `--session <file>`, and messages sent mid-run use pi's `steer`. pi has no MCP client, so each turn loads a generated extension (`-e`) that registers Muster's MCP tools and the agent's granted connections as `mcp__<server>__<tool>`. Plan turns restrict tools to `read`, `grep`, `find`, `ls` plus those MCP tools. Verified with the real pi 0.73.1 CLI against a scripted local model: bridged MCP calls, file writes, the plan-turn tool restriction and session resume after Confirm. omp is assumed to share pi's RPC protocol.
 - **ACP runtimes** (Gemini CLI, OpenCode, Qwen Code, Devin, Cline, dsh, Hermes, OpenClaw, Kiro, Auggie, Qoder, Droid): one adapter speaks the [Agent Client Protocol](https://agentclientprotocol.com). Sessions resume with `session/resume` or `session/load` when the agent supports it. ACP has no system prompt, so Muster's instructions lead the first prompt of a session (and again when they change). Permission requests are approved automatically; plan turns reject `edit`/`delete`/`move`/`execute` tool calls and switch to the agent's plan/read-only mode when it has one (Droid's `spec`); builds pick the most permissive mode offered (for example Droid's `auto-high`). Agents that cannot take HTTP MCP servers get them through a small stdio proxy. Messages sent mid-run are queued as the next prompt in the same turn. Usage is counted only when the agent reports it. A real task ran end to end on Hermes Agent 0.22.5. Qoder CLI 1.1.78 and Droid 0.249.0 ACP support (methods, HTTP MCP, modes) was read from their published packages; the other CLIs follow their documented ACP commands but were not installed here.
-- Choose a model available to your CLI account in the Agents editor. `default` (the default for the new runtimes) lets the CLI use its own configured model; an ACP agent that lists its models rejects an unknown id with the list. The seeded Chief uses Codex; change its runtime/model there if you prefer another.
+- Choose a model available to your CLI account in the Agents editor. `default` — the initial value for the seeded Chief and for new agents on every CLI runtime — passes no model, so the CLI uses its own configured one; an ACP agent that lists its models rejects an unknown id with the list. The seeded Chief uses Codex; change its runtime/model there if you prefer another.
 - Not yet supported (todos.dev drives them too): Cursor and Grok Build (installer-only CLIs whose flags could not be checked here), GitHub Copilot (its CLI ships as a packed binary), Amp (MCP only through a settings file, no plan mode or system prompt in execute mode) and Antigravity (`agy` registers MCP servers only in the user's global config).
 
 Live provider calls are outside automated validation. Adapter tests use local protocol peers and mock runs. See the [daemon guide](apps/daemon/README.md) for protocol details and Git merge behavior.
@@ -259,12 +277,18 @@ Read [the spec](docs/PLAN.md), [architecture and API contracts](docs/ARCHITECTUR
 
 ## Roadmap
 
-The MVP includes orchestration, Kanban, plan/review gates, worktrees, Codex/Claude runtimes, machine daemons, MCP, and basic usage reporting. Features deferred in [PLAN §1](docs/PLAN.md#1-调研结论todosdev-关键机制) include:
+Muster already ships orchestration, Kanban, plan/review gates, worktrees, 16
+coding-agent CLI runtimes (including pi and the ACP CLIs), machine daemons, MCP,
+basic usage reporting, desktop app, agent memory, skills, permission-gated
+secrets, schedules, connections, and the Settings/API-key surface. Features
+deferred in [PLAN §1](docs/PLAN.md#1-调研结论todosdev-关键机制) include:
 
-- Additional runtimes and built-in pi.
 - Teams, multiple users, and login.
-- AI review and OAuth sign-in for connections.
+- AI review.
+- OAuth sign-in for connections; stored credentials are used today.
 - Mobile clients, cloud machines, and GitHub pull request integration.
+- CLIs not supported yet: Cursor, Grok Build, GitHub Copilot, Amp, and
+  Antigravity (see [Runtime setup](#runtime-setup)).
 
 ## Contributing
 
@@ -276,12 +300,12 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, project conventions, and check
 
 ## 中文
 
-Muster 是开源、可自托管的 todos.dev 风格编码协作工作台。你与 Chief 对话，由它拆分任务并调度多个 Agent，在独立 Git worktree 中并行工作；通过看板跟踪进展，在计划确认和变更验收关口决定下一步。支持 Codex、Claude Code 与 MCP。
+Muster 是开源、可自托管的 todos.dev 风格编码协作工作台。你与 Chief 对话，由它拆分任务并调度多个 Agent，在独立 Git worktree 中并行工作；通过看板跟踪进展，在计划确认和变更验收关口决定下一步。支持 16 种编码 Agent CLI 运行时（含 Codex、Claude Code、pi 与多种 ACP CLI）、MCP、Agent 记忆/技能/权限、加密 secrets、定时任务、Connections 与桌面应用。
 
-需要 Node.js 22+、npm 和 Git。运行 `npm install`、`npm run dev`，另开终端运行 `npm run daemon`，访问 <http://localhost:5173>。生产模式运行 `npm run build && npm start`，访问 <http://localhost:7420>。当前面向单用户可信本地环境；完整方案见 [docs/PLAN.md](docs/PLAN.md)。
+需要 Node.js 22+、npm 和 Git。运行 `npm install`、`npm run dev`，另开终端运行 `npm run daemon`，访问 <http://localhost:5173>。生产模式运行 `npm run build && npm start`，访问 <http://localhost:7420>。当前面向单用户可信本地环境，REST API 没有登录；界面语言和外观仅保存在当前设备，工作区名称与通知偏好保存在服务端。完整方案见 [docs/PLAN.md](docs/PLAN.md)。
 
 ### Languages
 
-Muster supports English and Simplified Chinese. Choose a language in Settings → General; changes apply to the web UI and desktop menus. Language and appearance are stored server-side and cached locally for startup. A new workspace defaults to English and system appearance. Desktop menus initially follow system preferences until workspace settings arrive.
+Muster supports English and Simplified Chinese. Choose a language in Settings → General; changes apply to the web UI and desktop menus. Language and appearance are saved on this device only, in the browser's `localStorage`; the workspace name and notification preferences are the settings stored on the server. A device without a saved choice selects the first supported language in `navigator.languages` (any Chinese variant selects Simplified Chinese, otherwise English); the browser follows the system appearance and the desktop window starts dark. Desktop menus initially follow system preferences until the web UI reports its language.
 
 To add a web language, add one dictionary file exporting `messages: Messages` (including its native `languageName`) alongside `apps/web/src/i18n/en.ts` and one entry in the locale list in `packages/shared/src/locale.ts`; discovery and the language picker are automatic. Add matching native menu copy in the separate desktop dictionary in `apps/desktop/src/i18n.ts`, and extend automatic language detection if needed. English is the source of truth. Keep named placeholders unchanged, use complete sentences and `{one, other}` plural forms, and format values through `useI18n()`. Run the dictionary, switching and desktop locale tests as well as the normal project checks. User/Agent messages, product names, model IDs, code and Git branches are not translated; unknown external errors remain available verbatim.

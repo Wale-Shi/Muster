@@ -50,7 +50,8 @@ Build before e2e: it starts the compiled server and a mock-only daemon in tempor
 directories. It verifies plan/confirm/build/review/merge, steering, parallel worktrees,
 Chief MCP delegation, production SPA routes, and SSE replay. It cleans up its
 processes and data. Tests use temporary repositories and do not need a configured
-Git identity or model credentials. CI runs these checks on Node 22 and 24 on Linux.
+Git identity or model credentials. CI runs these checks on Node 22, 24 and 25 on
+Linux.
 
 ## Issues and pull requests
 
@@ -59,8 +60,6 @@ versions, and relevant logs with secrets removed. For feature proposals, explain
 the workflow and check the deferred features in PLAN §1 first.
 
 For pull requests, explain the problem, resulting behavior, and validation results.
-Include screenshots for UI changes and document any configuration changes. Agent
-contributors must leave changes uncommitted for coordinator review, as required
-by AGENTS.md.
+Include screenshots for UI changes and document any configuration changes.
 
 Contributions are provided under the project's [MIT license](LICENSE).

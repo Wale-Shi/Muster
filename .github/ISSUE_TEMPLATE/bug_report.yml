@@ -1,0 +1,76 @@
+name: Bug report
+description: Report a reproducible problem in Muster
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please search existing issues first. Do not report
+        security vulnerabilities here — see
+        [SECURITY.md](https://github.com/Wale-Shi/Muster/blob/main/SECURITY.md).
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: The smallest sequence of actions that shows the problem.
+      placeholder: |
+        1. Create a project at ...
+        2. Start a task with ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead, including any error message or state the task ended in.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: macOS, Linux or Windows, with the version or distribution.
+      placeholder: macOS 15.3
+    validations:
+      required: true
+  - type: input
+    id: node-npm
+    attributes:
+      label: Node and npm versions
+      description: Output of `node --version && npm --version`.
+      placeholder: v22.14.0 / 10.9.2
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime CLI and version
+      description: The agent runtime involved, if any, and its `--version` output. Also note whether Chief or a coding agent was running it.
+      placeholder: codex-cli 0.162.1
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant server, daemon or browser console output. Remove tokens, API keys, secrets and private repository contents before pasting.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Checklist
+      options:
+        - label: I removed secrets, tokens and private code from this report.
+          required: true
+        - label: This is not a security vulnerability (those go through SECURITY.md).
+          required: true

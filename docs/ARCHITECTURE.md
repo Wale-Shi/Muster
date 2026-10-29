@@ -19,9 +19,9 @@ The migration runner uses SQLite `user_version`; migration 1 creates the PLAN §
 - `mcp_tokens` stores per-turn bearer tokens.
 - A build with nullable `todo_id` and branch `chief:<topicId>` is the internal conversation container for Chief turns. Normal todo builds always have a todo and `muster/conv-<buildId>` branch.
 
-On first start, Muster creates a `Chief` agent (`codex`, `gpt-6-astra`, reasoning `medium`; shared `CHIEF_MODEL`) and a `General` topic. `chief.autoFollowUp` is represented by the `createApp({autoFollowUp})` server option and defaults to true; a persistent auto-follow-up control is not exposed. Shared `DEFAULT_MODELS` (derived from the runtime catalog) defines Codex `gpt-6.1-sol`, Claude `claude-sonnet-5-5`, Mock `mock`, and `default` (the CLI's own configured model) for the other runtimes; the web agent editor uses the same defaults. Existing explicitly configured agents are preserved.
+On first start, Muster creates a `Chief` agent (`codex`, `default`, reasoning `medium`; shared `CHIEF_MODEL`) and a `General` topic. `chief.autoFollowUp` is represented by the `createApp({autoFollowUp})` server option and defaults to true; a persistent auto-follow-up control is not exposed. Shared `DEFAULT_MODELS` (derived from the runtime catalog) is `default` for every CLI runtime — Muster passes no model and the CLI uses its own configured one — and `mock` for Mock; the web agent editor uses the same defaults. Existing explicitly configured agents are preserved.
 
-Migration 2 adds per-turn immutable agent/model snapshots, duration, heartbeat leases, and idempotent completion bodies. `event_batches` deduplicates uploads, `machine_claims` recovers claim responses, and `server_events` persists SSE replay. Queued messages link to their source user message and record an in-flight delivery turn. `schema.sql` is a current-schema reference; `migrations.ts` is executed on startup.
+Migration 2 adds per-turn immutable agent/model snapshots, duration, heartbeat leases, and idempotent completion bodies. `event_batches` deduplicates uploads, `machine_claims` recovers claim responses, and `server_events` persists SSE replay. A later migration adds `server_events.created_at`: the log drops events older than 24 hours while always keeping the newest 5,000, and a client whose `Last-Event-ID` predates the retained window gets one `sync.reset` event telling the web app to refetch every query. Queued messages link to their source user message and record an in-flight delivery turn. `schema.sql` is a current-schema reference; `migrations.ts` is executed on startup.
 
 ## Local commands
 
@@ -35,6 +35,10 @@ Migration 2 adds per-turn immutable agent/model snapshots, duration, heartbeat l
 ## REST API
 
 The `{data: ...}` envelope described below applies to the web-facing `/api` routes, not the machine protocol, whose exact top-level responses are documented separately.
+
+### Request security
+
+Every route except `/health` passes one middleware that assumes the browser can be hostile. The `Host` hostname must be a loopback name (`localhost`, `127.0.0.1`, `[::1]`, `*.localhost`), the hostname of `MUSTER_PUBLIC_URL`, or one listed in `MUSTER_ALLOWED_HOSTS`; anything else gets `403 {error: "Host not allowed"}`, which stops DNS-rebinding pages from reading responses or reaching any endpoint, including `/api/machine`, `/api/mcp`, `/mcp` and the static app. Unsafe methods (anything but `GET`, `HEAD` and `OPTIONS`) additionally require a same-origin `Origin`, when one is present, or the `MUSTER_PUBLIC_URL` origin, and reject `Sec-Fetch-Site: cross-site`; requests without an `Origin` header (curl, the daemon, MCP clients) are accepted, and the `Host` check still applies. Route bodies must declare `application/json` (`; charset=...` and `+json` suffixes are fine), so a `text/plain` POST from another page cannot be parsed as JSON and is answered `415 {error: "Expected application/json"}` before its handler runs. Multipart uploads are covered by the origin rule. Unmatched `/api` and `/mcp` paths answer `404 {error: "Not found"}` instead of the SPA document. The Vite proxy and the desktop window keep working because both keep a loopback `Host` and a matching `Origin`.
 
 ### Projects
 
@@ -75,9 +79,9 @@ The `{data: ...}` envelope described below applies to the web-facing `/api` rout
 | Method | Path | Request / response |
 |---|---|---|
 | GET | `/api/todos` | `Todo[]`; filters: `phase`, `projectId`, `agentId`, `tag` |
-| POST | `/api/todos` | `{projectId, title, spec?, agentId?, planAgentId?, mode?, tags?, createdBy?, topicId?}` → `Todo` (201) |
+| POST | `/api/todos` | `{projectId, title, spec?, agentId?, planAgentId?, mode?, tags?, createdBy?, topicId?}` → `Todo` (201); unknown project/agent/topic → 422 |
 | GET | `/api/todos/:id` | `Todo & {builds: (Build & {turns: Turn[], documents: Document[]})[]}` |
-| PATCH | `/api/todos/:id` | any of `{title, spec, agentId, planAgentId, tags}` → `Todo` |
+| PATCH | `/api/todos/:id` | any of `{title, spec, agentId, planAgentId, tags}` → `Todo`; unknown agent → 422 |
 | DELETE | `/api/todos/:id` | closes rather than physically deleting; 204 |
 | POST | `/api/todos/:id/start` | `{mode: "plan"|"run", agentId?}` → `{turnId}` (202) |
 | POST | `/api/todos/:id/confirm` | no body required → `{turnId}` (202) |
@@ -308,7 +312,7 @@ On this restricted build host, native application registration aborts Electron i
 
 ## Internationalization
 
-Web copy lives in `apps/web/src/i18n`: the nested English dictionary defines `MessageKey` and the recursive `Messages` shape, enforced for Simplified Chinese (`zh-CN`). `I18nProvider` selects a validated `muster.locale` preference or detects Chinese from any `zh*` entry in `navigator.languages` (otherwise English), updates the HTML language/title and exposes `useI18n()`. Unsupported stored preferences fall back to detection. Once loaded, Phase C server settings supersede the startup locale/theme cache. Dictionary modules and native picker names are discovered from the shared locale list. `t(key, params)` interpolates named values and selects `{one, other}` forms with `Intl.PluralRules`; date, relative time, number and duration helpers use the active locale. Phase, runtime and status labels have centralized dictionaries. Tests verify nonempty copy, placeholder parity and live language switching. Components rendered without a provider default to English, keeping isolated tests deterministic.
+Web copy lives in `apps/web/src/i18n`: the nested English dictionary defines `MessageKey` and the recursive `Messages` shape, enforced for Simplified Chinese (`zh-CN`). `I18nProvider` selects a validated `muster.locale` preference or detects Chinese from any `zh*` entry in `navigator.languages` (otherwise English), updates the HTML language/title and exposes `useI18n()`. Unsupported stored preferences fall back to detection. Language and appearance remain per-device preferences in that cache; the server stores the workspace name and notification preferences, which the desktop reads. Dictionary modules and native picker names are discovered from the shared locale list. `t(key, params)` interpolates named values and selects `{one, other}` forms with `Intl.PluralRules`; date, relative time, number and duration helpers use the active locale. Phase, runtime and status labels have centralized dictionaries. Tests verify nonempty copy, placeholder parity and live language switching. Components rendered without a provider default to English, keeping isolated tests deterministic.
 
 System messages with `meta.todoId` and a known `meta.phase` render a translated notice. New notices include `todoNumber` and `todoTitle`; legacy structured notices retain their original task identity. Stored English content and Chief prompts remain unchanged; unstructured history, user/agent text, tools, unknown runtime diagnostics and unknown errors retain their source content. Known API error messages are mapped at render time, so switching languages also updates visible errors.
 
@@ -364,7 +368,7 @@ When `pushBranch` is true, a successful writable runtime result is checkpointed 
 
 Checked on the installed **codex-cli 0.162.1** with `app-server generate-ts` and `generate-json-schema`: `ThreadStartParams` and `ThreadResumeParams` accept a JSON `config`; `SandboxPolicy` has `readOnly {networkAccess:boolean}` and no additional read-root field. The [official config schema](https://developers.openai.com/codex/config-schema.json) defines `ShellEnvironmentPolicyToml.set` as a string map, and the [advanced configuration guide](https://learn.chatgpt.com/docs/config-file/config-advanced) describes the shell environment policy. Model-free protocol peers assert the actual adapter payload on new/resumed threads and the subprocess environment; a Claude peer launches a real `/bin/sh` child to verify inheritance. No paid model API is called.
 
-**Host limitation:** starting the installed Codex sandbox is rejected here with `sandbox-exec: sandbox_apply: Operation not permitted`. A direct installed app-server configuration-read attempt also fails because this task cannot initialize SQLite state under `/Users/wale/.codex`. Therefore actual 0.162.1 sandbox reads outside a worktree and real model-issued shell environment propagation are not claimed as verified. Plan SKILL.md inlining avoids depending on those reads; optional supporting-file access still needs validation on an unrestricted daemon host. Protocol-peer checks and generated types establish our wire contract, not full CLI execution acceptance.
+**Host limitation:** starting the installed Codex sandbox is rejected here with `sandbox-exec: sandbox_apply: Operation not permitted`. A direct installed app-server configuration-read attempt also fails because this task cannot initialize SQLite state under `~/.codex`. Therefore actual 0.162.1 sandbox reads outside a worktree and real model-issued shell environment propagation are not claimed as verified. Plan SKILL.md inlining avoids depending on those reads; optional supporting-file access still needs validation on an unrestricted daemon host. Protocol-peer checks and generated types establish our wire contract, not full CLI execution acceptance.
 
 Skill imports reject absolute/traversing/backslash paths, duplicates, symlinks on server-read folders, non-regular files, more than 200 files and more than 5 MB. Multipart and reviewed imports also bound the entire upload (bulk shares this bound). Browser/desktop directory uploads contain only file bytes and relative paths; they cannot expose the original filesystem's symlink metadata. GitHub imports inspect the fetched filesystem, reject symlinks and use a temporary shallow sparse clone with disabled prompts/hooks; public access requires git/network access. Ref names containing `/` are ambiguous in GitHub tree URLs and are not supported; use a slash-free branch/tag. The clone itself can consume network/disk before the post-checkout 5 MB validation. Windows/macOS/Linux share the JSON archive format, but this change's tests run on this macOS host.
 
@@ -488,8 +492,10 @@ Migration 6 adds `settings(key,value)` (JSON values), `api_keys`, project `descr
 and attachment metadata. GET/PATCH `/api/settings` exposes validated workspace name,
 language (`en|zh-CN`), appearance (`light|dark|system`), and notifications. GET/PATCH
 `/api/settings/notifications` exposes per-phase `confirm`, `review`, `failed`, `done`
-and independent `dockBadge` booleans (all default on). The renderer applies saved
-language/appearance globally; the desktop main process reads preferences before a
+and independent `dockBadge` booleans (all default on). The renderer keeps language
+and appearance per device in `localStorage` and applies them globally; workspace
+name and notifications are the settings it reads from the server. The desktop main
+process reads notification preferences before a
 notification and on status polling. A disabled Dock badge clears its count. Native
 notifications include Done. Browser settings explain their desktop-only effect.
 

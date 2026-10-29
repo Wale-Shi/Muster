@@ -8,6 +8,6 @@ Muster is an open-source, self-hostable take on todos.dev. Read `docs/PLAN.md` f
 - Keep modules small and readable; no speculative abstractions. Match surrounding style.
 - Every package has `build`, `test` (Vitest) and `typecheck` scripts; root scripts fan out to them.
 - Never call real model APIs in tests: use the `mock` runtime.
-- Do not commit; the coordinator reviews and commits each milestone.
-- Stay inside the directories your milestone owns unless the brief says otherwise.
+- Keep changes focused on the issue at hand and leave unrelated local work untouched.
+- Do not commit unless the user asks you to.
 - Finish by running `npm run typecheck && npm test` for what you touched and report results honestly.

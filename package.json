@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Wale-Shi/Muster.git"
+  },
+  "homepage": "https://github.com/Wale-Shi/Muster#readme",
+  "bugs": {
+    "url": "https://github.com/Wale-Shi/Muster/issues"
+  },
   "engines": {
     "node": ">=22"
   },
