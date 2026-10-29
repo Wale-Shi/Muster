@@ -1,6 +1,6 @@
 import type { Message, Runtime, TurnKind } from "./types.js";
 import type { z } from "zod";
-import { RUNTIMES } from "./runtimes.js";
+import { CLI_DEFAULT_MODEL, RUNTIMES } from "./runtimes.js";
 import type { agentEventSchema, turnCompleteSchema, eventUploadSchema } from "./schemas.js";
 
 export interface TurnJob {
@@ -51,5 +51,5 @@ export interface ServerEvent {
 export interface SyncResetEvent extends ServerEvent { type: typeof SYNC_RESET_EVENT }
 
 export const DEFAULT_MODELS = Object.fromEntries(RUNTIMES.map((runtime) => [runtime.id, runtime.defaultModel])) as Record<Runtime, string>;
-// Chief coordinates rather than codes, so it defaults to the stronger planning model.
-export const CHIEF_MODEL = { runtime: "codex", model: "gpt-6-astra", reasoning: "medium" } as const;
+// Chief uses the CLI's configured model; change it in the Chief agent's settings.
+export const CHIEF_MODEL = { runtime: "codex", model: CLI_DEFAULT_MODEL, reasoning: "medium" } as const;

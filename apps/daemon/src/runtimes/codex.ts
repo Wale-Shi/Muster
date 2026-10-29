@@ -1,4 +1,4 @@
-import type { TurnJob } from "@muster/shared";
+import { CLI_DEFAULT_MODEL, type TurnJob } from "@muster/shared";
 import type { Runtime, RuntimeContext, RuntimeResult, RunningTurn } from "./types.js";
 import { JsonProcess, type Wire } from "./process.js";
 import { errorText } from "../util.js";
@@ -96,7 +96,7 @@ export class CodexRuntime implements Runtime {
         // sandbox. `never` rejects MCP calls that would otherwise need approval.
         mcp_servers: { ...Object.fromEntries((job.connections ?? []).map((c) => [c.identifier, { default_tools_approval_mode: "approve", ...(c.transport === "http" ? { url: c.url, http_headers: c.headers ?? {} } : { command: c.command, args: c.args ?? [], env: c.env ?? {} }) }])), muster: { url: job.mcp.url, required: true, default_tools_approval_mode: "approve", http_headers: { Authorization: `Bearer ${job.mcp.token}` } } },
       };
-      const params = { cwd: ctx.cwd, model: job.agent.model, developerInstructions: job.systemInstructions, approvalPolicy: "never", sandbox: job.readOnly ? "read-only" : "danger-full-access", config };
+      const params = { cwd: ctx.cwd, ...(job.agent.model && job.agent.model !== CLI_DEFAULT_MODEL ? { model: job.agent.model } : {}), developerInstructions: job.systemInstructions, approvalPolicy: "never", sandbox: job.readOnly ? "read-only" : "danger-full-access", config };
       const response = await rpc(threadId ? "thread/resume" : "thread/start", { ...params, ...(threadId ? { threadId } : {}) });
       threadId = String(response.thread.id);
       if (stopped) { settle("stopped"); return; }

@@ -21,10 +21,10 @@ it("explains why Create is disabled when Role is missing, using the schema's req
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "New agent" }));
   await user.type(screen.getByRole("textbox", { name: "Name (required)" }), "Mocky");
-  // Models come from what machines reported; the runtime default is replaced by the first one.
+  // Codex and Claude default to the CLI's own model, not to a reported one.
   await screen.findByRole("option", { name: "Codex" });
   await user.selectOptions(screen.getByRole("combobox", { name: "Runtime (required)" }), "codex");
-  expect(screen.getByRole("combobox", { name: "Model (required)" })).toHaveValue("gpt-a");
+  expect(screen.getByRole("combobox", { name: "Model (required)" })).toHaveValue("default");
   expect([...screen.getByRole("combobox", { name: "Reasoning" }).querySelectorAll("option")].map((o) => o.textContent)).toEqual(["Default", "low", "high"]);
   await user.selectOptions(screen.getByRole("combobox", { name: "Runtime (required)" }), "mock");
   expect(screen.getByRole("combobox", { name: "Model (required)" })).toHaveValue("mock");

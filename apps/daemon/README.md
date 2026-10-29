@@ -68,8 +68,9 @@ Relevant generated types: `InitializeParams`, `ThreadStartParams`,
 
 - Stdio messages are newline-delimited JSON-RPC envelopes. Send `initialize`
   with `clientInfo` and `capabilities:null`, then an `initialized` notification.
-- `thread/start` and `thread/resume` accept cwd, model, developer instructions,
-  approval policy, sandbox, and per-thread JSON `config`. Resume uses `threadId`.
+- `thread/start` and `thread/resume` accept cwd, an optional model, developer
+  instructions, approval policy, sandbox, and per-thread JSON `config`. Resume
+  uses `threadId`; the model is omitted when the agent uses `default`.
   Muster passes `approvalPolicy:"never"`, `read-only` for plan turns and
   `danger-full-access` for writable turns. The MCP URL and bearer header are
   passed in `config.mcp_servers.muster.{url,required:true,http_headers}` on both start/resume,

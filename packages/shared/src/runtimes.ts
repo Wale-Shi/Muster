@@ -19,8 +19,8 @@ export interface RuntimeInfo {
 export const CLI_DEFAULT_MODEL = "default";
 
 export const RUNTIMES = [
-  { id: "codex", label: "Codex", commands: ["codex"], args: ["app-server"], protocol: "codex", defaultModel: "gpt-6.1-sol", install: "npm i -g @openai/codex" },
-  { id: "claude", label: "Claude Code", commands: ["claude"], args: [], protocol: "claude", defaultModel: "claude-sonnet-5-5", install: "https://claude.com/claude-code" },
+  { id: "codex", label: "Codex", commands: ["codex"], args: ["app-server"], protocol: "codex", defaultModel: CLI_DEFAULT_MODEL, install: "npm i -g @openai/codex" },
+  { id: "claude", label: "Claude Code", commands: ["claude"], args: [], protocol: "claude", defaultModel: CLI_DEFAULT_MODEL, install: "https://claude.com/claude-code" },
   { id: "pi", label: "pi", commands: ["pi"], args: ["--mode", "rpc"], protocol: "pi", defaultModel: CLI_DEFAULT_MODEL, install: "npm i -g @mariozechner/pi-coding-agent" },
   { id: "omp", label: "omp", commands: ["omp"], args: ["--mode", "rpc"], protocol: "pi", defaultModel: CLI_DEFAULT_MODEL, install: "curl -fsSL https://omp.sh/install | sh" },
   { id: "gemini", label: "Gemini CLI", commands: ["gemini"], args: ["--acp"], protocol: "acp", defaultModel: CLI_DEFAULT_MODEL, install: "npm i -g @google/gemini-cli" },

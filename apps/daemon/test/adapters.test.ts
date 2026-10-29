@@ -11,7 +11,7 @@ const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 async function context() { const cwd = await mkdtemp(join(tmpdir(), "muster-adapter-")); roots.push(cwd); const events: AgentEvent[] = []; return { cwd, events, emit: (event: AgentEvent) => { events.push(event); } }; }
 // Local protocol peers exercise the real process/stdio adapters, never model APIs.
-const codexPeer = (readOnly = true, notifications = "") => `
+const codexPeer = (readOnly = true, notifications = "", modelCheck = "p.model==='test-only'") => `
 const readline = require('node:readline');
 const send = x => process.stdout.write(JSON.stringify(x)+'\\n');
 const notify = (method, params) => send({method,params});
@@ -25,6 +25,7 @@ readline.createInterface({input:process.stdin}).on('line', line => {
   if(p.config.mcp_servers.muster.default_tools_approval_mode!=='approve') throw Error('Muster MCP approval');
   if(JSON.stringify(Object.keys(p.config))!==JSON.stringify(['shell_environment_policy','mcp_servers'])||JSON.stringify(Object.keys(p.config.mcp_servers))!==JSON.stringify(['muster'])) throw Error('MCP approval must be scoped to Muster');
   if(p.sandbox!==${JSON.stringify(readOnly ? "read-only" : "danger-full-access")}) throw Error('sandbox');
+  if(!(${modelCheck})) throw Error('model');
   if(m.method==='thread/resume' && p.threadId!=='thread-test') throw Error('resume');
   reply({thread:{id:'thread-test'}});
  }
@@ -121,6 +122,7 @@ it("Claude streams, accepts additional user messages, resumes, and returns usage
 const readline=require('node:readline');
 const args=process.argv.slice(1);
 if(!args.includes('--include-partial-messages')||!args.includes('--resume')||args[args.indexOf('--resume')+1]!=='session-test') throw Error('CLI args');
+if(args[args.indexOf('--model')+1]!=='mock-1') throw Error('CLI model');
 const mcp=JSON.parse(args[args.indexOf('--mcp-config')+1]);
 if(mcp.mcpServers.muster.headers.Authorization!=='Bearer test-only'||mcp.mcpServers.muster.url!=='http://localhost:7420/mcp'||mcp.mcpServers.muster.type!=='http') throw Error('MCP');
 if(args[args.indexOf('--system-prompt-snapshot')+1]!=='off') throw Error('stale instructions');
@@ -148,6 +150,15 @@ it("Claude interruption terminates the child process", async () => {
   const ctx = await context();
   const running = new ClaudeRuntime(process.execPath, ["-e", "setInterval(()=>{},1000)", "--"]).start(makeJob(), ctx);
   await running.interrupt(); expect((await running.result).status).toBe("stopped");
+});
+it("Codex and Claude leave the model to the CLI when the agent uses the default", async () => {
+  const ctx = await context();
+  const running = new CodexRuntime(process.execPath, ["-e", codexPeer(true, "", "!('model' in p)"), "--"]).start(makeJob({ readOnly: true, agent: { runtime: "codex", model: "default", reasoning: "high", role: "test" } }), ctx);
+  await until(async () => ctx.events.length, (length) => length >= 5);
+  await running.steer("More");
+  expect((await running.result).status).toBe("done");
+  const peer = `const assert=require('node:assert/strict'); const args=process.argv.slice(1); assert.equal(args.includes('--model'),false); require('node:readline').createInterface({input:process.stdin}).on('line',()=>process.stdout.write(JSON.stringify({type:'result',subtype:'success',result:'Done',usage:{}})+'\\n'));`;
+  expect((await new ClaudeRuntime(process.execPath, ["-e", peer, "--"]).start(makeJob({ agent: { runtime: "claude", model: "default", reasoning: null, role: "test" } }), ctx).result).status).toBe("done");
 });
 
 const grantedConnections = [

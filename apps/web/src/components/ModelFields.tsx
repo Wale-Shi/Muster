@@ -27,7 +27,7 @@ export function runtimeModels(machines: Machine[] | undefined, runtime: Runtime)
 }
 
 /** Whether the runtime's adapter can leave the model choice to the CLI. */
-const allowsCliDefault = (runtime: Runtime) => !["codex", "claude", "mock"].includes(runtimeInfo(runtime).protocol);
+const allowsCliDefault = (runtime: Runtime) => runtimeInfo(runtime).protocol !== "mock";
 
 /** The model to preselect when switching to a runtime: its default if offered, else the first reported one. */
 export function initialModel(machines: Machine[] | undefined, runtime: Runtime): string {
@@ -37,10 +37,11 @@ export function initialModel(machines: Machine[] | undefined, runtime: Runtime):
   return models[0]!.id;
 }
 
-/** Reasoning levels the chosen model supports, or a generic ladder when unknown. */
+/** Reasoning levels the chosen model supports, or every level its runtime reports, or a generic ladder. */
 export function reasoningLevels(machines: Machine[] | undefined, runtime: Runtime, model: string): string[] {
-  const levels = runtimeModels(machines, runtime).models.find((m) => m.id === model)?.reasoning;
-  return levels?.length ? levels : FALLBACK_REASONING;
+  const models = runtimeModels(machines, runtime).models;
+  const levels = model === CLI_DEFAULT_MODEL ? models.flatMap((m) => m.reasoning ?? []) : models.find((m) => m.id === model)?.reasoning;
+  return levels?.length ? [...new Set(levels)] : FALLBACK_REASONING;
 }
 
 /** Keeps a reasoning level only if the newly chosen model supports it. */
