@@ -41,6 +41,38 @@ describe("machine protocol", () => {
     expect(services.db.rows("SELECT * FROM messages WHERE conversation_id=?", job.buildId)).toHaveLength(0);
     expect(services.db.row("SELECT status FROM turns WHERE id=?", job.turnId)?.status).toBe("running");
   });
+  it("keeps a machine's identity when its daemon re-enrolls with new runtimes", async () => {
+    const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
+    const first = await enroll(app);
+    const again = (await requestJson(app, "/api/machine/enroll", "POST", { name: "renamed", runtimes: ["mock", "qoder"], concurrency: 2, previousToken: first.token })).json;
+    expect(again).toEqual(first);
+    expect(services.db.rows("SELECT name, runtimes_json, concurrency FROM machines")).toEqual([{ name: "renamed", runtimes_json: '["mock","qoder"]', concurrency: 2 }]);
+    expect((await requestJson(app, "/api/machine/enroll", "POST", { name: "other", runtimes: ["mock"], previousToken: "unknown" })).json.machineId).not.toBe(first.machineId);
+  });
+  it("moves conversations and task builds off an offline executor with a fresh session", async () => {
+    const { app, services } = createApp({ claimWaitMs: 0, autoFollowUp: false }); databases.push(services.db);
+    const { db, orchestrator, scheduler } = services;
+    db.run("UPDATE agents SET runtime='mock', model='mock' WHERE is_chief=1");
+    const { projectId, agentId } = await seedProjectAndAgent(app);
+    const old = await enroll(app, 2);
+    const topicId = orchestrator.topicFor(projectId);
+    orchestrator.enqueueChief(topicId, "first");
+    const chiefTurn = scheduler.claim(old.token)!;
+    scheduler.complete(old.token, chiefTurn.turnId, { status: "done", sessionState: { threadId: "on-old-machine" } });
+    const todoId = await createTodo(app, projectId, agentId); orchestrator.start(todoId);
+    const build = scheduler.claim(old.token)!;
+    scheduler.complete(old.token, build.turnId, { status: "done", diff: "x" });
+    orchestrator.message(todoId, "revise");
+    orchestrator.enqueueChief(topicId, "second");
+    const replacement = await enroll(app, 2);
+    expect(scheduler.claim(replacement.token)).toBeNull(); // the old machine is still online
+    db.run("UPDATE machines SET last_seen_at=? WHERE id=?", "2000-01-01T00:00:00.000Z", old.machineId);
+    const moved = [scheduler.claim(replacement.token)!, scheduler.claim(replacement.token)!];
+    expect(moved).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "revise", todoId, buildId: build.buildId, sessionState: null }),
+      expect.objectContaining({ kind: "chief", topicId, sessionState: null }),
+    ]));
+  });
   it("enrolls, claims, persists events, completes and advances phase", async () => {
     const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
     const { projectId, agentId } = await seedProjectAndAgent(app); const todoId = await createTodo(app, projectId, agentId); const machine = await enroll(app);

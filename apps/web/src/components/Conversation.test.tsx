@@ -33,19 +33,19 @@ async function setup({ machines = [], status, runtime }: { machines?: Machine[];
 
 const machine = (runtimes: Runtime[]): Machine => ({ id: "machine", name: "Test machine", concurrency: 1, runtimes, lastSeenAt: null, createdAt: "2026-01-01T00:00:00Z", online: true });
 
-it("tells the user when no machine is online for a queued turn", async () => {
+it("tells the user when the local executor is not running for a queued turn", async () => {
   await setup({ status: "queued", runtime: "devin" });
-  expect(await screen.findByText(/没有在线机器。请运行/)).toBeInTheDocument();
+  expect(await screen.findByText(/本地执行器没有运行。/)).toBeInTheDocument();
 });
 
-it("names the runtime that no online machine supports", async () => {
+it("names a runtime whose CLI is not installed", async () => {
   await setup({ status: "queued", runtime: "devin", machines: [machine(["mock"])] });
-  expect(await screen.findByText(/没有在线机器支持 devin 运行时。/)).toBeInTheDocument();
+  expect(await screen.findByText(/本机没有找到 devin 的 CLI。/)).toBeInTheDocument();
 });
 
-it("keeps the ordinary waiting copy when an online machine can run the turn", async () => {
+it("keeps the ordinary waiting copy when the executor can run the turn", async () => {
   await setup({ status: "queued", runtime: "mock", machines: [machine(["mock"])] });
-  expect(await screen.findByText(/等待机器接手/)).toBeInTheDocument();
+  expect(await screen.findByText(/等待开始执行/)).toBeInTheDocument();
 });
 
 it("shows a dismissible amber warning in the composer separately from Working status", async () => {

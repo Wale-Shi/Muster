@@ -2458,3 +2458,6 @@ svg { stroke-width: 1.75; }
 .card-live span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-live.tool { color: var(--accent); }
 .card-agent { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+
+/* An agent whose CLI is not installed on this computer. */
+.badge.warning { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 40%, transparent); margin-left: 6px; }

@@ -20,7 +20,6 @@ export class Connections {
     const old = key ? this.get(key) : undefined; const input = connectionSchema.parse(old ? { ...old, ...value as object } : value);
     if (old && old.identifier !== input.identifier) throw new StateError("Connection identifier is immutable", 400);
     if (this.db.row("SELECT id FROM connections WHERE identifier=? AND id<>?", input.identifier, key ?? "")) throw new StateError("Connection identifier already exists", 409);
-    if (input.machineId && !this.db.row("SELECT id FROM machines WHERE id=?", input.machineId)) throw new StateError("Machine not found", 400);
     const connectionId = key ?? id(); const encrypted = this.vault.encrypt(JSON.stringify(input.secrets ?? (key ? this.values(key) : {})), `connection:${connectionId}:${input.identifier}`);
     this.db.run(`INSERT INTO connections VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,catalog_id=excluded.catalog_id,transport=excluded.transport,url=excluded.url,command=excluded.command,args_json=excluded.args_json,machine_id=excluded.machine_id,secret_json_ciphertext=excluded.secret_json_ciphertext,iv=excluded.iv,tag=excluded.tag,updated_at=excluded.updated_at`, connectionId, input.identifier, input.name, input.catalogId ?? null, input.transport, input.transport === "http" ? input.url : null, input.transport === "stdio" ? input.command : null, JSON.stringify(input.args), input.machineId ?? null, encrypted.ciphertext, encrypted.iv, encrypted.tag, now(), now());
     this.changed(); return this.get(connectionId);
@@ -36,13 +35,10 @@ export class Connections {
     const ids = new Set(this.db.agent(r).connectionIds); if (grant) ids.add(connectionId); else ids.delete(connectionId);
     this.db.run("UPDATE agents SET connection_ids_json=?,updated_at=? WHERE id=?", JSON.stringify([...ids]), now(), agentId); this.events.emit({ type: "agent.changed", payload: {} });
   }
-  delivery(ids: string[], machineId: string): { connections: TurnConnection[]; omitted: string[] } {
-    const connections: TurnConnection[] = []; const omitted: string[] = [];
-    for (const c of this.list().filter((c) => ids.includes(c.id))) {
-      if (c.transport === "stdio" && c.machineId && c.machineId !== machineId) { omitted.push(c.name); continue; }
-      connections.push(c.transport === "http" ? { identifier: c.identifier, transport: "http", url: c.url!, headers: this.values(c.id) } : { identifier: c.identifier, transport: "stdio", command: c.command!, args: c.args, env: this.values(c.id) });
-    }
-    return { connections, omitted };
+  delivery(ids: string[]): TurnConnection[] {
+    return this.list().filter((c) => ids.includes(c.id)).map((c) => c.transport === "http"
+      ? { identifier: c.identifier, transport: "http", url: c.url!, headers: this.values(c.id) }
+      : { identifier: c.identifier, transport: "stdio", command: c.command!, args: c.args, env: this.values(c.id) });
   }
   async test(key: string): Promise<{ ok: boolean; toolCount: number; tools: string[]; error: string | null }> {
     const c = this.get(key);

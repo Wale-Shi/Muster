@@ -1,7 +1,7 @@
 {
   "name": "@muster/desktop",
   "productName": "Muster",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Muster local coding workspace",

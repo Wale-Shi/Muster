@@ -15,7 +15,15 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
 export class Scheduler {
   constructor(readonly db: MusterDb, readonly orchestrator: Orchestrator, readonly events: EventBus, readonly skills?: Skills, readonly connections?: Connections) {}
 
-  enroll(name: string, runtimes: Runtime[], concurrency: number): { machineId: string; token: string } {
+  enroll(name: string, runtimes: Runtime[], concurrency: number, previousToken?: string): { machineId: string; token: string } {
+    // A daemon re-enrolls when its name, concurrency or runtimes change. Keeping its identity
+    // keeps the conversations and builds pinned to it claimable.
+    const existing = previousToken ? this.db.row("SELECT id, token FROM machines WHERE token = ?", previousToken) : undefined;
+    if (existing) {
+      this.db.run("UPDATE machines SET name = ?, concurrency = ?, runtimes_json = ?, last_seen_at = ?, models_requested = 1 WHERE id = ?", name, concurrency, JSON.stringify(runtimes), now(), existing.id);
+      this.events.emit({ type: "machine.changed", payload: { machineId: existing.id } });
+      return { machineId: String(existing.id), token: String(existing.token) };
+    }
     const machineId = id();
     const token = `mst_machine_${crypto.randomUUID().replaceAll("-", "")}`;
     const timestamp = now();
@@ -92,9 +100,12 @@ export class Scheduler {
           ELSE td.agent_id END
         WHERE t.status='queued' AND b.status='active'
           AND (t.not_before IS NULL OR t.not_before<=?)
-          AND (b.machine_id IS NULL OR b.machine_id=?)
+          AND (b.machine_id IS NULL OR b.machine_id=?
+            -- Muster runs on one computer, so work may leave an executor that went offline (for
+            -- example one that re-enrolled under a new identity); its worktree is on the same disk.
+            OR NOT EXISTS (SELECT 1 FROM machines pinned WHERE pinned.id=b.machine_id AND pinned.last_seen_at>=?))
           AND NOT EXISTS (SELECT 1 FROM turns active WHERE active.build_id=b.id AND active.status='running')
-        ORDER BY t.rowid`, now(), machine.id);
+        ORDER BY t.rowid`, now(), machine.id, new Date(Date.now() - 30_000).toISOString());
       const candidate = candidates.find((row) => runtimes.includes(row.runtime as Runtime));
       if (!candidate) return null;
       const isChief = !candidate.todo_id;
@@ -108,9 +119,10 @@ export class Scheduler {
       const mcpToken = `mst_turn_${crypto.randomUUID().replaceAll("-", "")}`;
       this.db.run("INSERT INTO mcp_tokens VALUES (?, ?, ?)", mcpToken, candidate.id, now());
       // Only the immediate predecessor can supply state; never resurrect an older session.
-      const previous = this.db.row("SELECT session_state_json, agent_snapshot_json FROM turns WHERE build_id=? AND id<>? AND status NOT IN ('queued','running') ORDER BY rowid DESC LIMIT 1", candidate.actual_build_id, candidate.id);
+      const previous = this.db.row("SELECT session_state_json, agent_snapshot_json, machine_id FROM turns WHERE build_id=? AND id<>? AND status NOT IN ('queued','running') ORDER BY rowid DESC LIMIT 1", candidate.actual_build_id, candidate.id);
       const previousAgent = parseJson<Record<string, unknown>>(previous?.agent_snapshot_json, {});
-      const canResume = previousAgent.id === agentId && previousAgent.runtime === agent.runtime && previousAgent.model === agent.model;
+      // Runtime sessions live on the machine that ran them.
+      const canResume = previousAgent.id === agentId && previousAgent.runtime === agent.runtime && previousAgent.model === agent.model && (!previous?.machine_id || previous.machine_id === machine.id);
       const topicId = isChief ? String(candidate.branch).replace(/^chief:/, "") : null;
       const projectRow = candidate.project_id ? this.db.row("SELECT * FROM projects WHERE id=?", candidate.project_id) : undefined;
       const mentioned = isChief ? "" : String(candidate.todo_spec) + "\n" + this.db.rows("SELECT content FROM messages WHERE conversation_id=?", candidate.actual_build_id).map((r) => r.content).join("\n");
@@ -132,16 +144,11 @@ export class Scheduler {
   }
 
   private withEnv(job: TurnJob): TurnJob {
-    const turn = this.db.row("SELECT agent_snapshot_json,machine_id FROM turns WHERE id=?", job.turnId);
+    const turn = this.db.row("SELECT agent_snapshot_json FROM turns WHERE id=?", job.turnId);
     const snapshot = parseJson<{ id?: string }>(turn?.agent_snapshot_json, {});
     const row = snapshot.id ? this.db.row("SELECT * FROM agents WHERE id=?", snapshot.id) : undefined;
-    const profile = row ? this.db.agent(row) : undefined;
-    const delivery = this.connections?.delivery(profile?.connectionIds ?? [], String(turn?.machine_id)) ?? { connections: [], omitted: [] };
-    for (const name of delivery.omitted) {
-      const content = `Connection ${name} omitted: it runs on another machine.`;
-      if (!this.db.row("SELECT id FROM messages WHERE turn_id=? AND content=?", job.turnId, content)) this.orchestrator.addMessage(job.topicId ?? job.buildId, job.turnId, "system", content, { code: "connection_machine_mismatch", connectionName: name });
-    }
-    return { ...job, connections: delivery.connections, systemInstructions: job.systemInstructions + delivery.connections.map((c) => `\nTools from connection ${c.identifier} are available as mcp__${c.identifier}__*.`).join("") };
+    const connections = this.connections?.delivery(row ? this.db.agent(row).connectionIds ?? [] : []) ?? [];
+    return { ...job, connections, systemInstructions: job.systemInstructions + connections.map((c) => `\nTools from connection ${c.identifier} are available as mcp__${c.identifier}__*.`).join("") };
   }
 
   // Roll back only a still-running, undelivered claim. A completed turn must never be requeued.

@@ -26,17 +26,16 @@ it("validates identifiers and immutable edits; secrets stay encrypted and write-
   expect((await requestJson(app, `/api/connections/${c.id}`, "PATCH", { name: "Renamed" })).json.data.secretKeys).toEqual(["Authorization"]);
   expect(JSON.stringify((await requestJson(app, "/api/connections")).json)).not.toContain("confidential-token");
 });
-it("delivers only grants, omits other-machine stdio, re-derives secrets on replay", async () => {
-  const { app, services: s, todoId, agentId } = await setup(); const m = await enroll(app); const other = await enroll(app);
+it("delivers only grants, including local commands, and re-derives secrets on replay", async () => {
+  const { app, services: s, todoId, agentId } = await setup(); const m = await enroll(app);
   const http = s.connections.save({ identifier: "remote", name: "Remote", transport: "http", url: "https://example.test/mcp", secrets: { Authorization: "Bearer confidential-token" } });
-  const local = s.connections.save({ identifier: "local", name: "Local", transport: "stdio", command: "fixture", machineId: other.machineId, secrets: { TOKEN: "local-secret" } });
+  const local = s.connections.save({ identifier: "local", name: "Local", transport: "stdio", command: "fixture", secrets: { TOKEN: "local-secret" } });
   s.orchestrator.start(todoId); const first = s.scheduler.claim(m.token, "replay")!; expect(first.connections).toEqual([]);
   s.connections.grant(agentId, http.id, true); s.connections.grant(agentId, local.id, true);
-  const job = s.scheduler.claim(m.token, "replay")!; expect(job.connections).toHaveLength(1); expect(job.connections![0]?.headers).toEqual({ Authorization: "Bearer confidential-token" }); expect(job.systemInstructions).toContain("mcp__remote__*");
-  s.scheduler.claim(m.token, "replay"); expect(s.db.rows("SELECT * FROM messages WHERE turn_id=?", job.turnId)).toHaveLength(1);
+  const job = s.scheduler.claim(m.token, "replay")!; expect(job.connections?.map((c) => c.identifier)).toEqual(["local", "remote"]); expect(job.connections![1]?.headers).toEqual({ Authorization: "Bearer confidential-token" }); expect(job.connections![0]?.env).toEqual({ TOKEN: "local-secret" }); expect(job.systemInstructions).toContain("mcp__remote__*");
   expect(JSON.stringify(s.db.rows("SELECT * FROM machine_claims"))).not.toMatch(/confidential-token|local-secret|headers/);
-  s.connections.save({ secrets: { Authorization: "replacement-token" } }, http.id); expect(s.scheduler.claim(m.token, "replay")!.connections![0]!.headers!.Authorization).toBe("replacement-token");
-  s.connections.grant(agentId, http.id, false); expect(s.scheduler.claim(m.token, "replay")!.connections).toEqual([]);
+  s.connections.save({ secrets: { Authorization: "replacement-token" } }, http.id); expect(s.scheduler.claim(m.token, "replay")!.connections![1]!.headers!.Authorization).toBe("replacement-token");
+  s.connections.grant(agentId, http.id, false); expect(s.scheduler.claim(m.token, "replay")!.connections?.map((c) => c.identifier)).toEqual(["local"]);
   s.connections.delete(local.id); expect(s.db.agent(s.db.row("SELECT * FROM agents WHERE id=?", agentId)!).connectionIds).toEqual([]);
 });
 it("tests HTTP initialize and tools/list with a local MCP fixture; stdio never executes on server", async () => {

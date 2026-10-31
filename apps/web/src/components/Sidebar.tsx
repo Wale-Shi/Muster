@@ -143,7 +143,7 @@ export function Sidebar({
               {connection === "connecting" ? t("ui.connectingToServer")
                 : connection === "unknown" ? t("ui.machineStatusUnavailable")
                 : connection === "offline" ? t("ui.noMachinesOnline")
-                : t("count.online", { count: onlineCount ?? 0 })}
+                : t("ws.ready")}
             </span>
           </span>
           <NavLink className="nav-item" to="/settings" title={t("phaseC.settings")} onClick={onCloseMobile}><Settings size={16} /><span>{t("phaseC.settings")}</span></NavLink>

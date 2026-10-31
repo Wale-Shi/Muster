@@ -19,9 +19,9 @@
 | MCP 开放 | `/api/mcp`（全部工作空间）与 `/api/mcp/workspaces/:id`（单个工作空间）用 API 密钥鉴权；其他 AI 可用 `assign_work` 把目标交给 master agent，或直接 `create_task`，并观察进展。 |
 | Skills | 技能库：文件夹/批量上传、公开 GitHub 导入，按内容哈希缓存到 daemon，Agent 可设默认技能、用 `@slug` 引用。 |
 | Connections | 内置目录（Linear、GitHub、Notion、Playwright）与自定义 HTTP/stdio MCP 服务，凭据加密、只写；在 Agent 资料页授权。 |
-| 基础设施 | 16 种编码 CLI 运行时、机器 daemon、桌面 App（macOS 优先）。 |
+| 基础设施 | 16 种编码 CLI 运行时、本机执行器（daemon，不在界面中出现）、桌面 App（macOS 优先）。所有 Agent 都在当前电脑上运行，暂不考虑跨机器。 |
 
-已移除（2026-10-30 做减法）：Plan first / Confirm 关口、定时任务、Secrets、Agent 记忆、附件、标签、用量统计页、项目文件/提交浏览、多话题、命令面板与快捷键表、机器管理页、推送分支权限、英文界面（界面仅中文）。
+已移除（2026-10-30 做减法）：Plan first / Confirm 关口、定时任务、Secrets、Agent 记忆、附件、标签、用量统计页、项目文件/提交浏览、多话题、命令面板与快捷键表、机器管理页和界面上的「机器」概念、推送分支权限、英文界面（界面仅中文）。
 
 ## 2. 数据模型（SQLite，节选）
 

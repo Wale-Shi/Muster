@@ -50,7 +50,7 @@ it("explains remote images, network failures, and decode errors without broken i
   const fetcher = vi.fn().mockResolvedValueOnce(new Response("", { status: 409 })).mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(new Response("bad bytes"));
   vi.stubGlobal("fetch", fetcher);
   const view = render(<LocalImage src="/remote/a.png" context={context} />);
-  expect(await screen.findByText("图片位于执行机器")).toBeInTheDocument();
+  expect(await screen.findByText("图片不在本机")).toBeInTheDocument();
   view.rerender(<LocalImage src="/remote/b.png" context={context} />);
   expect(await screen.findByText("图片不可用")).toBeInTheDocument();
   view.rerender(<LocalImage src="/remote/c.png" alt="Corrupt" context={context} />);

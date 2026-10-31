@@ -26,8 +26,8 @@ npm run daemon
 
 打开 <http://localhost:5173>（API 在 7420 端口，Vite 会代理 API、SSE 和 MCP）。
 
-1. **新建工作空间**：填写本地 Git 仓库路径（或 Git URL）和基准分支，选择它的 master agent（不选则用默认的 `Chief`）。仓库需要至少有一次提交，并且 daemon 所在机器能访问。
-2. **在「Agent」里创建编码 Agent**：选择运行时和模型。对应 CLI 需要安装在 daemon 机器上（见下文）。
+1. **新建工作空间**：填写本地 Git 仓库路径（或 Git URL）和基准分支，选择它的 master agent（不选则用默认的 `Chief`）。仓库需要至少有一次提交。
+2. **在「Agent」里创建编码 Agent**：选择运行时和模型。对应 CLI 需要安装在本机（见下文）；Agent 列表会标出本机未安装的运行时。
 3. **在工作空间对话里告诉 master agent 目标**，例如“把登录页拆成可并行的任务”。它会创建并启动任务，在任务待验收或失败时自动跟进，检查 diff 后合并或打回修改。
 4. 也可以直接 **新建任务**（⌘Enter 保存并启动），点开任务查看实时执行过程；在待验收时写下修改意见，或点「完成」合并回基准分支。
 
@@ -108,7 +108,7 @@ npm run desktop:smoke
 | `MUSTER_DATA_DIR` | `~/.muster` | server 数据目录（`muster.db`、技能、加密密钥） |
 | `MUSTER_PUBLIC_URL` | `http://127.0.0.1:<port>` | 用于生成 MCP 地址，daemon 必须能访问；其主机名会被允许 |
 | `MUSTER_ALLOWED_HOSTS` | 未设置 | 额外允许的 `Host` 主机名（逗号分隔） |
-| `MUSTER_ENROLL_KEY` | 未设置 | 可选的机器注册密钥，server 与 daemon 设置相同值 |
+| `MUSTER_ENROLL_KEY` | 未设置 | 可选的执行器注册密钥，server 与 daemon 设置相同值 |
 | `MUSTER_CLAIM_WAIT_MS` | `25000` | 认领任务的长轮询时长 |
 | `MUSTER_CHIEF_AUTO_FOLLOW_UP` | `true` | 设为 `false` 后 master agent 不再自动跟进任务通知 |
 | `MUSTER_HOME` | `~/.muster` | daemon 的注册信息、日志、master agent 会话和 worktree |
@@ -121,7 +121,7 @@ npm run daemon -- --concurrency 2 --name laptop
 
 ## 运行时
 
-在 **daemon 所在机器**上、以运行 daemon 的用户身份安装并登录需要的 CLI，然后启动或重启 daemon。它会在 `PATH` 和常见安装目录（`~/.local/bin`、`~/.npm-global/bin`、`~/.bun/bin`、`~/.opencode/bin`、`~/.kiro/bin`、`/opt/homebrew/bin`、`/usr/local/bin`）中查找；找不到时用 `MUSTER_<ID>_BIN`（如 `MUSTER_PI_BIN`）指定。`mock` 始终可用。Muster 复用各 CLI 自己的登录，不管理模型服务商的凭据。
+Muster 的所有 Agent 都在本机运行：后台执行器（daemon，桌面 App 会自动启动）负责调用各 CLI。用当前用户安装并登录需要的 CLI，然后重启 Muster。它会在 `PATH` 和常见安装目录（`~/.local/bin`、`~/.npm-global/bin`、`~/.bun/bin`、`~/.opencode/bin`、`~/.kiro/bin`、`/opt/homebrew/bin`、`/usr/local/bin`）中查找；找不到时用 `MUSTER_<ID>_BIN`（如 `MUSTER_PI_BIN`）指定。`mock` 始终可用。Muster 复用各 CLI 自己的登录，不管理模型服务商的凭据。
 
 | 运行时 (id) | 安装 | 驱动方式 |
 | --- | --- | --- |
@@ -151,7 +151,7 @@ flowchart LR
   User[用户] --> Web[Web / 桌面 App]
   Web <-->|REST + SSE| Server[Hono server]
   Server --> DB[(SQLite)]
-  Daemon[机器 daemon] <-->|认领 / 心跳 / 事件| Server
+  Daemon[本机执行器 daemon] <-->|认领 / 心跳 / 事件| Server
   Daemon --> Master[各工作空间的 master agent]
   Daemon --> Agents[并行的编码 Agent]
   Agents --> Trees[独立 Git worktree]

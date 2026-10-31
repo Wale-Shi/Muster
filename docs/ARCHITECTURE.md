@@ -135,7 +135,7 @@ Enrollment is the only unauthenticated machine endpoint when no enrollment key i
 
 | Method | Path | Body / response data |
 |---|---|---|
-| POST | `/api/machine/enroll` | `{name, runtimes: Runtime[], concurrency}` → `{machineId, token}` (201) |
+| POST | `/api/machine/enroll` | `{name, runtimes: Runtime[], concurrency, previousToken?}` → `{machineId, token}` (201); a valid `previousToken` keeps that machine's identity |
 | POST | `/api/machine/heartbeat` | `{running: turnId[]}` → `{stop: turnId[]}` |
 | POST | `/api/machine/claim` | `{requestId?:string}` → `TurnJob | null`; holds for up to 25 seconds in production |
 | POST | `/api/machine/turns/:id/events` | `{batchId:string, events:AgentEvent[]}` → `{accepted: number}` |
@@ -143,7 +143,9 @@ Enrollment is the only unauthenticated machine endpoint when no enrollment key i
 | POST | `/api/machine/turns/:id/inbox/ack` | `{ids:string[]}` → `{accepted:true}`; acknowledges runtime acceptance |
 | POST | `/api/machine/turns/:id/complete` | `TurnCompletePayload` → `{accepted:true}` |
 
-Claim selects the oldest compatible queued turn while respecting machine concurrency and at most one running turn per build (including Chief conversations), inside one immediate SQLite transaction. Builds stay pinned to their first machine because worktrees and runtime sessions are local. A continued build waits for that machine; restart creates a fresh build that any compatible machine may claim.
+Claim selects the oldest compatible queued turn while respecting machine concurrency and at most one running turn per build (including Chief conversations), inside one immediate SQLite transaction. Muster runs everything on one computer: the "machine" is the local executor (daemon) and is not shown in the UI. A build prefers the executor that last ran it; if that executor is offline (for example a daemon that enrolled again before identities were kept), any online executor may claim the build. Runtime sessions are local to an executor, so a turn resumes its session only on the executor that produced it and otherwise starts fresh.
+
+A daemon that enrolls again (its name, concurrency or runtime set changed — for example a newly installed CLI) sends its current token as `previousToken`; the server updates that machine instead of creating a new one, so its conversations and builds stay claimable.
 
 The daemon supplies a fresh `requestId` for each logical claim and retries transport failures with that same ID. A repeated ID returns the original running job and MCP token, never another assignment; completed claims return null. Uploads use a stable `batchId`, retained across batching retries. Repeated identical batches are accepted without additional messages, usage, or SSE; reusing a key for different events returns 409. Completion is idempotent for an identical payload, including after a lost response.
 
@@ -284,7 +286,7 @@ The turn MCP endpoint (`/mcp`) keeps one Streamable HTTP session per `initialize
 
 Mock master-agent messages beginning `/split` use the real MCP SDK client to read their workspace (`get_workspace`) and agents, then `create_task` two independent tasks for the first non-default mock agent, which start immediately. Tool calls/results are persisted as normal tool messages. Other mock master-agent prompts produce a deterministic reply. Coding mock turns append to `MUSTER_MOCK.md` in their isolated worktree.
 
-Steer delivery is at least once across a daemon crash between runtime acceptance and ACK. Within a running daemon, a lost ACK retries without steering twice. Durable exactly-once model injection would require adapter-level message IDs. Builds cannot migrate live worktrees/sessions between machines; use restart if the assigned machine is unavailable. Machine enrollment itself has no retry key, and is not retried on ambiguous failures. SSE/idempotency journals currently have no retention pruning. Live paid model runs are outside automated tests; only local protocol inspection and model-free peers are exercised.
+Steer delivery is at least once across a daemon crash between runtime acceptance and ACK. Within a running daemon, a lost ACK retries without steering twice. Durable exactly-once model injection would require adapter-level message IDs. Enrollment has no retry key and is not retried on ambiguous failures. SSE/idempotency journals currently have no retention pruning. Live paid model runs are outside automated tests; only local protocol inspection and model-free peers are exercised.
 
 ## Desktop
 
@@ -341,15 +343,13 @@ missing `secrets` patch preserves credentials; an explicit object replaces the e
 map, with `{}` clearing it. AES-256-GCM uses `<data dir>/secret.key` (created with mode 0600 by `Vault`) and a fresh IV,
 with connection ID and immutable identifier as authenticated binding. Back up that
 key and the database together. HTTP credentials are headers; stdio credentials are
-environment values. HTTP cannot be machine pinned. The UI requires an online machine
-for new stdio connections; the API also allows null to run on any claiming machine.
-Existing offline pins remain editable.
+environment values. Stdio commands run on the local executor; the legacy `machineId`
+field is accepted but ignored.
 
 Agents grant connections through their profile. Master agents can `list_connections` (read-only,
 no credentials), `grant_connection`, and `revoke_connection`. Only master agents can mutate
 these grants through MCP. Claim and replay re-derive current grants and decrypt values
-into `TurnJob.connections` **after** writing the claim journal. Stdio pinned elsewhere
-is omitted and produces one system note per turn/connection name. Grant changes take
+into `TurnJob.connections` **after** writing the claim journal. Grant changes take
 effect on subsequent claims/replays, not an already running process. Instructions list
 each delivered `mcp__identifier__*` prefix.
 

@@ -49,7 +49,9 @@ export class MachineClient {
       catch (error) { if (!(error instanceof HttpError && error.status === 401)) throw error; }
     }
     this.registration = undefined;
-    const enrolled = await this.request<{ machineId: string; token: string }>("/api/machine/enroll", { name, concurrency, runtimes }, undefined, false);
+    // Re-enrolling against the same server keeps this machine's identity.
+    const previousToken = saved?.server === server && saved.token ? { previousToken: saved.token } : {};
+    const enrolled = await this.request<{ machineId: string; token: string }>("/api/machine/enroll", { name, concurrency, runtimes, ...previousToken }, undefined, false);
     this.registration = { ...enrolled, server, name, concurrency, runtimes };
     await writeFile(`${file}.tmp`, JSON.stringify(this.registration, null, 2) + "\n", { mode: 0o600 });
     await rename(`${file}.tmp`, file);

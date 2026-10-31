@@ -58,6 +58,8 @@ export const enrollMachineSchema = z.object({
   name: z.string().trim().min(1),
   runtimes: z.array(runtimeSchema).min(1),
   concurrency: z.number().int().min(1).max(64).default(6),
+  /** The daemon's current token: re-enrolling keeps the same machine instead of creating a new one. */
+  previousToken: z.string().min(1).max(200).optional(),
 });
 export const heartbeatSchema = z.object({ running: z.array(idSchema).default([]) });
 const runtimeModelSchema = z.object({ id: z.string().min(1).max(200), name: z.string().max(200).optional(), reasoning: z.array(z.string().max(40)).max(12).optional() });

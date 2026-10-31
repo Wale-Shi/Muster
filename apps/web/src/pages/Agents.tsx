@@ -131,6 +131,7 @@ export function Agents() {
   const agents = useAgents();
   const todos = useTodos();
   const projects = useProjects();
+  const machines = useMachines();
   const [editing, setEditing] = useState<Agent | null | undefined>(undefined);
   return (
     <div className="management-page">
@@ -154,6 +155,8 @@ export function Agents() {
         ) : (
           <div className="agent-grid">
             {agents.data.map((agent) => {
+              // Runtimes the local executor found; unknown until it reports.
+              const installed = machines.data?.some((machine) => machine.online) ? new Set(machines.data.filter((machine) => machine.online).flatMap((machine) => machine.runtimes)) : undefined;
               const leads = (agentId: string) => projects.data?.filter((project) => project.chiefAgentId === agentId).length ?? 0;
               const active =
                 todos.data?.filter(
@@ -171,6 +174,7 @@ export function Agents() {
                         {agent.isChief ? <span className="badge">{t("ws.defaultMaster")}</span> : leads(agent.id) > 0 && <span className="badge">{t("ws.master")}</span>}
                       </h3>
                       <span className="mono muted">{label("runtime", agent.runtime)}</span>
+                      {installed && !installed.has(agent.runtime) && <span className="badge warning" title={t("ui.noOnlineMachineSupportsTheRuntimeRuntime", { runtime: label("runtime", agent.runtime) })}>{t("ui.runtimeNotDetected")}</span>}
                     </div>
 
                   </div>

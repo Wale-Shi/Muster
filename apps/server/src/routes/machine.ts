@@ -19,7 +19,7 @@ export function machineRoutes(services: AppServices): Hono {
       const supplied = c.req.header("x-muster-enroll-key") ?? bearer(c);
       if (supplied !== services.enrollKey) return c.json({ error: "Invalid enrollment key" }, 401);
     }
-    const input = await body(c, enrollMachineSchema); return c.json(services.scheduler.enroll(input.name, input.runtimes, input.concurrency), 201);
+    const input = await body(c, enrollMachineSchema); return c.json(services.scheduler.enroll(input.name, input.runtimes, input.concurrency, input.previousToken), 201);
   });
   app.use("/*", async (c, next) => { services.scheduler.authenticate(machineToken(c.req.header("authorization"))); await next(); });
   app.get("/skills/:slug/archive", (c) => c.json(services.skills.archive(c.req.param("slug"), c.req.query("version"))));

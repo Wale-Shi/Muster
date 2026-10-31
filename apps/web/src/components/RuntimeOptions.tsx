@@ -2,7 +2,7 @@ import { RUNTIMES } from "@muster/shared";
 import { useMachines } from "../api/queries";
 import { useI18n } from "../i18n";
 
-/** Runtime <option>s, with runtimes an enrolled machine reported listed first. */
+/** Runtime <option>s, with runtimes installed on this computer listed first. */
 export function RuntimeOptions() {
   const { t, label } = useI18n();
   const machines = useMachines();

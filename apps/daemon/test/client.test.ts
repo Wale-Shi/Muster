@@ -30,6 +30,15 @@ it("persists a private registration and reuses it on restart", async () => {
   const second = new MachineClient({ ...first.options, fetch: fetcher }); await second.enroll();
   expect(fetcher).toHaveBeenCalledTimes(2); expect(String(fetcher.mock.calls[1]![0])).toContain("heartbeat");
 });
+it("keeps its machine identity when it re-enrolls with new runtimes", async () => {
+  const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json({ machineId: "id", token: "token" })).mockResolvedValueOnce(Response.json({ machineId: "id", token: "token" }));
+  const first = await client(fetcher); await first.enroll();
+  const second = new MachineClient({ ...first.options, runtimes: ["mock", "qoder"], fetch: fetcher }); await second.enroll();
+  expect(JSON.parse(String(fetcher.mock.calls[1]![1]?.body))).toEqual({ name: "test", concurrency: 6, runtimes: ["mock", "qoder"], previousToken: "token" });
+  const elsewhere = new MachineClient({ ...first.options, server: "http://other", fetch: fetcher });
+  fetcher.mockResolvedValueOnce(Response.json({ machineId: "new", token: "fresh" })); await elsewhere.enroll();
+  expect(JSON.parse(String(fetcher.mock.calls[2]![1]?.body))).not.toHaveProperty("previousToken");
+});
 it("retains a failed event batch and drains in order before close", async () => {
   const batches: Array<{ batchId: string; events: unknown[] }> = []; let fail = true;
   let failedId: string | undefined;

@@ -30,7 +30,6 @@ const serverErrors: Record<string, keyof typeof messages.error> = {
   "Project not found": "project_missing",
   "Agent not found": "agent_missing",
   "Todo not found": "todo_missing",
-  "Machine not found": "machine_missing",
   "Document not found": "document_missing",
   "Turn not found": "turn_missing",
   "No agent available": "no_agent",

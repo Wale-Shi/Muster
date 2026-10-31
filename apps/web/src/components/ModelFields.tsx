@@ -10,14 +10,14 @@ const FALLBACK_REASONING = ["low", "medium", "high"];
 
 export interface RuntimeModelList { models: RuntimeModel[]; errors: string[]; reported: boolean }
 
-/** Models every enrolled machine reported for a runtime, merged by id. */
+/** Models the local executor reported for a runtime, merged by id. */
 export function runtimeModels(machines: Machine[] | undefined, runtime: Runtime): RuntimeModelList {
   const byId = new Map<string, RuntimeModel>(); const errors: string[] = []; let reported = false;
   for (const machine of machines ?? []) {
     const entry = machine.models?.[runtime];
     if (!entry) continue;
     reported = true;
-    if (entry.error) errors.push(`${machine.name}: ${entry.error}`);
+    if (entry.error) errors.push(entry.error);
     for (const model of entry.models) {
       const known = byId.get(model.id);
       byId.set(model.id, known ? { ...known, reasoning: [...new Set([...(known.reasoning ?? []), ...(model.reasoning ?? [])])] } : model);

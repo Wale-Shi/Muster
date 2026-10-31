@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, X } from "lucide-react";
 import { connectionCatalog, connectionSchema, type CatalogEntry, type Connection, type ConnectionInput } from "@muster/shared";
 import { request } from "../api/client";
-import { useMachines } from "../api/queries";
 import { useI18n } from "../i18n";
 import { Dialog, Empty, ErrorNotice, Loading, Section, Segmented, SettingRow, Switch } from "../components/ui";
 // Suggested identifier for a connection name; it becomes the tool prefix mcp__<identifier>__.
@@ -11,14 +10,14 @@ const slug = (name: string) => { const value = name.toLowerCase().replace(/[^a-z
 export const useConnections = () => useQuery({ queryKey: ["connections"], queryFn: () => request<Connection[]>("/connections") });
 
 export function ConnectionForm({ entry, connection, onSaved, onCancel }: { entry?: CatalogEntry; connection?: Connection; onSaved: () => void; onCancel: () => void }) {
-  const { t } = useI18n(); const client = useQueryClient(); const machines = useMachines();
+  const { t } = useI18n(); const client = useQueryClient();
   const [transport, setTransport] = useState<"http" | "stdio">(connection?.transport ?? entry?.transport ?? "http");
   const [name, setName] = useState(connection?.name ?? entry?.name ?? ""); const [identifier, setIdentifier] = useState(connection?.identifier ?? entry?.id ?? "");
   const [url, setUrl] = useState(connection?.url ?? entry?.url ?? ""); const [command, setCommand] = useState(connection?.command ?? entry?.command ?? "");
-  const [args, setArgs] = useState((connection?.args ?? entry?.args ?? []).join("\n")); const [machineId, setMachine] = useState(connection?.machineId ?? "");
+  const [args, setArgs] = useState((connection?.args ?? entry?.args ?? []).join("\n"));
   const [replaceCredentials, setReplaceCredentials] = useState(false);
   const [token, setToken] = useState(""); const [values, setValues] = useState<{ key: string; value: string }[]>([]);
-  const input: ConnectionInput = { name, identifier, transport, url: transport === "http" ? url : null, command: transport === "stdio" ? command : null, args: args ? args.split("\n") : [], machineId: transport === "stdio" ? machineId || null : null, catalogId: entry?.id ?? connection?.catalogId ?? null,
+  const input: ConnectionInput = { name, identifier, transport, url: transport === "http" ? url : null, command: transport === "stdio" ? command : null, args: args ? args.split("\n") : [], machineId: null, catalogId: entry?.id ?? connection?.catalogId ?? null,
     ...(entry?.auth.kind === "header" && token ? { secrets: { [entry.auth.header]: entry.auth.format.replace("{token}", token) } } : entry?.auth.kind === "env" && token ? { secrets: { [entry.auth.name]: token } } : values.length || replaceCredentials ? { secrets: Object.fromEntries(values.map((v) => [v.key, v.value])) } : {}) };
   const valid = connectionSchema.safeParse(input).success && new Set(values.map((v) => v.key)).size === values.length && (!entry || !["header", "env"].includes(entry.auth.kind) || !!connection || !!token);
   const save = useMutation({ mutationFn: () => request(`/connections${connection ? `/${connection.id}` : ""}`, connection ? "PATCH" : "POST", input), onSuccess: () => { setToken(""); setValues([]); void client.invalidateQueries({ queryKey: ["connections"] }); onSaved(); } });
@@ -28,7 +27,6 @@ export function ConnectionForm({ entry, connection, onSaved, onCancel }: { entry
       <label>{t("phaseB.identifier")}<input required pattern="[a-z][a-z0-9_]{1,31}" readOnly={!!connection} value={identifier} onChange={(e) => setIdentifier(e.target.value)} /><span className="hint">{t("phaseB.identifierHelp", { identifier: identifier || "example" })}</span></label>
       {transport === "http" ? <label>{t("phaseB.url")}<input required type="url" value={url} onChange={(e) => setUrl(e.target.value)} /></label> : <><label>{t("phaseB.command")}<input required value={command} onChange={(e) => setCommand(e.target.value)} /></label><label>{t("phaseB.args")}<textarea value={args} onChange={(e) => setArgs(e.target.value)} rows={3} /></label></>}
     </>}
-    {transport === "stdio" && <label>{t("phaseB.machine")}<select required value={machineId} onChange={(e) => setMachine(e.target.value)}><option value="">—</option>{machines.data?.filter((m) => m.online || m.id === machineId).map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select></label>}
     {entry && ["header", "env"].includes(entry.auth.kind) && <label>{t("phaseB.token")}<input type="password" required={!connection} value={token} autoComplete="new-password" onChange={(e) => setToken(e.target.value)} />{entry.auth.kind === "header" && <a className="link" href={entry.auth.tokenHelpUrl} target="_blank" rel="noreferrer">{t("phaseB.tokenHelp")}</a>}</label>}
     {!entry && connection && <Switch label={t("phaseB.replaceCredentials")} checked={replaceCredentials} onChange={setReplaceCredentials} />}
     {!entry && <Section title={t(transport === "http" ? "phaseB.headers" : "phaseB.env")} actions={<button type="button" className="button ghost sm" onClick={() => { setReplaceCredentials(true); setValues([...values, { key: "", value: "" }]); }}><Plus size={14} />{t("phaseB.addValue")}</button>}>
@@ -36,7 +34,7 @@ export function ConnectionForm({ entry, connection, onSaved, onCancel }: { entry
       {!values.length && <div className="settings-empty">{t(transport === "http" ? "phaseB.noHeaders" : "phaseB.noEnv")}</div>}
     </Section>}
     {!!connection?.secretKeys.length && <p className="hint">{t("phaseB.savedKeys", { keys: connection.secretKeys.join(", ") })}</p>}
-    <p className="hint">{t("parity.writeOnly")}</p><ErrorNotice error={save.error || machines.error} />
+    <p className="hint">{t("parity.writeOnly")}</p><ErrorNotice error={save.error} />
     <div className="row dialog-actions"><button type="button" className="button ghost" onClick={onCancel}>{t("parity.cancel")}</button><button className="button primary" disabled={save.isPending || !valid}>{t(connection ? "parity.save" : "phaseB.connect")}</button></div>
   </form>;
 }
