@@ -26,7 +26,7 @@ const args = process.argv.slice(2), arg = name => args[args.indexOf(name)+1];
 if (arg('--mode') !== 'rpc' || arg('--append-system-prompt') !== 'Follow the task' || arg('--model') !== 'anthropic/test-only' || arg('--thinking') !== 'high') throw Error('args ' + args);
 if (!fs.readFileSync(arg('-e'), 'utf8').includes('registerTool')) throw Error('bridge extension');
 const config = JSON.parse(fs.readFileSync(process.env.PI_MUSTER_BRIDGE_CONFIG, 'utf8'));
-if (config.readOnly !== false || config.servers.map(s => s.name).join() !== 'linear,muster' || config.servers[1].headers.Authorization !== 'Bearer test-only') throw Error('bridge config');
+if ('readOnly' in config || config.servers.map(s => s.name).join() !== 'linear,muster' || config.servers[1].headers.Authorization !== 'Bearer test-only') throw Error('bridge config');
 if (args.includes('--session')) throw Error('missing session files must not be resumed');
 let buffered = '';
 process.stdin.on('data', d => { buffered += d; let i; while ((i = buffered.indexOf('\n')) >= 0) { const m = JSON.parse(buffered.slice(0, i)); buffered = buffered.slice(i + 1); handle(m); } });
@@ -105,7 +105,7 @@ function handle(m) {
     else if (!muster.args[0].endsWith('mcp-proxy.mjs') || !muster.env.some(e => e.name === 'MCP_PROXY_URL' && e.value === 'http://localhost:7420/mcp')) throw Error('proxied servers');
     reply({ sessionId: 's-1', models: { currentModelId: 'a', availableModels: [{ modelId: 'a' }, { modelId: 'test-only' }] }, modes: { currentModeId: 'default', availableModes: [{ id: 'default' }, { id: 'plan' }] } });
   } else if (m.method === 'session/set_model') { if (p.modelId !== 'test-only') throw Error('model'); reply({}); }
-  else if (m.method === 'session/set_mode') { if (p.modeId !== 'plan') throw Error('plan mode'); reply({}); }
+  else if (m.method === 'session/set_mode') throw Error('builds keep the permissive default mode');
   else if (m.method === 'session/prompt') {
     asked++;
     const text = p.prompt[0].text;
@@ -117,10 +117,10 @@ function handle(m) {
     send({ jsonrpc: '2.0', id: 'perm-' + asked, method: 'session/request_permission', params: { sessionId: 's-1', toolCall: { toolCallId: 't' + asked, kind: 'edit' }, options: [{ optionId: 'yes', kind: 'allow_once' }, { optionId: 'no', kind: 'reject_once' }] } });
     pendingPrompt = m.id;
   } else if (m.id === 'perm-1' || m.id === 'perm-2') {
-    if (m.result.outcome.optionId !== 'no') throw Error('plan turns reject edits');
-    update({ sessionUpdate: 'tool_call_update', toolCallId: m.id === 'perm-1' ? 't1' : 't2', status: 'failed', rawOutput: 'denied' });
+    if (m.result.outcome.optionId !== 'yes') throw Error('builds allow edits');
+    update({ sessionUpdate: 'tool_call_update', toolCallId: m.id === 'perm-1' ? 't1' : 't2', status: 'completed', rawOutput: 'written' });
     update({ sessionUpdate: 'plan', entries: [{ content: 'Step', status: 'completed' }] });
-    update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: m.id === 'perm-1' ? 'First' : 'Plan ready' } });
+    update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: m.id === 'perm-1' ? 'First' : 'Built' } });
     if (m.id === 'perm-1') process.stdin.emit('steer-window');
     setTimeout(() => send({ jsonrpc: '2.0', id: pendingPrompt, result: { stopReason: 'end_turn', usage: { inputTokens: 7, outputTokens: 3, cachedReadTokens: 1 } } }), m.id === 'perm-1' ? 300 : 0);
   }
@@ -129,14 +129,14 @@ function handle(m) {
 let pendingPrompt;`;
 
 for (const http of [true, false]) {
-  it(`ACP ${http ? "passes HTTP MCP servers" : "proxies MCP over stdio"}, plans read-only, queues steering and keeps the session`, async () => {
+  it(`ACP ${http ? "passes HTTP MCP servers" : "proxies MCP over stdio"}, approves edits, queues steering and keeps the session`, async () => {
     const ctx = await context();
-    const job = makeJob({ readOnly: true, connections: [connection], agent: { runtime: "gemini", model: "test-only", reasoning: null, role: "test" }, sessionState: { sessionId: "old", instructions: "stale" } });
+    const job = makeJob({ connections: [connection], agent: { runtime: "gemini", model: "test-only", reasoning: null, role: "test" }, sessionState: { sessionId: "old", instructions: "stale" } });
     const running = new AcpRuntime(process.execPath, ["-e", acpPeer(http), "--", "--acp"], "Test ACP").start(job, ctx);
     await until(async () => ctx.events, (events) => events.some((event) => event.type === "message.delta" && event.content === "First"));
     await running.steer("More");
     const result = await running.result;
-    expect(result).toMatchObject({ status: "done", text: "Plan ready", usage: { tokensIn: 16, tokensOut: 6 }, sessionState: { sessionId: "s-1" } });
+    expect(result).toMatchObject({ status: "done", text: "Built", usage: { tokensIn: 16, tokensOut: 6 }, sessionState: { sessionId: "s-1" } });
     expect(ctx.events.some((event) => event.type === "message.delta" && event.content === "replayed history")).toBe(false);
     expect(ctx.events).toEqual(expect.arrayContaining([
       { type: "reasoning.delta", content: "Thinking" },
@@ -144,7 +144,7 @@ for (const http of [true, false]) {
       { type: "tool.started", tool: "Write file", callId: "t1", input: { path: "a" } },
       { type: "plan.updated", content: "- [x] Step" },
     ]));
-    expect(ctx.events.find((event) => event.type === "tool.completed")).toMatchObject({ callId: "t1", error: "\"denied\"" });
+    expect(ctx.events.find((event) => event.type === "tool.completed")).toMatchObject({ callId: "t1", output: "written" });
   });
 }
 
@@ -165,7 +165,7 @@ process.stdin.on('data',d=>{b+=d;let i;while((i=b.indexOf('\n'))>=0){const m=JSO
   expect((await running.result).status).toBe("stopped");
 });
 
-it("ACP picks the most permissive build mode and a spec/plan mode for plan turns", async () => {
+it("ACP picks the most permissive mode", async () => {
   const peer = String.raw`
 const send=x=>process.stdout.write(JSON.stringify(x)+'\n'); let b='';
 process.stdin.on('data',d=>{b+=d;let i;while((i=b.indexOf('\n'))>=0){const m=JSON.parse(b.slice(0,i));b=b.slice(i+1);
@@ -174,17 +174,13 @@ process.stdin.on('data',d=>{b+=d;let i;while((i=b.indexOf('\n'))>=0){const m=JSO
  else if(m.method==='session/new')reply({sessionId:'s',modes:{currentModeId:'normal',availableModes:['normal','spec','auto-low','auto-medium','auto-high'].map(id=>({id,name:id}))}});
  else if(m.method==='session/set_mode'){send({jsonrpc:'2.0',method:'session/update',params:{sessionId:'s',update:{sessionUpdate:'agent_thought_chunk',content:{type:'text',text:m.params.modeId}}}});reply({});}
  else if(m.method==='session/prompt'){send({jsonrpc:'2.0',method:'session/update',params:{sessionId:'s',update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text:'mode set'}}}});reply({stopReason:'end_turn'});}}});`;
-  const modes: string[] = [];
-  for (const readOnly of [false, true]) {
-    const ctx = await context();
-    const result = await new AcpRuntime(process.execPath, ["-e", peer, "--"], "Droid").start(makeJob({ readOnly, agent: { runtime: "droid", model: "default", reasoning: null, role: "test" } }), ctx).result;
-    expect(result.status).toBe("done");
-    modes.push(...ctx.events.flatMap((event) => event.type === "reasoning.delta" ? [event.content] : []));
-  }
-  expect(modes).toEqual(["auto-high", "spec"]);
+  const ctx = await context();
+  const result = await new AcpRuntime(process.execPath, ["-e", peer, "--"], "Droid").start(makeJob({ agent: { runtime: "droid", model: "default", reasoning: null, role: "test" } }), ctx).result;
+  expect(result.status).toBe("done");
+  expect(ctx.events.flatMap((event) => event.type === "reasoning.delta" ? [event.content] : [])).toEqual(["auto-high"]);
 });
 
-it("the pi bridge extension registers MCP tools over Streamable HTTP and restricts plan turns", async () => {
+it("the pi bridge extension registers MCP tools over Streamable HTTP", async () => {
   const calls: string[] = [];
   const server = createServer((request, response) => {
     let body = "";
@@ -202,7 +198,7 @@ it("the pi bridge extension registers MCP tools over Streamable HTTP and restric
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const { port } = server.address() as { port: number };
-  const bridge = await writeBridge(makeJob({ readOnly: true, mcp: { url: `http://127.0.0.1:${port}/mcp`, token: "test-only" } }));
+  const bridge = await writeBridge(makeJob({ mcp: { url: `http://127.0.0.1:${port}/mcp`, token: "test-only" } }));
   try {
     process.env.PI_MUSTER_BRIDGE_CONFIG = bridge.piConfig;
     const tools: Array<{ name: string; execute(id: string, params: unknown): Promise<{ content: unknown }> }> = [];
@@ -213,7 +209,7 @@ it("the pi bridge extension registers MCP tools over Streamable HTTP and restric
     expect(tools.map((tool) => tool.name)).toEqual(["mcp__muster__ask_user"]);
     expect(await tools[0]!.execute("call", { q: "hi" })).toMatchObject({ content: [{ type: "text", text: "asked {\"q\":\"hi\"}" }] });
     handlers.session_start?.();
-    expect(active).toEqual(["read", "grep", "find", "ls", "mcp__muster__ask_user"]);
+    expect(active).toEqual([]);
     expect(calls).toEqual(["initialize:Bearer test-only:", "notifications/initialized:Bearer test-only:mcp-1", "tools/list:Bearer test-only:mcp-1", "tools/call:Bearer test-only:mcp-1"]);
     // The stdio proxy ACP agents launch when they cannot take HTTP MCP servers.
     const proxy = spawn(process.execPath, [bridge.proxy], { env: { ...process.env, MCP_PROXY_URL: `http://127.0.0.1:${port}/mcp`, MCP_PROXY_HEADERS: JSON.stringify({ Authorization: "Bearer proxied" }) } });

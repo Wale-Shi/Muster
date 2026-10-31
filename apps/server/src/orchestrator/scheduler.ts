@@ -1,7 +1,5 @@
 import { taskMetadata } from "@muster/shared";
 import type { Connections } from "../resources/connections.js";
-import type { Memories } from "../resources/memories.js";
-import type { Secrets } from "../resources/secrets.js";
 import type { Skills } from "../resources/skills.js";
 import type { AgentEvent, MachineModels, Runtime, TurnCompletePayload, TurnJob, TurnKind } from "@muster/shared";
 import { id, MusterDb, now } from "../db/index.js";
@@ -15,7 +13,7 @@ const parseJson = <T>(value: unknown, fallback: T): T => {
 };
 
 export class Scheduler {
-  constructor(readonly db: MusterDb, readonly orchestrator: Orchestrator, readonly events: EventBus, readonly memories?: Memories, readonly secrets?: Secrets, readonly skills?: Skills, readonly connections?: Connections) {}
+  constructor(readonly db: MusterDb, readonly orchestrator: Orchestrator, readonly events: EventBus, readonly skills?: Skills, readonly connections?: Connections) {}
 
   enroll(name: string, runtimes: Runtime[], concurrency: number): { machineId: string; token: string } {
     const machineId = id();
@@ -79,36 +77,31 @@ export class Scheduler {
       const running = Number(this.db.row("SELECT count(*) AS count FROM turns WHERE machine_id=? AND status='running'", machine.id)?.count ?? 0);
       if (running >= Number(machine.concurrency)) return null;
       const runtimes = parseJson<Runtime[]>(machine.runtimes_json, []);
+      // A task turn runs its assigned agent; a master-agent turn runs its workspace's master agent.
       const candidates = this.db.rows(`
         SELECT t.*, b.todo_id, b.branch, b.id AS actual_build_id,
                td.number AS todo_number, td.title AS todo_title, td.spec AS todo_spec,
-               td.project_id, td.agent_id, td.plan_agent_id, td.previous_gate,
-               p.repo_url, p.base_branch,
-               a.id AS selected_agent_id, a.name, a.runtime, a.model, a.reasoning, a.role,
-               chief.id AS chief_agent_id, chief.name AS chief_name, chief.runtime AS chief_runtime, chief.model AS chief_model,
-               chief.reasoning AS chief_reasoning, chief.role AS chief_role
+               COALESCE(td.project_id, tp.project_id) AS project_id, p.repo_url, p.base_branch,
+               a.id AS selected_agent_id, a.runtime
         FROM turns t JOIN builds b ON b.id=t.build_id
-        LEFT JOIN todos td ON td.id=b.todo_id LEFT JOIN projects p ON p.id=td.project_id
-        LEFT JOIN agents a ON a.id=COALESCE(b.scheduled_agent_id,CASE WHEN t.kind='plan' OR (t.kind='revise' AND td.previous_gate='confirm') THEN COALESCE(td.plan_agent_id,td.agent_id) ELSE td.agent_id END)
-        LEFT JOIN agents chief ON chief.is_chief=1
+        LEFT JOIN todos td ON td.id=b.todo_id
+        LEFT JOIN topics tp ON b.todo_id IS NULL AND b.branch='chief:'||tp.id
+        LEFT JOIN projects p ON p.id=COALESCE(td.project_id, tp.project_id)
+        LEFT JOIN agents a ON a.id=CASE WHEN b.todo_id IS NULL
+          THEN COALESCE(p.chief_agent_id, (SELECT id FROM agents WHERE is_chief=1 ORDER BY created_at LIMIT 1))
+          ELSE td.agent_id END
         WHERE t.status='queued' AND b.status='active'
           AND (t.not_before IS NULL OR t.not_before<=?)
           AND (b.machine_id IS NULL OR b.machine_id=?)
-          AND (b.required_machine_id IS NULL OR b.required_machine_id=?)
           AND NOT EXISTS (SELECT 1 FROM turns active WHERE active.build_id=b.id AND active.status='running')
-        ORDER BY t.rowid`, now(), machine.id, machine.id);
-      const candidate = candidates.find((row) => runtimes.includes((row.todo_id ? row.runtime : row.chief_runtime) as Runtime));
+        ORDER BY t.rowid`, now(), machine.id);
+      const candidate = candidates.find((row) => runtimes.includes(row.runtime as Runtime));
       if (!candidate) return null;
       const isChief = !candidate.todo_id;
-      const agentId = String(isChief ? candidate.chief_agent_id : candidate.selected_agent_id);
-      const agent = {
-        runtime: (isChief ? candidate.chief_runtime : candidate.runtime) as Runtime,
-        model: String(isChief ? candidate.chief_model : candidate.model),
-        reasoning: (isChief ? candidate.chief_reasoning : candidate.reasoning) as string | null,
-        role: String(isChief ? candidate.chief_role : candidate.role),
-      };
+      const agentId = String(candidate.selected_agent_id);
       const profile = this.db.agent(this.db.row("SELECT * FROM agents WHERE id=?", agentId)!);
-      const snapshot = { id: agentId, name: String(isChief ? candidate.chief_name : candidate.name), ...agent };
+      const agent = { runtime: profile.runtime, model: profile.model, reasoning: profile.reasoning, role: profile.role };
+      const snapshot = { id: agentId, name: profile.name, ...agent };
       this.db.run("UPDATE turns SET status='running', machine_id=?, started_at=?, last_reported_at=?, agent_snapshot_json=? WHERE id=?", machine.id, now(), now(), JSON.stringify(snapshot), candidate.id);
       this.db.run("UPDATE builds SET machine_id=? WHERE id=?", machine.id, candidate.actual_build_id);
       this.orchestrator.phaseForClaim(String(candidate.id));
@@ -119,17 +112,17 @@ export class Scheduler {
       const previousAgent = parseJson<Record<string, unknown>>(previous?.agent_snapshot_json, {});
       const canResume = previousAgent.id === agentId && previousAgent.runtime === agent.runtime && previousAgent.model === agent.model;
       const topicId = isChief ? String(candidate.branch).replace(/^chief:/, "") : null;
-      const readOnly = candidate.kind === "plan" || (candidate.kind === "revise" && candidate.previous_gate === "confirm");
+      const projectRow = candidate.project_id ? this.db.row("SELECT * FROM projects WHERE id=?", candidate.project_id) : undefined;
+      const mentioned = isChief ? "" : String(candidate.todo_spec) + "\n" + this.db.rows("SELECT content FROM messages WHERE conversation_id=?", candidate.actual_build_id).map((r) => r.content).join("\n");
       const job: TurnJob = {
         turnId: String(candidate.id), buildId: String(candidate.actual_build_id), todoId: candidate.todo_id as string | null, topicId,
         kind: candidate.kind as TurnKind,
         ...(isChief ? {} : { task: taskMetadata({ id: String(candidate.todo_id), number: Number(candidate.todo_number), title: String(candidate.todo_title), spec: String(candidate.todo_spec) }, this.orchestrator.publicUrl) }),
         project: isChief ? null : { id: String(candidate.project_id), repoUrl: String(candidate.repo_url), baseBranch: String(candidate.base_branch) },
         branch: isChief ? null : String(candidate.branch), agent, prompt: String(candidate.prompt),
-        systemInstructions: instructionsFor(profile) + (this.memories?.instructions(agentId) ?? ""),
-        skills: this.skills?.list().filter((s) => profile.defaultSkillIds?.includes(s.id) || (!isChief && new RegExp(`@${s.slug}(?![a-zA-Z0-9_-])`).test(String(this.db.row("SELECT spec FROM todos WHERE id=?", candidate.todo_id)?.spec ?? "") + "\n" + this.db.rows("SELECT content FROM messages WHERE conversation_id=?", candidate.actual_build_id).map((r) => r.content).join("\n")))).map(({ slug, name, description, version }) => ({ slug, name, description, version })) ?? [],
-        pushBranch: profile.permissions?.pushBranch ?? false,
-        sessionState: canResume ? parseJson(previous?.session_state_json, null) : null, readOnly,
+        systemInstructions: instructionsFor(profile, isChief, projectRow ? this.db.project(projectRow) : null),
+        skills: this.skills?.list().filter((s) => profile.defaultSkillIds?.includes(s.id) || new RegExp(`@${s.slug}(?![a-zA-Z0-9_-])`).test(mentioned)).map(({ slug, name, description, version }) => ({ slug, name, description, version })) ?? [],
+        sessionState: canResume ? parseJson(previous?.session_state_json, null) : null,
         mcp: { url: `${this.orchestrator.publicUrl}/mcp`, token: mcpToken },
       };
       if (requestId) this.db.run("INSERT INTO machine_claims VALUES (?,?,?)", machine.id, requestId, JSON.stringify(job));
@@ -148,7 +141,7 @@ export class Scheduler {
       const content = `Connection ${name} omitted: it runs on another machine.`;
       if (!this.db.row("SELECT id FROM messages WHERE turn_id=? AND content=?", job.turnId, content)) this.orchestrator.addMessage(job.topicId ?? job.buildId, job.turnId, "system", content, { code: "connection_machine_mismatch", connectionName: name });
     }
-    return { ...job, connections: delivery.connections, systemInstructions: job.systemInstructions + delivery.connections.map((c) => `\nTools from connection ${c.identifier} are available as mcp__${c.identifier}__*.`).join(""), ...(profile?.permissions?.secrets ? { env: this.secrets?.env(job.project?.id ?? null) ?? {} } : {}) };
+    return { ...job, connections: delivery.connections, systemInstructions: job.systemInstructions + delivery.connections.map((c) => `\nTools from connection ${c.identifier} are available as mcp__${c.identifier}__*.`).join("") };
   }
 
   // Roll back only a still-running, undelivered claim. A completed turn must never be requeued.
@@ -163,7 +156,7 @@ export class Scheduler {
       // Preserve affinity to a machine that already holds this build's worktree.
       this.db.run("UPDATE builds SET machine_id=NULL WHERE id=? AND NOT EXISTS (SELECT 1 FROM turns WHERE build_id=? AND machine_id IS NOT NULL)", job.buildId, job.buildId);
       if (job.todoId) {
-        this.db.run("UPDATE todos SET phase='queued', updated_at=? WHERE id=? AND phase IN ('planning','building')", now(), job.todoId);
+        this.db.run("UPDATE todos SET phase='queued', updated_at=? WHERE id=? AND phase='building'", now(), job.todoId);
         this.events.emit({ type: "todo.changed", todoId: job.todoId, payload: {} });
       }
     });
@@ -234,10 +227,8 @@ export class Scheduler {
       this.db.run("UPDATE turns SET tokens_in=?, tokens_out=?, duration_ms=?, session_state_json=?, completion_json=? WHERE id=?", usage.tokensIn, usage.tokensOut, usage.durationMs, payload.sessionState ? JSON.stringify(payload.sessionState) : null, serialized, turnId);
       this.db.run("UPDATE builds SET head_commit=COALESCE(?,head_commit), base_commit=COALESCE(base_commit,?) WHERE id=?", payload.headCommit ?? null, payload.baseCommit ?? null, turn.build_id);
       if (!turn.todo_id) this.db.run("UPDATE topics SET runtime_session_json=?, updated_at=? WHERE id=?", payload.sessionState ? JSON.stringify(payload.sessionState) : null, now(), this.conversation(turn));
-      if (payload.plan !== undefined) this.storeDocument(String(turn.build_id), "plan", payload.plan);
-      if (payload.diff !== undefined) this.storeDocument(String(turn.build_id), "changes", payload.diff);
-      const isBuild = turn.kind === "build" || (turn.kind === "revise" && turn.todo_id && this.orchestrator.getTodo(String(turn.todo_id)).previousGate === "review");
-      if (payload.status === "done" && payload.diff === "" && isBuild) {
+      if (payload.diff !== undefined) this.storeDocument(String(turn.build_id), payload.diff);
+      if (payload.status === "done" && payload.diff === "" && (turn.kind === "build" || turn.kind === "revise")) {
         this.orchestrator.addMessage(String(turn.build_id), turnId, "system", "No file changes in this build", { code: "no_file_changes" });
       }
       const failedMerge = turn.kind === "merge" && (payload.merge?.ok !== true || payload.status !== "done");
@@ -247,10 +238,10 @@ export class Scheduler {
     });
   }
 
-  private storeDocument(buildId: string, kind: "plan" | "changes", content: string): void {
-    const version = Number(this.db.row("SELECT COALESCE(max(version),0)+1 AS version FROM documents WHERE build_id=? AND kind=?", buildId, kind)?.version ?? 1);
-    this.db.run("INSERT INTO documents VALUES (?,?,?,?,?,?)", id(), buildId, kind, version, content, now());
-    this.events.emit({ type: "document.created", conversationId: buildId, payload: { kind, version } });
+  private storeDocument(buildId: string, content: string): void {
+    const version = Number(this.db.row("SELECT COALESCE(max(version),0)+1 AS version FROM documents WHERE build_id=? AND kind='changes'", buildId)?.version ?? 1);
+    this.db.run("INSERT INTO documents VALUES (?,?,'changes',?,?,?)", id(), buildId, version, content, now());
+    this.events.emit({ type: "document.created", conversationId: buildId, payload: { kind: "changes", version } });
   }
 
   private conversation(turn: Row): string { return turn.todo_id ? String(turn.build_id) : String(turn.branch).replace(/^chief:/, ""); }

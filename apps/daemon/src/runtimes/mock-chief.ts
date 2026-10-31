@@ -18,15 +18,12 @@ export async function splitChief(job: TurnJob, ctx: RuntimeContext): Promise<str
   };
   try {
     await client.connect(transport);
-    const project = (await call<Project[]>("list_projects"))[0];
+    // The master agent's tools default to its own workspace.
+    const workspace = await call<Project>("get_workspace");
     const agent = (await call<Agent[]>("list_agents")).find((item) => !item.isChief && item.runtime === "mock");
-    if (!project || !agent) throw new Error("/split needs a project and a mock coding agent");
+    if (!agent) throw new Error("/split needs a mock coding agent");
     const created: Todo[] = [];
-    for (const part of [1, 2]) {
-      const todo = await call<Todo>("create_todo", { projectId: project.id, agentId: agent.id, title: `${job.prompt.slice(6).trim() || "Mock task"} — part ${part}`, spec: `Implement independent part ${part}.`, mode: "run" });
-      await call("start_todo", { todoId: todo.id, mode: "run" });
-      created.push(todo);
-    }
+    for (const part of [1, 2]) created.push(await call<Todo>("create_task", { workspaceId: workspace.id, agentId: agent.id, title: `${job.prompt.slice(6).trim() || "Mock task"} — part ${part}`, spec: `Implement independent part ${part}.` }));
     return `Started ${created.map((todo) => `#${todo.number}`).join(" and ")} in parallel.`;
   } finally { await client.close(); }
 }

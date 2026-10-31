@@ -1,35 +1,24 @@
 import { useWorkspaceSettings } from "../pages/Settings";
-import { ProjectDialog } from "../pages/Projects";
+import { WorkspaceDialog } from "../pages/Workspaces";
 import { ProjectMonogram } from "./ProjectMonogram";
 import { MusterMark } from "./MusterMark";
 import { useI18n } from "../i18n";
 import { useState } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { NavLink } from "react-router";
 import {
   BookOpen,
-  Clock,
   Plug,
   Bot,
-  ChevronDown,
-  ChevronRight,
-  FolderGit2,
-  LayoutDashboard,
   LoaderCircle,
-  MessageSquare,
   Settings,
   PanelLeftClose,
   Plus,
-  Search,
   X,
 } from "lucide-react";
-import type { Topic } from "@muster/shared";
-import { api } from "../api/client";
-import { useTodos, useTopics, useMachines, useProjects } from "../api/queries";
+import type { Project, Todo } from "@muster/shared";
+import { useTodos, useMachines, useProjects } from "../api/queries";
 import { useRealtime } from "../api/realtime";
-import { useStored } from "../hooks/usePreferences";
 import { isRunning } from "../lib/board";
-import { Dialog, ErrorNotice } from "./ui";
 
 export function connectionStatus(connected: boolean, onlineCount: number | undefined) {
   if (!connected) return "connecting";
@@ -37,62 +26,41 @@ export function connectionStatus(connected: boolean, onlineCount: number | undef
   return onlineCount > 0 ? "online" : "offline";
 }
 
+/** A workspace is running while its master agent or any task works, and needs you at review or failure. */
+export function workspaceStatus(project: Project, todos: Todo[], masterActive: boolean, unread: boolean) {
+  const tasks = todos.filter((todo) => todo.projectId === project.id);
+  if (masterActive || tasks.some((todo) => isRunning(todo.phase))) return "running";
+  if (tasks.some((todo) => todo.phase === "failed")) return "failed";
+  if (tasks.some((todo) => todo.phase === "review")) return "needs-you";
+  return unread ? "unread" : "idle";
+}
+
 export function Sidebar({
   collapsed,
   mobileOpen,
   onToggle,
   onCloseMobile,
-  onSearch,
   onNewTask,
 }: {
   collapsed: boolean;
   mobileOpen: boolean;
   onToggle: () => void;
   onCloseMobile: () => void;
-  onSearch: () => void;
   onNewTask: () => void;
 }) {
   const { t, label } = useI18n();
-  const topics = useTopics();
   const machines = useMachines();
   const todos = useTodos();
   const realtime = useRealtime();
   const settings = useWorkspaceSettings();
   const projects = useProjects();
-  const [projectsOpen, setProjectsOpen] = useStored("projects-expanded", true);
-  const [newProject, setNewProject] = useState(false);
+  const [newWorkspace, setNewWorkspace] = useState(false);
   const onlineCount = machines.data?.filter((machine) => machine.online).length;
   const connection = connectionStatus(realtime.connected, machines.isError ? undefined : onlineCount);
-  const location = useLocation();
-  const [expanded, setExpanded] = useStored("topics-expanded", true);
-  const [newTopic, setNewTopic] = useState(false);
-  const defaultTopic = [...(topics.data ?? [])].sort((a, b) =>
-    a.createdAt.localeCompare(b.createdAt),
-  )[0]?.id;
-  const activityFor = (topic: Topic) => {
-    const linked =
-      todos.data?.filter(
-        (todo) =>
-          todo.topicId === topic.id ||
-          (!todo.topicId && topic.id === defaultTopic),
-      ) ?? [];
-    if (
-      topic.activity === "running" ||
-      topic.activity === "queued" ||
-      linked.some((todo) => isRunning(todo.phase))
-    )
-      return "running";
-    if (linked.some((todo) => todo.phase === "failed")) return "failed";
-    if (linked.some((todo) => ["confirm", "review"].includes(todo.phase)))
-      return "needs-you";
-    if (realtime.activity[topic.id]?.unread) return "unread";
-    return "idle";
-  };
   const links = [
     { to: "/agents", title: t("ui.agents"), icon: Bot },
     { to: "/skills", title: t("parity.skills"), icon: BookOpen },
     { to: "/connections", title: t("phaseB.connections"), icon: Plug },
-    { to: "/schedules", title: t("phaseB.schedules"), icon: Clock },
   ];
   return (
     <>
@@ -105,18 +73,17 @@ export function Sidebar({
         className={`sidebar ${collapsed ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}
       >
         <div className="sidebar-brand">
-          <NavLink to="/agents" onClick={onCloseMobile} className="brand" title={settings.data?.workspaceName ?? "Muster"}>
+          <NavLink to="/" onClick={onCloseMobile} className="brand" title={settings.data?.workspaceName ?? "Muster"}>
             <span className="brand-icon">
               <MusterMark size={18} />
             </span>
             <strong>{settings.data?.workspaceName ?? "Muster"}</strong>
-            <ChevronDown size={13} className="dim" />
           </NavLink>
           <button
             className="icon-button collapse-control"
             onClick={onToggle}
             aria-label={t("ui.collapseSidebar")}
-            title={`${t("ui.collapseSidebar")} (⌘B)`}
+            title={t("ui.collapseSidebar")}
           >
             <PanelLeftClose size={15} />
           </button>
@@ -129,171 +96,60 @@ export function Sidebar({
           </button>
         </div>
         <div className="sidebar-actions">
-          <button onClick={onSearch} title={`${t("ui.search")} (⌘K)`}>
-            <Search size={16} />
-            <span>{t("ui.search")}</span>
-            <kbd>⌘ K</kbd>
-          </button>
-          <button onClick={onNewTask} title={`${t("ui.newTask")} (⌘N)`}>
+          <button onClick={onNewTask} title={t("ui.newTask")} disabled={!projects.data?.length}>
             <Plus size={16} />
             <span>{t("ui.newTask")}</span>
-            <kbd>⌘ N</kbd>
           </button>
         </div>
         <nav aria-label={t("ui.mainNavigation")}>
-          <div className="workspace-nav">
-            <NavLink
-              to="/"
-              title={t("ui.workspace")}
-              className={
-                location.pathname === "/" ||
-                location.pathname.startsWith("/topics/")
-                  ? "nav-item active"
-                  : "nav-item"
-              }
-              onClick={onCloseMobile}
-            >
-              <LayoutDashboard size={16} />
-              <span>{t("ui.workspace")}</span>
-            </NavLink>
-            <button
-              className="icon-button topic-expand"
-              onClick={() => setExpanded(!expanded)}
-              aria-label={expanded ? t("ui.collapseTopics") : t("ui.expandTopics")}
-              aria-expanded={expanded}
-            >
-              <ChevronRight size={12} className={`sidebar-chevron ${expanded ? "expanded" : ""}`} />
+          <div className="sidebar-heading">{t("ws.workspaces")}</div>
+          <div className="topic-list workspace-list">
+            {projects.data?.map((project) => {
+              const activity = realtime.activity[project.topicId];
+              const status = workspaceStatus(project, todos.data ?? [], !!activity && activity.status !== "idle", !!activity?.unread);
+              return (
+                <NavLink
+                  key={project.id}
+                  to={`/w/${project.id}`}
+                  className={({ isActive }) => `topic-item workspace-item ${isActive ? "active" : ""}`}
+                  onClick={onCloseMobile}
+                  title={project.name}
+                >
+                  <ProjectMonogram name={project.name} />
+                  <span>{project.name}</span>
+                  {status === "running" ? (
+                    <LoaderCircle className="spin" size={11} aria-label={t("ui.running")} />
+                  ) : (
+                    <span className={`topic-status ${status}`} aria-label={label("status", status)} />
+                  )}
+                </NavLink>
+              );
+            })}
+            <button className="topic-item new-topic" title={t("ws.new")} onClick={() => setNewWorkspace(true)}>
+              <Plus size={13} />
+              <span>{t("ws.new")}</span>
             </button>
           </div>
-          {(expanded || collapsed) && (
-            <div className="topic-list">
-              {topics.data?.map((topic) => {
-                const status = activityFor(topic);
-                return (
-                  <NavLink
-                    key={topic.id}
-                    to={`/topics/${topic.id}`}
-                    className={({ isActive }) =>
-                      `topic-item ${isActive || (location.pathname === "/" && topic.id === defaultTopic) ? "active" : ""}`
-                    }
-                    onClick={onCloseMobile}
-                    title={topic.title}
-                  >
-                    {status === "running" ? (
-                      <LoaderCircle
-                        className="spin"
-                        size={11}
-                        aria-label={t("ui.running")}
-                      />
-                    ) : (
-                      <span
-                        className={`topic-status ${status}`}
-                        aria-label={label("status", status)}
-                      />
-                    )}
-                    <span>{topic.title}</span>
-                  </NavLink>
-                );
-              })}
-              <button
-                className="topic-item new-topic"
-                title={t("ui.newTopic")}
-                onClick={() => setNewTopic(true)}
-              >
-                <Plus size={13} />
-                <span>{t("ui.newTopic")}</span>
-              </button>
-            </div>
-          )}
-          <div className="nav-separator" />
-          <div className="workspace-nav"><NavLink className="nav-item" to="/projects" title={t("ui.projects")} onClick={onCloseMobile}><FolderGit2 size={16} /><span>{t("ui.projects")}</span></NavLink><button className="icon-button topic-expand" aria-label={t("ui.projects")} aria-expanded={projectsOpen} onClick={() => setProjectsOpen(!projectsOpen)}><ChevronRight size={12} className={`sidebar-chevron ${projectsOpen ? "expanded" : ""}`} /></button></div>
-          {(projectsOpen || collapsed) && <div className="sidebar-group">{projects.data?.map((p) => <NavLink className="nav-item" key={p.id} to={`/projects/${p.id}`} title={p.name} onClick={onCloseMobile}><ProjectMonogram name={p.name} /><span>{p.name}</span></NavLink>)}<button className="nav-item" title={t("ui.newProject")} onClick={() => setNewProject(true)}><Plus size={16} /><span>{t("ui.newProject")}</span></button></div>}
           <div className="nav-separator" />
           {links.map(({ to, title, icon: Icon }) => <NavLink className="nav-item" to={to} key={to} title={title} onClick={onCloseMobile}><Icon size={16} /><span>{title}</span></NavLink>)}
         </nav>
         <footer className="sidebar-footer">
-          <NavLink to="/settings?tab=machines" onClick={onCloseMobile}
+          <span
             className={`connection-label ${connection === "offline" ? "warning" : ""}`}
-            title={
-              realtime.connected
-                ? t("ui.realtimeConnectionEstablished")
-                : t("ui.reconnectingToServer")
-            }
+            title={realtime.connected ? t("ui.realtimeConnectionEstablished") : t("ui.reconnectingToServer")}
           >
-            <span
-              className={`status-dot ${connection === "online" ? "online" : ""}`}
-            />
+            <span className={`status-dot ${connection === "online" ? "online" : ""}`} />
             <span>
               {connection === "connecting" ? t("ui.connectingToServer")
                 : connection === "unknown" ? t("ui.machineStatusUnavailable")
                 : connection === "offline" ? t("ui.noMachinesOnline")
                 : t("count.online", { count: onlineCount ?? 0 })}
             </span>
-          </NavLink>
-          <NavLink className="nav-item" to="/settings" title={`${t("phaseC.settings")} (⌘,)`} onClick={onCloseMobile}><Settings size={16} /><span>{t("phaseC.settings")}</span><kbd>⌘,</kbd></NavLink>
+          </span>
+          <NavLink className="nav-item" to="/settings" title={t("phaseC.settings")} onClick={onCloseMobile}><Settings size={16} /><span>{t("phaseC.settings")}</span></NavLink>
         </footer>
       </aside>
-      {newProject && <ProjectDialog onClose={() => setNewProject(false)} />}
-      {newTopic && (
-        <NewTopicDialog
-          onClose={() => {
-            setNewTopic(false);
-            onCloseMobile();
-          }}
-        />
-      )}
+      {newWorkspace && <WorkspaceDialog onClose={() => { setNewWorkspace(false); onCloseMobile(); }} />}
     </>
-  );
-}
-function NewTopicDialog({ onClose }: { onClose: () => void }) {
-  const { t } = useI18n();
-  const [title, setTitle] = useState("");
-  const navigate = useNavigate();
-  const client = useQueryClient();
-  const create = useMutation({
-    mutationFn: () => api.createTopic(title.trim()),
-    onSuccess: (topic) => {
-      void client.invalidateQueries({ queryKey: ["topics"] });
-      void navigate(`/topics/${topic.id}`);
-      onClose();
-    },
-  });
-  return (
-    <Dialog title={t("ui.newTopic")} onClose={onClose}>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          create.mutate();
-        }}
-      >
-        <div className="dialog-body form-stack">
-          <label>
-            {t("ui.topicName")}<input
-              required
-              autoFocus
-              value={title}
-              placeholder={t("ui.whatAreWeWorkingOn")}
-              onChange={(event) => setTitle(event.target.value)}
-            />
-          </label>
-          <p className="hint">
-            {t("ui.aFreshConversationWithChiefWithYourWorkspaceInContext")}
-          </p>
-          <ErrorNotice error={create.error} />
-        </div>
-        <div className="dialog-footer">
-          <button type="button" className="button" onClick={onClose}>
-            {t("ui.cancel")}
-          </button>
-          <button
-            className="button primary"
-            disabled={create.isPending || !title.trim()}
-          >
-            <MessageSquare size={13} />
-            {create.isPending ? t("ui.creating") : t("ui.createTopic")}
-          </button>
-        </div>
-      </form>
-    </Dialog>
   );
 }

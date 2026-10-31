@@ -100,7 +100,6 @@ process.stdin.on("end", () => { void queue.then(() => process.exit(0)); });
 const piExtension = String.raw`
 import { readFileSync } from "node:fs";
 import { httpMcp, stdioMcp } from "./mcp-client.mjs";
-const READ_ONLY = ["read", "grep", "find", "ls"];
 export default async function (pi) {
   const config = JSON.parse(readFileSync(process.env.PI_MUSTER_BRIDGE_CONFIG, "utf8"));
   const names = [];
@@ -126,7 +125,6 @@ export default async function (pi) {
       }
     } catch (error) { console.error("Muster bridge: " + server.name + ": " + (error?.message ?? error)); }
   }
-  if (config.readOnly) pi.on("session_start", () => pi.setActiveTools([...READ_ONLY, ...names]));
 }
 `;
 
@@ -139,6 +137,6 @@ export async function writeBridge(job: TurnJob): Promise<Bridge> {
   await writeFile(files.client, client);
   await writeFile(files.proxy, proxy);
   await writeFile(files.piExtension, piExtension);
-  await writeFile(files.piConfig, JSON.stringify({ readOnly: job.readOnly, servers: mcpServers(job) }), { mode: 0o600 });
+  await writeFile(files.piConfig, JSON.stringify({ servers: mcpServers(job) }), { mode: 0o600 });
   return { dir, proxy: files.proxy, piExtension: files.piExtension, piConfig: files.piConfig, dispose: () => rm(dir, { recursive: true, force: true }) };
 }

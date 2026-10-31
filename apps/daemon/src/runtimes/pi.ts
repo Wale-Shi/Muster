@@ -82,7 +82,7 @@ export class PiRuntime implements Runtime {
         ...(job.agent.reasoning && THINKING.has(job.agent.reasoning) ? ["--thinking", job.agent.reasoning] : []),
         ...(sessionFile ? ["--session", sessionFile] : [])];
       if (stopped) { settle("stopped"); return; }
-      process = new JsonProcess(this.command, args, ctx.cwd, { ...job.env, PI_MUSTER_BRIDGE_CONFIG: bridge.piConfig });
+      process = new JsonProcess(this.command, args, ctx.cwd, { PI_MUSTER_BRIDGE_CONFIG: bridge.piConfig });
       process.ignoreInvalid = true;
       process.onFailure = (error) => settle(stopped ? "stopped" : "failed", error.message);
       process.onMessage = onMessage;

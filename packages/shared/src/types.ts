@@ -6,33 +6,34 @@ import type { Runtime } from "./runtimes.js";
 export type TodoPhase =
   | "todo"
   | "queued"
-  | "planning"
-  | "confirm"
   | "building"
   | "review"
   | "failed"
   | "done"
   | "closed";
-export type TurnKind = "plan" | "build" | "revise" | "merge" | "chief";
+export type TurnKind = "build" | "revise" | "merge" | "chief";
 export type TurnStatus = "queued" | "running" | "done" | "failed" | "stopped";
 export type BuildStatus = "active" | "done" | "failed" | "closed";
 export type MessageRole = "user" | "agent" | "system" | "tool";
-export type DocumentKind = "plan" | "changes";
+export type DocumentKind = "changes";
 
+/** A workspace: one Git repository with its own master agent and main conversation. */
 export interface Project {
   description?: string;
   id: Id;
   name: string;
   repoUrl: string;
   baseBranch: string;
+  /** The workspace's master agent; null uses the default master agent. */
+  chiefAgentId: Id | null;
+  /** The workspace's main conversation with its master agent. */
+  topicId: Id;
   createdAt: Timestamp;
 }
 
-export interface AgentPermissions { pushBranch: boolean; secrets: boolean; createSkills: boolean; updateSkills: boolean }
-export interface AgentMemory { id: string; agentId: string; content: string; source: "user" | "agent"; createdAt: string; updatedAt: string }
+export interface AgentPermissions { createSkills: boolean; updateSkills: boolean }
 export interface Skill { id: string; slug: string; name: string; description: string; source: Record<string, unknown>; createdAt: string; updatedAt: string; version: string }
 export interface SkillFile { path: string; content: string }
-export interface Secret { id: string; scope: "team" | "project"; projectId: string | null; name: string; updatedAt: string }
 
 export interface Agent {
   id: Id;
@@ -76,12 +77,9 @@ export interface Todo {
   spec: string;
   phase: TodoPhase;
   agentId: Id | null;
-  planAgentId: Id | null;
-  mode: "plan" | "run";
-  tags: string[];
   createdBy: "user" | "chief";
   topicId: Id | null;
-  previousGate: "confirm" | "review" | null;
+  previousGate: "review" | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   doneAt: Timestamp | null;
@@ -145,6 +143,7 @@ export interface QueuedMessage {
 
 export interface Topic {
   id: Id;
+  projectId: Id | null;
   title: string;
   runtimeSession: Record<string, unknown> | null;
   activity: "idle" | "queued" | "running";
@@ -153,27 +152,4 @@ export interface Topic {
   updatedAt: Timestamp;
 }
 
-export interface UsageSummary {
-  tokensIn: number;
-  tokensOut: number;
-  durationMs: number;
-  builds: number;
-  turns: number;
-}
-
-export interface UsageEntry {
-  turnId: Id;
-  buildId: Id;
-  todoId: Id | null;
-  topicId: Id | null;
-  agentId: Id | null;
-  agentName: string;
-  runtime: Runtime | null;
-  model: string;
-  startedAt: Timestamp;
-  tokensIn: number;
-  tokensOut: number;
-  durationMs: number;
-}
-export interface UsageReport extends UsageSummary { entries: UsageEntry[] }
 export type TodoDetail = Todo & { builds: (Build & { turns: Turn[]; documents: Document[] })[] };

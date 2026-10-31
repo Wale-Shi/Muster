@@ -20,7 +20,7 @@ export function Avatar({
 }
 export function PhaseDot({ phase }: { phase: TodoPhase }) {
   const { label } = useI18n();
-  return ["planning", "building", "queued"].includes(phase) ? (
+  return ["building", "queued"].includes(phase) ? (
     <LoaderCircle
       size={12}
       className={`phase-icon ${phase} spin`}

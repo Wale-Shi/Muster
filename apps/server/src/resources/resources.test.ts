@@ -16,7 +16,7 @@ it("migrates v3 data forward and preserves duties with Chief permissions", () =>
   const root = mkdtempSync(join(tmpdir(), "muster-v3-")); roots.push(root); const file = join(root, "db"); const old = new DatabaseSync(file);
   migrations.slice(0, 3).forEach((sql) => { if (typeof sql === "string") old.exec(sql); }); old.exec("PRAGMA user_version=3"); old.prepare("INSERT INTO agents VALUES (?,?,?,?,?,?,?,?,?)").run("chief", "Chief", "Keep this duty", "mock", "mock", null, null, 1, "2026-01-01"); old.close();
   const db = new MusterDb(file); dbs.push(db); const chief = db.agent(db.row("SELECT * FROM agents WHERE id='chief'")!);
-  expect(chief).toMatchObject({ role: "Keep this duty", permissions: { pushBranch: false, secrets: false, createSkills: true, updateSkills: true }, defaultSkillIds: [], updatedAt: "2026-01-01" });
+  expect(chief).toMatchObject({ role: "Keep this duty", permissions: { createSkills: true, updateSkills: true }, defaultSkillIds: [], updatedAt: "2026-01-01" });
   expect(db.row("PRAGMA user_version")?.user_version).toBe(migrations.length);
 });
 it("rebuilds agents without the runtime CHECK and keeps references intact", () => {
@@ -24,28 +24,57 @@ it("rebuilds agents without the runtime CHECK and keeps references intact", () =
   const last = migrations.findIndex((migration) => typeof migration !== "string");
   migrations.slice(0, last).forEach((sql) => { if (typeof sql === "string") old.exec(sql); }); old.exec(`PRAGMA user_version=${last}`);
   old.prepare("INSERT INTO agents (id,name,role,runtime,model,is_chief,created_at) VALUES (?,?,?,?,?,?,?)").run("a1", "Builder", "Build", "codex", "gpt", 0, "2026-01-01");
-  old.prepare("INSERT INTO agent_memories VALUES (?,?,?,?,?,?)").run("m1", "a1", "Remember", "user", "2026-01-01", "2026-01-01");
+  old.prepare("INSERT INTO projects (id,name,repo_url,base_branch,created_at) VALUES ('p1','P','/tmp/p','main','2026-01-01')").run();
+  old.prepare("INSERT INTO todos (id,number,project_id,title,spec,phase,agent_id,mode,tags_json,created_by,created_at,updated_at) VALUES ('t1',1,'p1','T','','todo','a1','run','[]','user','2026-01-01','2026-01-01')").run();
   expect(() => old.prepare("UPDATE agents SET runtime='pi' WHERE id='a1'").run()).toThrow(); old.close();
   const db = new MusterDb(file); dbs.push(db);
   db.raw.prepare("UPDATE agents SET runtime='pi' WHERE id='a1'").run();
   expect(db.row("SELECT runtime FROM agents WHERE id='a1'")?.runtime).toBe("pi");
-  expect(db.row("SELECT count(*) AS n FROM agent_memories WHERE agent_id='a1'")?.n).toBe(1);
+  expect(db.row("SELECT agent_id FROM todos WHERE id='t1'")?.agent_id).toBe("a1");
   expect(db.row("PRAGMA foreign_keys")?.foreign_keys).toBe(1);
-  expect(() => db.raw.prepare("INSERT INTO agent_memories VALUES ('m2','missing','x','user','t','t')").run()).toThrow();
+  expect(() => db.raw.prepare("UPDATE todos SET agent_id='missing' WHERE id='t1'").run()).toThrow();
 });
-it("validates profiles and scopes memories, with a bounded newest-first prompt", async () => {
-  const { app, services } = setup(); const { agentId } = await seedProjectAndAgent(app);
-  expect((await requestJson(app, `/api/agents/${agentId}`, "PATCH", { permissions: { secrets: "true" } })).response.status).toBe(400);
+it("migrates projects into workspaces and drops removed features", () => {
+  const root = mkdtempSync(join(tmpdir(), "muster-workspaces-")); roots.push(root); const file = join(root, "db"); const old = new DatabaseSync(file);
+  const before = migrations.length - 1;
+  for (const migration of migrations.slice(0, before)) {
+    if (typeof migration === "string") old.exec(migration);
+    else { old.exec("PRAGMA foreign_keys=OFF"); old.exec(migration.sql); old.exec("PRAGMA foreign_keys=ON"); }
+  }
+  old.exec(`PRAGMA user_version=${before}`);
+  old.exec(`INSERT INTO agents (id,name,role,runtime,model,is_chief,created_at) VALUES ('a1','Builder','Build','mock','mock',0,'2026-01-01');
+    INSERT INTO projects (id,name,repo_url,base_branch,created_at) VALUES ('p1','Shop','/tmp/shop','main','2026-01-01');
+    INSERT INTO topics VALUES ('general','General',NULL,'2026-01-01','2026-01-01');
+    INSERT INTO todos (id,number,project_id,title,spec,phase,agent_id,mode,tags_json,created_by,topic_id,previous_gate,created_at,updated_at) VALUES
+      ('t1',1,'p1','Planned','','confirm','a1','plan','[]','user','general','confirm','2026-01-01','2026-01-01'),
+      ('t2',2,'p1','Built','','review','a1','run','[]','chief','general','review','2026-01-01','2026-01-01');
+    INSERT INTO builds (id,todo_id,branch,status,created_at) VALUES ('b1','t1','muster/conv-b1','active','2026-01-01');
+    INSERT INTO turns (id,build_id,kind,status,prompt) VALUES ('u1','b1','plan','queued','plan it');
+    INSERT INTO documents VALUES ('d1','b1','plan',1,'Plan','2026-01-01');
+    INSERT INTO settings VALUES ('language','"zh-CN"'), ('workspaceName','"Team"');`);
+  old.close();
+  const db = new MusterDb(file); dbs.push(db);
+  const project = db.project(db.row("SELECT * FROM projects WHERE id='p1'")!);
+  expect(project).toMatchObject({ chiefAgentId: null, topicId: expect.any(String) });
+  expect(db.topic(db.row("SELECT * FROM topics WHERE id=?", project.topicId)!)).toMatchObject({ projectId: "p1", title: "Shop" });
+  expect(db.rows("SELECT id, phase, previous_gate, topic_id FROM todos ORDER BY number")).toEqual([
+    { id: "t1", phase: "todo", previous_gate: null, topic_id: project.topicId },
+    { id: "t2", phase: "review", previous_gate: "review", topic_id: project.topicId },
+  ]);
+  expect(db.row("SELECT status FROM turns WHERE id='u1'")?.status).toBe("stopped");
+  expect(db.rows("SELECT * FROM documents")).toEqual([]);
+  expect(db.rows("SELECT key FROM settings")).toEqual([{ key: "workspaceName" }]);
+  for (const table of ["schedules", "secrets", "agent_memories", "attachments"]) expect(db.row("SELECT name FROM sqlite_master WHERE name=?", table)).toBeUndefined();
+});
+it("validates profiles, drops removed permissions and reports the workspaces an agent leads", async () => {
+  const { app } = setup(); const { agentId, projectId } = await seedProjectAndAgent(app);
+  expect((await requestJson(app, `/api/agents/${agentId}`, "PATCH", { permissions: { createSkills: "true" } })).response.status).toBe(400);
   expect((await requestJson(app, `/api/agents/${agentId}`, "PATCH", { defaultSkillIds: ["missing"] })).response.status).toBe(400);
-  const skill = services.skills.create({ name: "Tests", description: "Write tests", instructions: "Test behavior" });
-  expect((await requestJson(app, `/api/agents/${agentId}`, "PATCH", { defaultSkillIds: [skill.id], permissions: { secrets: true } })).json.data.permissions.secrets).toBe(true);
-  const memory = (await requestJson(app, `/api/agents/${agentId}/memories`, "POST", { content: "older" })).json.data;
-  expect((await requestJson(app, `/api/agents/${agentId}/memories/${memory.id}`, "PATCH", { content: "edited" })).json.data.content).toBe("edited");
-  const chief = services.db.agent(services.db.row("SELECT * FROM agents WHERE is_chief=1")!);
-  expect((await requestJson(app, `/api/agents/${chief.id}/memories/${memory.id}`, "DELETE")).response.status).toBe(404);
-  services.memories.create(agentId, "Newest ".repeat(1000), "agent"); const prompt = services.memories.instructions(agentId); expect(prompt).toContain("Newest"); expect(prompt).toContain("truncated"); expect(prompt.length).toBeLessThan(4000);
-  expect((await requestJson(app, `/api/agents/${agentId}`)).json.data).toMatchObject({ memoryCount: 2, skillCount: 1, inProgress: [] });
-  expect((await requestJson(app, `/api/agents/${agentId}/memories/${memory.id}`, "DELETE")).response.status).toBe(204);
+  expect((await requestJson(app, `/api/agents/${agentId}`, "PATCH", { permissions: { secrets: true, createSkills: true } })).json.data.permissions).toEqual({ createSkills: true, updateSkills: false });
+  await requestJson(app, `/api/projects/${projectId}`, "PATCH", { chiefAgentId: agentId });
+  expect((await requestJson(app, `/api/agents/${agentId}`)).json.data).toMatchObject({ skillCount: 0, inProgress: [], workspaces: [{ id: projectId }] });
+  expect((await requestJson(app, `/api/agents/${agentId}`, "DELETE")).response.status).toBe(204);
+  expect((await requestJson(app, `/api/projects/${projectId}`)).json.data.chiefAgentId).toBeNull();
 });
 it("validates skill paths, symlinks, limits and frontmatter; authenticates archives", async () => {
   const { app, services, dataDir } = setup();
@@ -65,64 +94,44 @@ it("validates skill paths, symlinks, limits and frontmatter; authenticates archi
   expect((await app.request("/api/skills/upload", { method: "POST", body: form })).status).toBe(201);
   expect(services.skills.list()).toHaveLength(2);
 });
-it("encrypts secrets, keeps APIs write-only, applies project overrides, and never journals env", async () => {
-  const { app, services, dataDir } = setup(); const { projectId, agentId } = await seedProjectAndAgent(app); const machine = await enroll(app);
-  const put = (value: unknown) => requestJson(app, "/api/secrets", "PUT", value);
-  const team = await put({ scope: "team", name: "SERVICE_TOKEN", value: "team-private-value" });
-  expect(team.response.status).toBe(200); expect(JSON.stringify(team.json)).not.toContain("team-private-value");
-  await put({ scope: "team", name: "SERVICE_TOKEN", value: "team-replaced-value" });
-  await put({ scope: "project", projectId, name: "SERVICE_TOKEN", value: "project-private-value" });
-  expect(services.secrets.env(null)).toEqual({ SERVICE_TOKEN: "team-replaced-value" }); expect(services.secrets.env(projectId)).toEqual({ SERVICE_TOKEN: "project-private-value" });
+it("keeps connection credentials encrypted with a private key file", async () => {
+  const { services, dataDir } = setup();
+  services.connections.save({ identifier: "remote", name: "Remote", transport: "http", url: "https://example.test/mcp", secrets: { Authorization: "Bearer private-value" } });
   expect(statSync(join(dataDir, "secret.key")).mode & 0o777).toBe(0o600); expect(readFileSync(join(dataDir, "secret.key"))).toHaveLength(32);
-  const serialized = JSON.stringify(services.db.rows("SELECT * FROM secrets")); expect(serialized).not.toContain("private-value");
-  for (const name of ["PATH", "HOME", "MUSTER_X", "CODEX_X", "CLAUDE_X", "bad", "NODE_OPTIONS"]) expect((await put({ scope: "team", name, value: "invalid" })).response.status).toBe(400);
-  expect((await put({ scope: "project", name: "VALID", value: "invalid" })).response.status).toBe(400);
-  const todoId = await createTodo(app, projectId, agentId); services.orchestrator.start(todoId, "plan"); const job = services.scheduler.claim(machine.token, "retry")!; expect(job.env).toBeUndefined();
-  await requestJson(app, `/api/agents/${agentId}`, "PATCH", { permissions: { secrets: true } });
-  const replay = services.scheduler.claim(machine.token, "retry")!; expect(replay.env).toEqual({ SERVICE_TOKEN: "project-private-value" }); expect(replay.readOnly).toBe(true);
-  expect(JSON.stringify(services.db.rows("SELECT * FROM machine_claims"))).not.toContain("private-value"); expect(JSON.parse(String(services.db.row("SELECT job_json FROM machine_claims")?.job_json))).not.toHaveProperty("env");
-  const list = await requestJson(app, "/api/secrets"); expect(list.json.data).toHaveLength(2); expect(JSON.stringify(list.json)).not.toMatch(/ciphertext|iv|tag|value/);
-  await requestJson(app, `/api/secrets/${team.json.data.id}`, "DELETE"); expect(services.secrets.env(null)).toEqual({});
+  expect(JSON.stringify(services.db.rows("SELECT * FROM connections"))).not.toContain("private-value");
 });
-it("scopes MCP memories and skill permissions and fulfills Chief secret requests without values in messages", async () => {
+it("gates MCP skill tools on the agent's permissions", async () => {
   const { app, services } = setup(); const { projectId, agentId } = await seedProjectAndAgent(app); const machine = await enroll(app, 2);
   const chief = services.db.agent(services.db.row("SELECT * FROM agents WHERE is_chief=1")!); await requestJson(app, `/api/agents/${chief.id}`, "PATCH", { runtime: "mock", model: "mock" });
-  const todoId = await createTodo(app, projectId, agentId, "run"); services.orchestrator.start(todoId, "run"); const job = services.scheduler.claim(machine.token)!;
+  const todoId = await createTodo(app, projectId, agentId); services.orchestrator.start(todoId); const job = services.scheduler.claim(machine.token)!;
   const connect = async (token: string) => {
     let session = ""; let seq = 0;
     const rpc = async (method: string, params: unknown) => { const r = await requestJson(app, "/mcp", "POST", { jsonrpc: "2.0", id: ++seq, method, params }, token, session ? { "mcp-session-id": session } : undefined); session ||= r.response.headers.get("mcp-session-id") ?? ""; return r.json; };
     await rpc("initialize", { protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "resources", version: "1" } });
     return async (name: string, args = {}) => (await rpc("tools/call", { name, arguments: args })).result;
   };
-  const agent = await connect(job.mcp.token); const own = await agent("remember", { content: "Own memory" }); const memory = JSON.parse(own.content[0].text); expect(memory).toMatchObject({ agentId, source: "agent" });
-  const other = services.memories.create(chief.id, "Chief memory", "user"); expect((await agent("forget", { memoryId: other.id })).isError).toBe(true);
-  expect((await agent("list_memories")).content[0].text).not.toContain("Chief memory");
+  const agent = await connect(job.mcp.token);
   expect((await agent("create_skill", { name: "Denied", description: "Denied", instructions: "Denied" })).isError).toBe(true);
-  expect((await agent("request_secret", { name: "API_TOKEN", scope: "team", reason: "Need access" })).isError).toBe(true);
-  const topicId = String(services.db.row("SELECT id FROM topics")!.id); services.orchestrator.enqueueChief(topicId, "Request access"); const chiefJob = services.scheduler.claim(machine.token)!; const call = await connect(chiefJob.mcp.token);
+  expect((await agent("create_task", { title: "Not for coding agents" })).isError).toBe(true);
+  services.orchestrator.enqueueChief(services.orchestrator.topicFor(projectId), "Write a skill"); const chiefJob = services.scheduler.claim(machine.token)!; const call = await connect(chiefJob.mcp.token);
   expect((await call("create_skill", { name: "Allowed", description: "Useful", instructions: "Work" })).isError).not.toBe(true);
-  const requested = JSON.parse((await call("request_secret", { name: "API_TOKEN", scope: "team", reason: "Need access" })).content[0].text); expect(requested.status).toBe("requested");
-  expect((await requestJson(app, "/api/secrets", "PUT", { scope: "team", name: "WRONG", value: "never-in-chat", requestId: requested.messageId })).response.status).toBe(400);
-  expect((await requestJson(app, "/api/secrets", "PUT", { scope: "team", name: "API_TOKEN", value: "never-in-chat", requestId: requested.messageId })).response.status).toBe(200);
-  const messages = services.db.rows("SELECT * FROM messages"); expect(JSON.stringify(messages)).not.toContain("never-in-chat"); expect(services.db.message(services.db.row("SELECT * FROM messages WHERE id=?", requested.messageId)!).meta.fulfilledAt).toBeTruthy();
-  expect(JSON.stringify(services.db.rows("SELECT * FROM server_events"))).not.toContain("never-in-chat");
 });
 
 it("protects the running snapshot even after reassignment and rolls back bulk imports on conflict", async () => {
   const { app, services } = setup(); const { projectId, agentId } = await seedProjectAndAgent(app); const machine = await enroll(app);
-  const todoId = await createTodo(app, projectId, agentId, "run"); services.orchestrator.start(todoId, "run"); services.scheduler.claim(machine.token);
+  const todoId = await createTodo(app, projectId, agentId); services.orchestrator.start(todoId); services.scheduler.claim(machine.token);
   await requestJson(app, `/api/todos/${todoId}`, "PATCH", { agentId: null });
   expect((await requestJson(app, `/api/agents/${agentId}`, "DELETE")).response.status).toBe(409);
   const form = new FormData(); form.append("bulk", "true");
   for (const folder of ["one", "two"]) form.append("files", new Blob(["---\nname: Duplicate\ndescription: Test\n---\nWork"]), `${folder}/SKILL.md`);
   expect((await app.request("/api/skills/upload", { method: "POST", body: form })).status).toBe(409); expect(services.skills.list()).toEqual([]);
 });
-it("unions default and mentioned skills, scopes planning to its agent and updates content hashes", async () => {
+it("unions default and mentioned skills and updates content hashes", async () => {
   const { app, services } = setup(); const { projectId, agentId } = await seedProjectAndAgent(app); const machine = await enroll(app);
   const skill = services.skills.create({ name: "Default", description: "Default", instructions: "Original" }); const mentioned = services.skills.create({ name: "Mentioned", description: "Mention", instructions: "Other" });
-  await requestJson(app, `/api/agents/${agentId}`, "PATCH", { defaultSkillIds: [skill.id] }); services.memories.create(agentId, "Planning memory", "user");
-  const todoId = await createTodo(app, projectId, agentId); await requestJson(app, `/api/todos/${todoId}`, "PATCH", { spec: "Use @mentioned and @default" }); services.orchestrator.start(todoId, "plan");
-  const job = services.scheduler.claim(machine.token)!; expect(job.skills?.map((s) => s.slug).sort()).toEqual(["default", "mentioned"]); expect(job.systemInstructions).toContain("Planning memory");
+  await requestJson(app, `/api/agents/${agentId}`, "PATCH", { defaultSkillIds: [skill.id] });
+  const todoId = await createTodo(app, projectId, agentId); await requestJson(app, `/api/todos/${todoId}`, "PATCH", { spec: "Use @mentioned and @default" }); services.orchestrator.start(todoId);
+  const job = services.scheduler.claim(machine.token)!; expect(job.skills?.map((s) => s.slug).sort()).toEqual(["default", "mentioned"]);
   const updated = services.skills.update(mentioned.slug, { instructions: "Revised" }); expect(updated.version).not.toBe(mentioned.version); expect(updated.description).toBe("Mention");
   services.skills.delete(skill.slug); expect(services.db.agent(services.db.row("SELECT * FROM agents WHERE id=?", agentId)!).defaultSkillIds).toEqual([]);
 });

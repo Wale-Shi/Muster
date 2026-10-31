@@ -21,8 +21,8 @@ async function setup({ machines = [], status, runtime }: { machines?: Machine[];
   vi.spyOn(api, "queuedMessages").mockResolvedValue([]);
   vi.spyOn(api, "machines").mockResolvedValue(machines);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><MemoryRouter><RealtimeProvider><Conversation conversationId="topic" {...(status ? { status } : {})} {...(runtime ? { runtime } : {})} /></RealtimeProvider></MemoryRouter></QueryClientProvider>);
-  await screen.findByText("How can I help?");
+  render(<QueryClientProvider client={client}><MemoryRouter><RealtimeProvider><Conversation conversationId="topic" agentName="Atlas" {...(status ? { status } : {})} {...(runtime ? { runtime } : {})} /></RealtimeProvider></MemoryRouter></QueryClientProvider>);
+  await screen.findByText("我是 Atlas，这个工作空间的 master agent");
   const emit = (type: string, payload: unknown, extra: Partial<ServerEvent> = {}) => {
     act(() => receive?.({ data: JSON.stringify({ type, conversationId: "topic", turnId: "turn", payload, ...extra }) }));
   };
@@ -35,17 +35,17 @@ const machine = (runtimes: Runtime[]): Machine => ({ id: "machine", name: "Test 
 
 it("tells the user when no machine is online for a queued turn", async () => {
   await setup({ status: "queued", runtime: "devin" });
-  expect(await screen.findByText(/No machine is online\. Start one with/)).toBeInTheDocument();
+  expect(await screen.findByText(/没有在线机器。请运行/)).toBeInTheDocument();
 });
 
 it("names the runtime that no online machine supports", async () => {
   await setup({ status: "queued", runtime: "devin", machines: [machine(["mock"])] });
-  expect(await screen.findByText(/No online machine supports the devin runtime\./)).toBeInTheDocument();
+  expect(await screen.findByText(/没有在线机器支持 devin 运行时。/)).toBeInTheDocument();
 });
 
 it("keeps the ordinary waiting copy when an online machine can run the turn", async () => {
   await setup({ status: "queued", runtime: "mock", machines: [machine(["mock"])] });
-  expect(await screen.findByText(/Waiting for a machine/)).toBeInTheDocument();
+  expect(await screen.findByText(/等待机器接手/)).toBeInTheDocument();
 });
 
 it("shows a dismissible amber warning in the composer separately from Working status", async () => {
@@ -57,12 +57,12 @@ it("shows a dismissible amber warning in the composer separately from Working st
   expect(warning.closest(".composer-wrap")).not.toBeNull();
   expect(warning).toHaveTextContent("Selected model is at capacity.");
   const status = screen.getByRole("status");
-  expect(status).toHaveTextContent("Working…");
+  expect(status).toHaveTextContent("正在处理…");
   expect(status).toHaveTextContent("Inspecting files");
   expect(status).not.toHaveTextContent("capacity");
-  await user.click(within(warning).getByRole("button", { name: "Dismiss runtime warning" }));
+  await user.click(within(warning).getByRole("button", { name: "忽略运行警告" }));
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  expect(status).toHaveTextContent("Working…");
+  expect(status).toHaveTextContent("正在处理…");
   warn();
   expect(screen.getByRole("alert")).toBeInTheDocument();
   emit("usage", { tokensIn: 1, tokensOut: 0 });
@@ -72,16 +72,16 @@ it("shows a dismissible amber warning in the composer separately from Working st
   expect(screen.getByRole("alert")).toBeInTheDocument();
   emit("message.delta", { content: "Resumed" });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  expect(status).toHaveTextContent("Working…");
+  expect(status).toHaveTextContent("正在处理…");
   expect(status).not.toHaveTextContent("Inspecting files");
 });
 
 it.each(["message.completed", "reasoning.delta", "tool.started", "tool.completed", "plan.updated"])("clears the warning when the turn produces %s output", async (type) => {
   const { emit, warn } = await setup();
   warn();
-  emit(type, { content: "Output", tool: "read" });
+  emit(type, { content: "输出", tool: "read" });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("Working…");
+  expect(screen.getByRole("status")).toHaveTextContent("正在处理…");
 });
 
 it.each(["done", "failed", "stopped"])("clears the warning when the turn ends %s", async (status) => {
@@ -91,15 +91,15 @@ it.each(["done", "failed", "stopped"])("clears the warning when the turn ends %s
   expect(screen.getByRole("alert")).toBeInTheDocument();
   emit("turn.completed", { turnId: "turn", status });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  expect(screen.queryByText("Working…")).not.toBeInTheDocument();
+  expect(screen.queryByText("正在处理…")).not.toBeInTheDocument();
 });
 
-it("offers four Chief starter tiles and fills the composer", async () => {
+it("offers master-agent starter tiles and fills the composer", async () => {
   const { user } = await setup();
-  expect(screen.getByRole("button", { name: "Import an existing project" })).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Import a skill" })).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "Build a small browser game" }));
-  expect(screen.getByLabelText("Message")).toHaveValue("Build a small browser game");
-  await user.click(screen.getByRole("button", { name: "Make a daily news digest page" }));
-  expect(screen.getByLabelText("Message")).toHaveValue("Make a daily news digest page");
+  expect(screen.getByRole("button", { name: "导入技能" })).toBeInTheDocument();
+  expect(screen.getByLabelText("消息")).toHaveAttribute("placeholder", "给 Atlas 发消息，或把任务拖到这里引用");
+  await user.click(screen.getByRole("button", { name: "汇报一下各任务的进展和卡点" }));
+  expect(screen.getByLabelText("消息")).toHaveValue("汇报一下各任务的进展和卡点");
+  await user.click(screen.getByRole("button", { name: "验收所有待验收的任务，没问题就合并" }));
+  expect(screen.getByLabelText("消息")).toHaveValue("验收所有待验收的任务，没问题就合并");
 });

@@ -49,28 +49,31 @@ try {
     return result.data;
   };
   const project = await api("/projects", { name: "E2E", repoUrl: repo });
-  await api("/settings", { workspaceName: "E2E workspace", appearance: "dark", language: "en" }, "PATCH");
+  assert(project.topicId, "a workspace has its own master-agent conversation");
+  await api("/settings", { workspaceName: "E2E workspace" }, "PATCH");
   assert.equal((await api("/settings")).workspaceName, "E2E workspace");
-  assert((await api(`/projects/${project.id}/tree`)).some((file) => file.name === "README.md"));
-  assert.equal((await api(`/projects/${project.id}/file?path=README.md`)).content, "Muster e2e fixture\n");
-  const externalKey = await api("/api-keys", { name: "E2E reader", scopes: ["read"] });
-  const externalMcp = (method, params) => fetch(`${url}/api/mcp`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${externalKey.key}` }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
-  const catalog = await (await externalMcp("tools/list")).json();
+  const mcpClient = (key, path = "/api/mcp") => async (method, params) => fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json, text/event-stream", Authorization: `Bearer ${key}` }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+  const readerKey = await api("/api-keys", { name: "E2E reader", scopes: ["read"] });
+  const readOnly = mcpClient(readerKey.key);
+  const catalog = await (await readOnly("tools/list")).json();
   assert(catalog.result.tools.every((tool) => tool.annotations.readOnlyHint));
-  assert(!catalog.result.tools.some((tool) => tool.name === "create_todo"));
-  assert.equal((await (await externalMcp("tools/call", { name: "create_todo", arguments: { projectId: project.id, title: "Denied" } })).json()).result.isError, true);
-  assert.equal((await fetch(`${url}/api/api-keys/${externalKey.id}`, { method: "DELETE" })).status, 204);
-  assert.equal((await externalMcp("tools/list")).status, 401);
-  console.log("PASS settings, local project browsing and external MCP scope/revocation over HTTP");
+  assert(!catalog.result.tools.some((tool) => tool.name === "create_task" || tool.name === "assign_work"));
+  assert.equal((await (await readOnly("tools/call", { name: "create_task", arguments: { title: "Denied" } })).json()).result.isError, true);
+  assert.equal((await fetch(`${url}/api/api-keys/${readerKey.id}`, { method: "DELETE" })).status, 204);
+  assert.equal((await readOnly("tools/list")).status, 401);
+  const partnerKey = await api("/api-keys", { name: "E2E partner AI", scopes: ["chief"] });
+  const partner = mcpClient(partnerKey.key, `/api/mcp/workspaces/${project.id}`);
+  const [listed] = JSON.parse((await (await partner("tools/call", { name: "list_workspaces", arguments: {} })).json()).result.content[0].text);
+  assert.equal(listed.id, project.id);
+  assert.equal(listed.masterAgent.name, "Chief");
+  console.log("PASS settings, workspace-scoped external MCP and scope/revocation over HTTP");
   const agent = await api("/agents", { name: "Mock", role: "Build deterministic fixtures", runtime: "mock", model: "mock" });
   const skillForm = new FormData();
   skillForm.append("files", new Blob(["---\nname: E2E Skill\ndescription: Verify resource delivery\n---\nUse the deterministic mock runtime."]), "fixture/SKILL.md");
   const skillResponse = await fetch(`${url}/api/skills/upload`, { method: "POST", body: skillForm });
   assert.equal(skillResponse.status, 201);
   const skill = (await skillResponse.json()).data[0];
-  await api(`/agents/${agent.id}`, { defaultSkillIds: [skill.id], permissions: { secrets: true } }, "PATCH");
-  await api(`/agents/${agent.id}/memories`, { content: "E2E persistent memory" });
-  await api("/secrets", { scope: "team", name: "SERVICE_TOKEN", value: "muster-e2e-private" }, "PUT");
+  await api(`/agents/${agent.id}`, { defaultSkillIds: [skill.id] }, "PATCH");
   const chief = (await api("/agents")).find((item) => item.isChief);
   assert.equal(chief.model, "default");
   assert.equal(chief.reasoning, "medium");
@@ -100,13 +103,7 @@ try {
   };
   class ResourceMock extends MockRuntime {
     start(job, context) {
-      if (job.todoId) {
-        assert.equal(job.env.SERVICE_TOKEN, "muster-e2e-private");
-        assert(job.systemInstructions.includes("E2E persistent memory"));
-        assert(job.systemInstructions.includes("skills-cache"));
-        if (job.attachments?.length) assert(job.prompt.includes("attachments-cache"));
-        context.emit({ type: "tool.completed", tool: "resource-fixture", output: job.env.SERVICE_TOKEN });
-      }
+      if (job.todoId) assert(job.systemInstructions.includes("skills-cache"));
       const artifactMatch = job.systemInstructions.match(/Build artifact directory: (.+)\n/);
       if (job.todoId) {
         assert(artifactMatch, "artifact directory is in system instructions");
@@ -114,7 +111,7 @@ try {
       }
       const running = super.start(job, context);
       return { ...running, result: running.result.then(async (result) => {
-        if (job.todoId && !job.readOnly) {
+        if (job.todoId && job.kind !== "merge") {
           const artifact = join(JSON.parse(artifactMatch[1]), `${job.turnId}.png`);
           const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGMoKPgPRAwQCgAyNgd9JQZITgAAAABJRU5ErkJggg==", "base64");
           await writeFile(artifact, png);
@@ -131,20 +128,8 @@ try {
   const details = (id) => api(`/todos/${id}`);
   const phase = (id, target) => until(() => details(id), (todo) => todo.phase === target, `${id} → ${target}`);
   const create = (title) => api("/todos", { projectId: project.id, agentId: agent.id, title, spec: "Write a deterministic integration fixture." });
-  const todo = await create("Plan and merge");
-  const attachmentForm = new FormData(); attachmentForm.append("files", new Blob(["E2E attachment"]), "notes.txt");
-  assert.equal((await fetch(`${url}/api/todos/${todo.id}/attachments`, { method: "POST", body: attachmentForm })).status, 201);
-  await api(`/todos/${todo.id}/start`, { mode: "plan" });
-  const planned = await phase(todo.id, "confirm");
-  const resourceMessages = JSON.stringify(await api(`/conversations/${planned.builds[0].id}/messages`));
-  assert(!resourceMessages.includes("muster-e2e-private"));
-  assert(resourceMessages.includes("[secret:SERVICE_TOKEN]"));
-  const attachment = (await api(`/todos/${todo.id}/attachments`))[0];
-  assert.equal(await readFile(join(root, "server-data", "attachments-cache", `${attachment.id}-${attachment.hash}`), "utf8"), "E2E attachment");
-  console.log("PASS attachment upload → authenticated machine download → cache + prompt");
-  console.log("PASS agent memory + skill cache + permission-gated env + upload redaction");
-  assert(planned.builds[0].documents.some((doc) => doc.kind === "plan"));
-  await api(`/todos/${todo.id}/confirm`, {});
+  const todo = await create("Build and merge");
+  await api(`/todos/${todo.id}/start`, {});
   await phase(todo.id, "building");
   await api(`/todos/${todo.id}/message`, { content: "MID_TURN_STEER" });
   const reviewed = await phase(todo.id, "review");
@@ -171,7 +156,7 @@ try {
   await api(`/todos/${todo.id}/done`, { merge: true });
   await phase(todo.id, "done");
   assert.notEqual(await git(repo, "rev-parse", "HEAD"), original);
-  assert((await readFile(join(repo, "MUSTER_MOCK.md"), "utf8")).includes("Plan and merge"));
+  assert((await readFile(join(repo, "MUSTER_MOCK.md"), "utf8")).includes("Build and merge"));
   assert.equal(await git(repo, "status", "--porcelain"), "");
   const mergeMessage = await git(repo, "log", "-1", "--format=%B");
   assert.equal(mergeMessage.split("\n")[0], `Merge #${todo.number}: ${todo.title}`);
@@ -179,11 +164,11 @@ try {
   assert(mergeMessage.includes(`Task: ${url}/todos/${todo.id}`));
   assert(mergeMessage.includes(`Task ID: ${todo.id}`));
   console.log("PASS task checkpoint and merge subjects, summary, URL and ID");
-  console.log("PASS plan → confirm → build + steer → review → merge → done");
+  console.log("PASS skill cache → build + steer → review → merge → done");
 
   const late = await create("Late completion steer");
   lateTodoId = late.id;
-  await api(`/todos/${late.id}/start`, { mode: "run" });
+  await api(`/todos/${late.id}/start`, {});
   const lateReviewed = await phase(late.id, "review");
   const lateBuild = lateReviewed.builds[0];
   assert(lateTurnId, "completion boundary hook ran");
@@ -202,7 +187,7 @@ try {
   console.log("PASS steer queued at completion → automatic revise → review, empty queue and persisted conversation");
 
   const one = await create("ISOLATED_ONE"); const two = await create("ISOLATED_TWO");
-  await Promise.all([one, two].map((item) => api(`/todos/${item.id}/start`, { mode: "run" })));
+  await Promise.all([one, two].map((item) => api(`/todos/${item.id}/start`, {})));
   await until(async () => Promise.all([details(one.id), details(two.id)]), (todos) => todos.every((item) => item.phase === "building"), "parallel running builds");
   const [first, second] = await Promise.all([phase(one.id, "review"), phase(two.id, "review")]);
   assert.notEqual(first.builds[0].id, second.builds[0].id);
@@ -214,19 +199,22 @@ try {
   }
   console.log("PASS concurrent todos use isolated worktrees and branches");
 
-  const topic = (await api("/topics"))[0];
-  await api(`/topics/${topic.id}/messages`, { content: "/split Chief integration" });
-  const children = await until(() => api("/todos"), (todos) => todos.filter((item) => item.createdBy === "chief").length === 2, "Chief MCP creates two todos");
+  // Another AI hands a goal to the workspace's master agent, which splits and starts it.
+  const assigned = JSON.parse((await (await partner("tools/call", { name: "assign_work", arguments: { content: "/split Master integration" } })).json()).result.content[0].text);
+  assert.equal(assigned.workspaceId, project.id);
+  const topic = { id: project.topicId };
+  const children = await until(() => api("/todos"), (todos) => todos.filter((item) => item.createdBy === "chief").length === 2, "master agent MCP creates two tasks");
   const delegated = children.filter((item) => item.createdBy === "chief");
-  assert(delegated.every((item) => item.topicId === topic.id));
+  assert(delegated.every((item) => item.topicId === topic.id && item.projectId === project.id));
   await Promise.all(delegated.map((item) => phase(item.id, "review")));
-  await until(() => api("/topics"), (topics) => topics.find((item) => item.id === topic.id)?.activity === "idle", "Chief turn completion");
+  await until(() => api(`/topics/${topic.id}`), (current) => current.activity === "idle", "master agent turn completion");
   const conversation = await api(`/conversations/${topic.id}/messages`);
-  assert.equal(conversation.filter((item) => item.role === "tool" && item.meta.type === "tool.completed" && item.meta.tool === "create_todo").length, 2);
-  assert((await api("/usage")).entries.some((entry) => entry.topicId === topic.id && entry.tokensOut > 0));
-  console.log("PASS Chief → authenticated MCP → two started todos → board + persisted activity/usage");
+  assert.equal(conversation.filter((item) => item.role === "tool" && item.meta.type === "tool.completed" && item.meta.tool === "create_task").length, 2);
+  const log = JSON.parse((await (await partner("tools/call", { name: "get_task_log", arguments: { taskId: delegated[0].id } })).json()).result.content[0].text);
+  assert(log.log.some((entry) => entry.role === "agent"), "the partner AI can watch a task's execution");
+  console.log("PASS partner AI → assign_work → master agent → two started tasks → observable logs");
 
-  for (const path of ["/", "/agents", `/agents/${agent.id}`, "/skills", "/skills/new", `/skills/${skill.slug}`, "/secrets", "/settings", "/schedules", "/connections", "/projects", `/projects/${project.id}`, `/projects/${project.id}/settings`, "/machines", "/usage", `/todos/${todo.id}`]) {
+  for (const path of ["/", "/agents", `/agents/${agent.id}`, "/skills", "/skills/new", `/skills/${skill.slug}`, "/settings", "/connections", `/w/${project.id}`, `/w/${project.id}/settings`, `/todos/${todo.id}`]) {
     const response = await fetch(`${url}${path}`);
     assert.equal(response.status, 200); assert((await response.text()).includes('<div id="root">'));
   }

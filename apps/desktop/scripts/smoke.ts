@@ -76,8 +76,9 @@ try {
   console.log(workersOnly ? "PASS packaged worker bridge, bundled SQLite and automatic enrollment" : "PASS packaged UI, isolated preload, bundled SQLite and automatic enrollment");
   const agents = await api<{ id: string; isChief: boolean }[]>(origin, "/api/agents");
   await api(origin, `/api/agents/${agents.find((a) => a.isChief)!.id}`, { runtime: "mock", model: "mock" }, "PATCH");
-  const topics = await api<{ id: string }[]>(origin, "/api/topics");
-  const { turnId } = await api<{ turnId: string }>(origin, `/api/topics/${topics[0]!.id}/messages`, { content: "Mock shutdown verification ".repeat(500) });
+  // A workspace's master agent runs outside its repository, so any path will do.
+  const workspace = await api<{ topicId: string }>(origin, "/api/projects", { name: "Smoke", repoUrl: home, baseBranch: "main" });
+  const { turnId } = await api<{ turnId: string }>(origin, `/api/topics/${workspace.topicId}/messages`, { content: "Mock shutdown verification ".repeat(500) });
   await until(async () => {
     const response = await fetch(`${origin}/api/machines`);
     const result = await response.json() as { data: { running: number }[] };

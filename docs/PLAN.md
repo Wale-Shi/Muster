@@ -1,167 +1,79 @@
-# Muster — 技术方案（MVP）
+# Muster — 产品规格
 
-> Muster 是 [todos.dev](https://todos.dev) 的开源、可自托管实现：一个以「任务（todo）」为中心、人与多个编码 Agent 协作的工作台。
-> 你只和一个 **Chief** 对话，它把目标拆成 todos、分派给不同 Agent 并行执行（每个 todo 一个独立 git worktree），在「计划确认」和「变更验收」两个关口停下来等你决策。
+> Muster 是一个可自托管的多 Agent 编码工作台。核心只有一条主线：**设置好工作空间 → master agent 在工作空间里拆分、分派并跟进任务 → 每个任务的执行过程都可观测 → 其他 AI 可以通过 MCP 给 master agent 派活。**
+>
+> 实现细节与接口契约见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
-## 1. 调研结论（todos.dev 关键机制）
+## 1. 范围
 
-| 概念 | todos.dev 行为 | 当前是否实现 |
-|---|---|---|
-| Workspace | 左侧 Chief 对话（多 Topic），右侧看板：Backlog / In progress / Needs you / Done(近 7 天)，可拖动分隔条 | ✅ |
-| Todo 阶段 | To Do → Queued → Planning → Confirm → Building → Review → Done，另有 Failed / Closed | ✅ |
-| 两个关口 | Confirm（计划写完等确认）、Review（diff 完成等验收，Done 时合并回 base 分支） | ✅ |
-| Plan first / Run now | 启动时可选先出计划或直接构建 | ✅ |
-| Build | 一次执行；分支 `tds/conv-<id>`，独立 worktree，每轮提交 checkpoint | ✅（分支 `muster/conv-<id>`） |
-| Plan / Changes 文档 | 右侧面板，版本化（v1, v2…），diff 按文件展示 | ✅（版本化，简化版 diff 视图） |
-| Agents | 名字、角色描述、runtime + model、记忆、技能、权限开关 | ✅ 名字/角色/runtime/model、记忆、技能、权限（push 分支、读取 secrets、新建/修改技能） |
-| Runtimes | 内置 pi + 20 种外部 CLI（Codex 走 `codex app-server`，Claude Code 走 Agent SDK，多数走 ACP） | ✅ Codex、Claude Code、pi、omp（RPC）、Gemini CLI、OpenCode、Qwen Code、Devin、Cline、dsh、Hermes、OpenClaw、Kiro、Auggie、Qoder、Droid（ACP）；❌ Cursor、Grok Build、Amp、Copilot、Antigravity |
-| Machines | `tds start` 守护进程注册机器，按并发上限（默认 6）认领任务 | ✅ `muster-daemon` |
-| 中途插话 (steer) | 运行中发送的消息排队，下一个工具调用后注入 | ✅（Codex `turn/steer`；Claude 下轮注入） |
-| Chief | 常驻编排会话，通过 MCP 工具读写看板、创建/启动/确认/合并 todo | ✅（单 Topic 起步，结构支持多 Topic） |
-| MCP Server | 外部 Agent 通过 MCP 接入同一工作区 | ✅（Chief 复用同一 MCP 端点） |
-| Usage | token 用量、时长 | ✅ 基础统计 |
-| Teams / 多用户 / 登录 | | ❌（单用户本地，预留 team_id） |
-| Schedules | 定时重复任务（按小时/天/周或仅一次），每个周期从标题与描述新建构建 | ✅（时区与夏令时正确处理，错过合并为一次） |
-| Skills | 技能库：文件夹/批量上传、公开 GitHub 导入、按内容哈希缓存到各 daemon | ✅ |
-| Memory | 每个 agent 的长期记忆，注入后续轮次 | ✅ |
-| Connections | 内置目录（Linear、GitHub、Notion、Jira/Confluence、Sentry 等）与自定义 HTTP/stdio MCP 服务 | ✅（OAuth 登录未支持） |
-| Secrets | 团队/项目加密 secrets，按权限投放给运行时 shell，输出脱敏 | ✅ |
-| AI review / 移动端 / 云机器 / GitHub PR | | ❌ 后续迭代 |
+保留并重点打磨：
 
-视觉：暗色优先，zinc 色板（`--surface:#18181b` `--surface-secondary:#1f1f23` `--surface-tertiary:#27272a` `--surface-inset:#09090b` `--text-primary:#fafaf9` `--text-secondary:#d4d4d8` `--text-tertiary:#71717a` `--border-default:#27272a` `--border-strong:#3f3f46`），强调色 indigo-400，字体 Inter + JetBrains Mono，Tailwind。极简、高信息密度、圆角小、细边框。
+| 能力 | 说明 |
+|---|---|
+| 工作空间 | 一个工作空间对应一个 Git 仓库（本地路径或 Git URL）与基准分支。可以有任意多个工作空间。 |
+| Master agent | 每个工作空间可以指定不同的 master agent；未指定时使用默认 master agent（初始的 `Chief`）。任何 Agent 都可以担任 master agent。 |
+| 主对话 | 每个工作空间有且只有一个与其 master agent 的主对话，创建工作空间时自动生成。 |
+| 任务 | master agent（或用户、其他 AI）创建任务；任务一创建即可直接执行（无计划/确认关口），在独立 worktree 与分支 `muster/conv-<buildId>` 中运行。 |
+| 跟进与验收 | 任务进入「待验收」或「失败」时，自动通知所在工作空间的 master agent；它检查 diff 后合并（`complete_task`）或打回修改（`send_task_message`），必要时再问用户。 |
+| 可观测 | 任务页实时展示 Agent 的输出、推理、工具调用、插话队列和每个版本的 diff；看板卡片显示运行中任务的最新一行输出或工具调用；同样的数据可经 MCP（`get_task`、`get_task_log`）读取。 |
+| MCP 开放 | `/api/mcp`（全部工作空间）与 `/api/mcp/workspaces/:id`（单个工作空间）用 API 密钥鉴权；其他 AI 可用 `assign_work` 把目标交给 master agent，或直接 `create_task`，并观察进展。 |
+| Skills | 技能库：文件夹/批量上传、公开 GitHub 导入，按内容哈希缓存到 daemon，Agent 可设默认技能、用 `@slug` 引用。 |
+| Connections | 内置目录（Linear、GitHub、Notion、Playwright）与自定义 HTTP/stdio MCP 服务，凭据加密、只写；在 Agent 资料页授权。 |
+| 基础设施 | 16 种编码 CLI 运行时、机器 daemon、桌面 App（macOS 优先）。 |
 
-## 2. 技术选型
+已移除（2026-10-30 做减法）：Plan first / Confirm 关口、定时任务、Secrets、Agent 记忆、附件、标签、用量统计页、项目文件/提交浏览、多话题、命令面板与快捷键表、机器管理页、推送分支权限、英文界面（界面仅中文）。
 
-- **语言**：全栈 TypeScript，Node.js ≥ 22（使用内置 `node:sqlite`，零原生依赖）。
-- **包管理**：npm workspaces（monorepo）。
-- **apps/server**：Hono + `@hono/node-server`；SQLite（`node:sqlite`）；SSE 推送实时事件；MCP（`@modelcontextprotocol/sdk`，Streamable HTTP，挂在 `/mcp`）。生产模式下同时托管 web 静态资源。
-- **apps/web**：Vite + React 19 + TypeScript + Tailwind CSS v4 + TanStack Query + React Router；`react-markdown` + `remark-gfm` 渲染消息/计划；`@dnd-kit` 看板拖拽；`diff2html` 或自写 diff 视图。
-- **apps/daemon**：CLI `muster-daemon`（bin），负责注册机器、认领 run、管理 worktree、驱动 runtime、上报事件。
-- **packages/shared**：领域类型、zod schema、协议常量（server/daemon/web 共享）。
-- **测试**：Vitest；server 用内存 SQLite；daemon 的 git 逻辑用临时仓库测试；runtime 提供 `mock` runtime 便于端到端测试（不调用真实模型）。
-
-## 3. 目录结构
+## 2. 数据模型（SQLite，节选）
 
 ```
-Muster/
-  package.json            # workspaces, scripts: dev / build / test / lint
-  tsconfig.base.json
-  packages/shared/src/    # types.ts, schemas.ts, protocol.ts, phases.ts
-  apps/server/src/
-    index.ts              # 启动入口（PORT 默认 7420，DATA_DIR 默认 ~/.muster）
-    db/schema.sql, db/index.ts, db/repo/*.ts
-    routes/api.ts         # web 用 REST
-    routes/machine.ts     # daemon 用协议
-    routes/events.ts      # SSE
-    mcp/server.ts         # MCP 工具（Chief + 外部 agent）
-    orchestrator/         # 阶段状态机、调度、Chief 会话
-  apps/daemon/src/
-    index.ts              # muster-daemon start [--server] [--name] [--concurrency]
-    client.ts             # 调用 server 的 machine API
-    worktree.ts           # base clone / worktree / checkpoint / diff / merge
-    runtimes/codex.ts     # codex app-server JSON-RPC
-    runtimes/claude.ts    # claude -p --output-format stream-json --input-format stream-json
-    runtimes/mock.ts
-  apps/web/src/
-    pages/Workspace.tsx   # Chief 对话 + 看板
-    pages/Todo.tsx        # 单个 todo 对话 + 右侧 Plan/Changes 面板
-    pages/Agents.tsx, Projects.tsx, Machines.tsx, Usage.tsx
-    components/…
-  docs/PLAN.md, docs/ARCHITECTURE.md
+projects(id, name, repo_url, base_branch, description, chief_agent_id → agents, created_at)   -- 工作空间
+topics(id, title, project_id UNIQUE → projects, runtime_session_json, ...)                      -- 工作空间主对话
+agents(id, name, role, runtime, model, reasoning, is_chief, permissions_json, default_skill_ids_json, connection_ids_json, ...)
+todos(id, number, project_id, title, spec, phase, agent_id, created_by['user'|'chief'], topic_id, previous_gate, ...)
+builds(id, todo_id NULL 表示 master agent 对话, branch 'muster/conv-<id>' 或 'chief:<topicId>', machine_id, status, ...)
+turns(id, build_id, kind['build'|'revise'|'merge'|'chief'], status, prompt, agent_snapshot_json, not_before, ...)
+messages(id, conversation_id /* build id 或 topic id */, turn_id, role['user'|'agent'|'system'|'tool'], content, meta_json, ...)
+documents(id, build_id, kind['changes'], version, content)          -- 每次构建/修订的 unified diff
+skills, connections, settings, api_keys, machines, queued_messages, mcp_tokens, event_batches, machine_claims, server_events
 ```
 
-## 4. 数据模型（SQLite）
+## 3. 任务状态机
 
 ```
-projects(id, name, repo_url, base_branch, created_at)        -- repo_url 可为本地路径或 git URL
-agents(id, name, role, runtime['codex'|'claude'|'mock'], model, reasoning, avatar, is_chief, created_at)
-machines(id, name, token, concurrency, runtimes_json, last_seen_at, created_at)
-todos(id, number, project_id, title, spec, phase, agent_id, plan_agent_id, mode['plan'|'run'],
-      tags_json, created_by['user'|'chief'], created_at, updated_at, done_at)
-builds(id /*=conversation id*/, todo_id, branch, machine_id, status, base_commit, head_commit,
-       tokens_in, tokens_out, duration_ms, created_at)
-turns(id, build_id, kind['plan'|'build'|'revise'|'merge'|'chief'], status['queued'|'running'|'done'|'failed'|'stopped'],
-      machine_id, prompt, started_at, ended_at, error, tokens_in, tokens_out)
-messages(id, conversation_id /* build id 或 chief topic id */, turn_id, role['user'|'agent'|'system'|'tool'],
-         content, meta_json, created_at)
-documents(id, build_id, kind['plan'|'changes'], version, content, created_at)  -- changes 存 unified diff
-topics(id, title, runtime_session_json, created_at, updated_at)                  -- Chief topics
-queued_messages(id, conversation_id, content, delivered_at)
-```
-
-## 5. 阶段状态机
-
-```
-todo ──start(plan)──▶ queued ─claim─▶ planning ──turn done──▶ confirm
-todo ──start(run) ──▶ queued ─claim─▶ building ──turn done──▶ review
-confirm ──confirm──▶ queued(build) ─▶ building ─▶ review
-confirm/review ──user message──▶ queued(revise) ─▶ planning/building ─▶ 回到同一关口
-review ──done(merge=true)──▶ queued(merge) ─▶ (merge turn) ─▶ done（冲突则回 review）
+todo ──start──▶ queued ─claim─▶ building ──turn done──▶ review（待验收）
+review ──反馈──▶ queued(revise) ─▶ building ─▶ review
+review ──done(merge=true)──▶ queued(merge) ─▶ done（冲突则回 review）
 review ──done(merge=false)──▶ done
-any running ──error──▶ failed ──rerun(continue|restart)──▶ queued
-any ──close──▶ closed ; done/closed ──reopen──▶ 之前的关口
+running ──error/stop──▶ failed ──rerun(continue|restart)──▶ queued
+any ──close──▶ closed ; done/closed ──reopen──▶ review 或 todo
 ```
-Board 映射：Backlog = todo；In progress = queued/planning/building；Needs you = confirm/review/failed；Done = done（近 7 天）。
 
-## 6. Server ⇄ Daemon 协议（HTTP + 长轮询，参考 tds）
+看板四列：待办 = todo；进行中 = queued/building；待你处理 = review/failed；已完成 = done（近 7 天）。
 
-所有请求带 `Authorization: Bearer <machine token>`。
+## 4. Master agent
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| POST | `/api/machine/enroll` | `{name, runtimes[], concurrency}` → `{machineId, token}`（MVP：本地免认证；`MUSTER_ENROLL_KEY` 可选） |
-| POST | `/api/machine/heartbeat` | `{running:[turnId]}` → `{stop:[turnId]}`，每 5s |
-| POST | `/api/machine/claim` | 长轮询 ≤25s，返回 `TurnJob \| null` |
-| POST | `/api/machine/turns/:id/events` | 批量上报事件 `AgentEvent[]` |
-| GET  | `/api/machine/turns/:id/inbox` | 拉取排队中的用户插话（steer） |
-| POST | `/api/machine/turns/:id/complete` | `{status, headCommit, diff?, plan?, usage, error?, sessionState?}` |
+- 运行在 daemon 的 `~/.muster/chief/<topicId>`，不进入仓库 worktree；系统提示包含工作空间名称、ID、仓库、基准分支、说明，以及所选 Agent 的职责描述。
+- 职责：只编排不写代码；把目标拆成可并行的任务并分派；跟进每个任务；待验收时对照 spec 检查 diff，合格就合并，不合格就给出具体修改意见；失败时读日志后重跑或上报。用户要求亲自验收、改动有风险或不确定时先问用户。
+- 自动跟进：任务进入 review/failed 时向工作空间主对话写入系统通知，并在 3 秒防抖后合并为一轮 master agent 跟进（`MUSTER_CHIEF_AUTO_FOLLOW_UP=false` 可关闭）；进入 done 只记录通知。
+- MCP 工具默认作用于自己的工作空间，并且不能操作其他工作空间。
 
-`TurnJob`：`{turnId, buildId, todoId, kind, project:{id, repoUrl, baseBranch}, branch, agent:{runtime, model, reasoning, role}, prompt, systemInstructions, sessionState, readOnly, mcp:{url, token}}`
+## 5. 开放给其他 AI 的 MCP
 
-`AgentEvent`（统一事件，web 也消费）：`message.delta | message.completed | reasoning.delta | tool.started | tool.completed | plan.updated | usage | status`。
+| 工具 | 说明 |
+|---|---|
+| `list_workspaces` / `get_workspace` | 工作空间、master agent、任务列表与各阶段数量 |
+| `list_tasks` / `get_task` / `get_task_log` | 任务、执行轮次、最新 diff、执行日志 |
+| `read_master_conversation` | 读取与 master agent 的最近对话 |
+| `assign_work` | 把目标交给 master agent，由它拆分、执行、验收 |
+| `create_task` / `start_task` / `send_task_message` / `complete_task` / `rerun_task` / `stop_task` / `close_task` | 直接管理任务（需要 `chief` 权限的密钥） |
 
-Daemon 每轮流程：base clone（`~/.muster/workspaces/<projectId>/repo`）→ `git worktree add -b muster/conv-<buildId>`（已存在则复用并对齐）→ 启动 runtime（cwd=worktree）→ 流式上报 → 非只读轮次 `git add -A && git commit` → 计算相对 base 的 diff → complete。Planning 轮为只读：结束后 `git reset --hard && git clean -fd`，计划文本由 agent 写到最终消息（或 `PLAN.md` 输出约定）。Merge 轮：在 base clone 中 `git merge --no-ff muster/conv-<id>`，若 repo_url 为远程则 push。
+`read` 密钥只能使用只读工具。工作空间地址把所有工具限定在该工作空间内。
 
-Runtime 驱动：
-- **Codex**：`codex app-server`（stdio JSON-RPC）：`initialize` → `thread/start {cwd, model, developerInstructions, approvalPolicy:'never', sandbox:'danger-full-access', mcp config}`（续轮用 `thread/resume`）→ `turn/start` → 消费 `item/agentMessage/delta`、`item/started|completed`、`turn/completed`；插话用 `turn/steer`，停止用 `turn/interrupt`。若 app-server 协议细节不确定，回退为 `codex exec --json` + `codex exec resume`。
-- **Claude Code**：`claude -p --output-format stream-json --input-format stream-json --verbose --permission-mode bypassPermissions --append-system-prompt … --mcp-config …`，续轮 `--resume <session_id>`。
-- **Mock**：确定性地写文件并输出计划，用于测试。
-
-## 7. Chief
-
-- Chief 是 `is_chief=1` 的特殊 agent（默认 runtime=codex），对话不绑定项目、无 worktree，在 daemon 的 `~/.muster/chief/` 目录运行。
-- 通过 MCP（`/mcp`，Bearer token）获得工具：`list_projects`、`list_agents`、`list_todos`、`get_todo`、`create_todo`、`start_todo`、`send_todo_message`、`confirm_plan`、`complete_todo`、`close_todo`、`create_agent`。
-- 系统提示：只做编排不写代码；拆分任务并行；在关口汇报；用户说"不用问我"则自动确认/合并。
-- Todo 状态变化（进入 confirm/review/failed/done）时向 Chief 所在 topic 投递一条 system 通知，并可自动触发 Chief 一轮跟进（可配置，默认开）。
-
-## 8. Web UX（对齐 todos.dev）
-
-- 左侧栏（可折叠，⌘B）：团队名、Search(⌘K)、New task(N)、Workspace（Topics 列表 + New topic）、Agents、Projects、Machines、Usage。
-- Workspace：左 Chief 对话，右看板（四列，卡片显示 #编号、标题、项目、agent 头像、阶段点、耗时），分隔条可拖拽，⌘⌥B 切换看板。卡片可拖到 Done / 拖入聊天框作为引用。
-- Todo 页：顶部标题 + 阶段徽章 + 主按钮（Confirm / Done / Rerun）；中间对话流（消息、折叠的工具调用终端块、状态条、排队插话托盘）；右侧可切换面板 Plan / Changes（版本选择器、按文件 diff）。
-- New task 对话框：项目、标题、描述、agent、Plan first / Run now。
-- 实时：SSE `/api/events`，按 conversation/todo 订阅失效 TanStack Query 缓存并追加流式增量。
-- 空状态文案与 todos.dev 一致风格（"Nothing waiting to start"等）。
-
-## 9. 里程碑与 Codex 分工
-
-| 阶段 | 内容 | Codex 模型 | 理由 |
-|---|---|---|---|
-| M0 | 仓库脚手架、本方案、AGENTS.md | Claude（指挥） | — |
-| M1 | packages/shared + apps/server（DB、状态机、REST、SSE、machine 协议、MCP）+ 测试 | gpt-5.6-sol · high（已启动，M4 由 gpt-6.1-sol 复核） | 核心架构，正确性要求最高 |
-| M2 | apps/daemon（worktree、codex/claude/mock runtime）+ 测试 | gpt-6.1-sol · high | 进程/协议/git 细节多 |
-| M3 | apps/web 全部 UI | gpt-6.1-sol · high | 最新主力模型，保证体验还原度 |
-| M4 | 端到端联调（mock runtime 全流程 + Chief）、修 bug，复核 M1 | gpt-6.1-sol · high | 跨模块排错 |
-| M5 | README、文档、CI（GitHub Actions）、lint 修整 | gpt-6.1-sol · medium | 统一使用最新模型 |
-| M6 | Electron 桌面应用：本地 server/daemon、原生集成与打包 | — | macOS 优先，保留 Windows/Linux 构建目标 |
-
-M2、M3 在 M1 完成后并行（目录互不重叠）。每阶段由 Claude 验收（构建、测试、走查）后提交。
-
-## 10. MVP 验收标准
+## 6. 验收标准
 
 1. `npm install && npm run dev` 启动 server(7420) + web；`npm run daemon` 注册本机。
-2. 在 UI 中创建项目（本地 git 仓库路径）、创建 agent（Codex / Claude / Mock）。
-3. 新建 todo → Plan first → 看到流式计划 → Confirm → 看到流式构建与 Changes diff → Done 合并到 base 分支。
-4. 在 Chief 对话中说"把 X 拆成两个任务并行做"，Chief 通过 MCP 创建并启动 todos，看板实时更新。
-5. 多个 todo 并行，各自独立 worktree，互不干扰；中途插话生效。
-6. `npm test` 全绿，`npm run build` 成功。
+2. 新建两个工作空间，分别指定不同的 master agent；在各自主对话里提出目标，master agent 通过 MCP 创建并启动任务，看板实时更新。
+3. 任务执行时，看板卡片与任务页实时显示 Agent 输出和工具调用；完成后显示 diff，master agent 自动跟进验收并合并到基准分支。
+4. 用 API 密钥把工作空间 MCP 地址接入另一个 AI，`assign_work` 后能通过 `get_workspace`、`get_task_log` 观察进展。
+5. 多个任务并行，各自独立 worktree，互不干扰；中途插话生效。
+6. `npm run typecheck && npm test`、`npm run build`、`npm run e2e` 全部通过。

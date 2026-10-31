@@ -21,7 +21,7 @@ export async function git(cwd: string, ...args: string[]): Promise<string> {
 }
 
 type Project = NonNullable<TurnJob["project"]>;
-export interface Workspace { cwd: string; repo: string; branch: string; startHead: string; baseCommit: string; project: Project }
+export interface Workspace { cwd: string; repo: string; branch: string; baseCommit: string; project: Project }
 export class Worktrees {
   private mutex = new Mutex();
   constructor(readonly root: string) {}
@@ -48,14 +48,7 @@ export class Worktrees {
           throw new Error(`Workspace ${cwd} does not belong to ${branch}`);
         }
       }
-      return { cwd, repo, branch, startHead: await git(cwd, "rev-parse", "HEAD"), baseCommit: await git(cwd, "merge-base", "HEAD", `refs/remotes/origin/${project.baseBranch}`), project };
-    });
-  }
-
-  async reset(workspace: Workspace): Promise<void> {
-    await this.mutex.run(workspace.project.id, async () => {
-      await git(workspace.cwd, "reset", "--hard", workspace.startHead);
-      await git(workspace.cwd, "clean", "-fd");
+      return { cwd, repo, branch, baseCommit: await git(cwd, "merge-base", "HEAD", `refs/remotes/origin/${project.baseBranch}`), project };
     });
   }
 
@@ -71,8 +64,6 @@ export class Worktrees {
       return { headCommit: await git(workspace.cwd, "rev-parse", "HEAD"), diff: await git(workspace.cwd, "diff", "--binary", mergeBase, "HEAD", "--") };
     });
   }
-
-  async push(workspace: Workspace): Promise<void> { await git(workspace.cwd, "push", "origin", `HEAD:refs/heads/${workspace.branch}`); }
 
   async merge(workspace: Workspace, job?: Pick<TurnJob, "todoId" | "task">): Promise<{ ok: boolean; headCommit?: string; error?: string }> {
     return this.mutex.run(workspace.project.id, async () => {

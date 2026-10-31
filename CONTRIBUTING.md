@@ -17,7 +17,7 @@ npm run dev
 
 In a second terminal, run `npm run daemon`, then open <http://localhost:5173>.
 Use a disposable Git repository and mock agents for local experiments. Set
-Chief to mock too if you want to try orchestration without a model account.
+the default master agent (`Chief`) to mock too if you want to try orchestration without a model account.
 
 ## Conventions
 
@@ -47,8 +47,9 @@ npm run e2e
 ```
 
 Build before e2e: it starts the compiled server and a mock-only daemon in temporary
-directories. It verifies plan/confirm/build/review/merge, steering, parallel worktrees,
-Chief MCP delegation, production SPA routes, and SSE replay. It cleans up its
+directories. It verifies build/review/merge, steering, parallel worktrees, a partner AI
+assigning work to a master agent over the workspace MCP endpoint, production SPA routes,
+and SSE replay. It cleans up its
 processes and data. Tests use temporary repositories and do not need a configured
 Git identity or model credentials. CI runs these checks on Node 22, 24 and 25 on
 Linux.
@@ -57,7 +58,7 @@ Linux.
 
 For bugs, include reproduction steps, expected and actual behavior, OS, Node/npm
 versions, and relevant logs with secrets removed. For feature proposals, explain
-the workflow and check the deferred features in PLAN §1 first.
+the workflow and check the scope in PLAN §1 first: Muster deliberately keeps a small surface.
 
 For pull requests, explain the problem, resulting behavior, and validation results.
 Include screenshots for UI changes and document any configuration changes.

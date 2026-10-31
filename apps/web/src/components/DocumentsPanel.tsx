@@ -1,11 +1,10 @@
 import { useI18n } from "../i18n";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileCode2, FileText, Search } from "lucide-react";
-import type { Document, DocumentKind } from "@muster/shared";
+import { FileCode2, Search } from "lucide-react";
+import type { Document } from "@muster/shared";
 import { api, type TodoDetail } from "../api/client";
 import { parseDiff } from "../lib/diff";
-import { Markdown } from "./Conversation";
 import { Empty, ErrorNotice, Loading } from "./ui";
 
 export function DiffView({ content }: { content: string }) {
@@ -88,45 +87,29 @@ export function DiffView({ content }: { content: string }) {
   );
 }
 
+/** The task's diff, one version per completed build or revision. */
 export function DocumentsPanel({ todo }: { todo: TodoDetail }) {
   const { t } = useI18n();
-  const [chosenTab, setTab] = useState<DocumentKind | null>(null);
-  const [selection, setSelection] = useState<Record<DocumentKind, string>>({
-    plan: "",
-    changes: "",
-  });
+  const [selection, setSelection] = useState("");
   const documents = useQuery({
     queryKey: ["documents", todo.id],
     queryFn: () => api.documents(todo.id),
   });
   const available = documents.data ?? todo.builds.flatMap((build) => build.documents);
-  const tab = chosenTab ?? (available.some((document) => document.kind === "plan")
-    ? "plan" : available.some((document) => document.kind === "changes") ? "changes" : "plan");
   const buildOrder = new Map(todo.builds.map((build, i) => [build.id, i]));
   const versions = available
-    .filter((document) => document.kind === tab)
+    .filter((document) => document.kind === "changes")
     .sort(
       (a, b) =>
         (buildOrder.get(b.buildId) ?? 0) - (buildOrder.get(a.buildId) ?? 0) ||
         b.version - a.version,
     );
-  const selected: Document | undefined =
-    versions.find((document) => document.id === selection[tab]) ?? versions[0];
+  const selected: Document | undefined = versions.find((document) => document.id === selection) ?? versions[0];
   return (
     <div className="documents-panel">
       <div className="document-header">
         <div className="tabs">
-          <button
-            className={tab === "plan" ? "active" : ""}
-            onClick={() => setTab("plan")}
-          >
-            <FileText size={14} />
-            {t("ui.plan")}
-          </button>
-          <button
-            className={tab === "changes" ? "active" : ""}
-            onClick={() => setTab("changes")}
-          >
+          <button className="active">
             <FileCode2 size={14} />
             {t("ui.changes")}
           </button>
@@ -135,9 +118,7 @@ export function DocumentsPanel({ todo }: { todo: TodoDetail }) {
           aria-label={t("ui.documentVersion")}
           value={selected?.id ?? ""}
           disabled={!versions.length}
-          onChange={(event) =>
-            setSelection((prior) => ({ ...prior, [tab]: event.target.value }))
-          }
+          onChange={(event) => setSelection(event.target.value)}
         >
           {!versions.length && <option>{t("ui.noVersions")}</option>}
           {versions.map((document) => (
@@ -152,23 +133,9 @@ export function DocumentsPanel({ todo }: { todo: TodoDetail }) {
         {documents.isPending ? (
           <Loading />
         ) : !selected ? (
-          <Empty
-            icon={
-              tab === "plan" ? <FileText size={26} /> : <FileCode2 size={26} />
-            }
-            title={tab === "plan" ? t("ui.aPlanStartsHere") : t("ui.noChangesYet")}
-          >
-            {tab === "plan"
-              ? t("ui.theAgentsPlanWillAppearHereForYourReview")
-              : t("ui.completedBuildsWillIncludeADiffOfEveryChangedFile")}
+          <Empty icon={<FileCode2 size={26} />} title={t("ui.noChangesYet")}>
+            {t("ui.completedBuildsWillIncludeADiffOfEveryChangedFile")}
           </Empty>
-        ) : tab === "plan" ? (
-          <div className="plan-content">
-            <div className="document-eyebrow">
-              {t("text.planVersion", { version: selected.version })}
-            </div>
-            <Markdown>{selected.content}</Markdown>
-          </div>
         ) : (
           <DiffView content={selected.content} />
         )}

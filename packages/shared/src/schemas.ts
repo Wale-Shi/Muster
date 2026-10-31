@@ -3,23 +3,19 @@ import { RUNTIME_IDS } from "./runtimes.js";
 
 export const idSchema = z.string().min(1);
 export const runtimeSchema = z.enum(RUNTIME_IDS);
-export const todoPhaseSchema = z.enum([
-  "todo", "queued", "planning", "confirm", "building", "review", "failed", "done", "closed",
-]);
+export const todoPhaseSchema = z.enum(["todo", "queued", "building", "review", "failed", "done", "closed"]);
 
 export const createProjectSchema = z.object({
   description: z.string().max(16000).optional(),
   name: z.string().trim().min(1),
   repoUrl: z.string().trim().min(1),
   baseBranch: z.string().trim().min(1).default("main"),
+  chiefAgentId: idSchema.nullable().optional(),
 });
 export const updateProjectSchema = createProjectSchema.partial();
 
-export const permissionsSchema = z.object({ pushBranch: z.boolean().default(false), secrets: z.boolean().default(false), createSkills: z.boolean().default(false), updateSkills: z.boolean().default(false) }).strict();
-export const memorySchema = z.object({ content: z.string().trim().min(1).max(16000) });
-export const secretNameSchema = z.string().regex(/^[A-Z_][A-Z0-9_]{0,63}$/).refine((name) => !/^(PATH|HOME)$|^(MUSTER_|CODEX_|CLAUDE_|ELECTRON_)/.test(name) && !["NODE_OPTIONS", "NODE_ENV"].includes(name), "Reserved environment variable");
-export const secretRequestSchema = z.object({ name: secretNameSchema, scope: z.enum(["team", "project"]), projectId: idSchema.optional(), reason: z.string().trim().min(1).max(2000) });
-export const putSecretSchema = secretRequestSchema.omit({ reason: true }).extend({ value: z.string().min(1).max(64000), requestId: idSchema.optional() }).refine((v) => v.scope === "project" ? !!v.projectId : !v.projectId, "Project scope requires projectId; team scope forbids it");
+// Unknown keys (from removed permissions) are dropped rather than rejected.
+export const permissionsSchema = z.object({ createSkills: z.boolean().default(false), updateSkills: z.boolean().default(false) });
 export const createSkillSchema = z.object({ name: z.string().trim().min(1).max(100), description: z.string().trim().min(1).max(2000), instructions: z.string().trim().min(1).max(100000) });
 export const updateSkillSchema = createSkillSchema.omit({ name: true }).partial();
 export const githubSkillSchema = z.object({ url: z.string().url() });
@@ -42,26 +38,20 @@ export const createTodoSchema = z.object({
   title: z.string().trim().min(1),
   spec: z.string().default(""),
   agentId: idSchema.nullable().optional(),
-  planAgentId: idSchema.nullable().optional(),
-  mode: z.enum(["plan", "run"]).default("plan"),
-  tags: z.array(z.string()).default([]),
   createdBy: z.enum(["user", "chief"]).default("user"),
-  topicId: idSchema.nullable().optional(),
+  /** Queue the task right away instead of leaving it in the backlog. */
+  start: z.boolean().default(false),
 });
 export const updateTodoSchema = z.object({
   title: z.string().trim().min(1).optional(),
   spec: z.string().optional(),
   agentId: idSchema.nullable().optional(),
-  planAgentId: idSchema.nullable().optional(),
-  tags: z.array(z.string()).optional(),
 });
-export const startTodoSchema = z.object({ mode: z.enum(["plan", "run"]), agentId: idSchema.optional() });
+export const startTodoSchema = z.object({ agentId: idSchema.optional() });
 export const todoMessageSchema = z.object({ content: z.string().trim().min(1) });
 export const doneTodoSchema = z.object({ merge: z.boolean().default(true) });
 export const rerunTodoSchema = z.object({ strategy: z.enum(["continue", "restart"]) });
 
-export const createTopicSchema = z.object({ title: z.string().trim().min(1) });
-export const updateTopicSchema = createTopicSchema.partial();
 export const topicMessageSchema = z.object({ content: z.string().trim().min(1) });
 
 export const enrollMachineSchema = z.object({
@@ -95,7 +85,6 @@ export const turnCompleteSchema = z.object({
   headCommit: z.string().optional(),
   baseCommit: z.string().optional(),
   diff: z.string().optional(),
-  plan: z.string().optional(),
   usage: z.object({ tokensIn: z.number().int().nonnegative(), tokensOut: z.number().int().nonnegative(), durationMs: z.number().int().nonnegative() }).optional(),
   error: z.string().optional(),
   sessionState: z.record(z.string(), z.unknown()).optional(),

@@ -1,73 +1,42 @@
-import { SettingsPage, ShortcutsDialog } from "./pages/Settings";
-import { matchShortcut, dispatchShortcut } from "./lib/shortcuts";
-import { ProjectPage, ProjectSettingsPage } from "./pages/Project";
-import { SchedulesPage } from "./pages/Schedules";
+import { SettingsPage } from "./pages/Settings";
 import { ConnectionsPage } from "./pages/Connections";
 import { AgentPage } from "./pages/Agent";
 import { SkillsPage, NewSkillPage, SkillPage } from "./pages/Skills";
 import { useI18n } from "./i18n";
-import { useEffect, useState } from "react";
-import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
+import { useState } from "react";
+import { Link, Navigate, Route, Routes, useLocation, useParams } from "react-router";
 import { Command, PanelLeft } from "lucide-react";
 import { DesktopIntegration } from "./components/DesktopIntegration";
 import { Sidebar } from "./components/Sidebar";
-import { CommandPalette } from "./components/CommandPalette";
 import { NewTaskDialog } from "./components/NewTaskDialog";
 import { useStored } from "./hooks/usePreferences";
-import { Workspace } from "./pages/Workspace";
+import { Home, Workspace } from "./pages/Workspace";
+import { WorkspaceSettingsPage } from "./pages/Workspaces";
 import { TodoPage } from "./pages/Todo";
 import { Agents } from "./pages/Agents";
-import { Projects } from "./pages/Projects";
 
-function NewTaskRouteDialog({ onClose }: { onClose: () => void }) {
-  const { id } = useParams();
-  return <NewTaskDialog onClose={onClose} {...(id ? { topicId: id } : {})} />;
+function LegacyProjectRedirect() {
+  const { id = "" } = useParams();
+  return <Navigate replace to={`/w/${id}`} />;
 }
 export function App() {
   const { t } = useI18n();
   const [collapsed, setCollapsed] = useStored("sidebar-collapsed", false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [search, setSearch] = useState<number | null>(null);
-  const [help, setHelp] = useState(false);
-  const navigate = useNavigate();
   const [newTask, setNewTask] = useState(false);
   const location = useLocation();
   const toggleSidebar = () => {
     if (window.innerWidth < 768) setMobileOpen((prior) => !prior);
     else setCollapsed((prior) => !prior);
   };
-  useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || event.repeat) return;
-      const shortcut = matchShortcut(event); if (!shortcut) return;
-      const dialogOpen = !!document.querySelector("dialog[open]");
-      if (shortcut.command === "close") return; // Native dialog cancel handles Escape.
-      if (dialogOpen && shortcut.command !== "shortcuts") return;
-      event.preventDefault();
-      switch (shortcut.command) {
-        case "searchAll": setSearch(0); break;
-        case "searchTasks": setSearch(1); break;
-        case "searchTopics": setSearch(2); break;
-        case "newTask": setNewTask(true); break;
-        case "sidebar": toggleSidebar(); break;
-        case "back": navigate(-1); break;
-        case "settings": navigate("/settings"); break;
-        case "shortcuts": setHelp((prior) => !prior); break;
-        default: dispatchShortcut(shortcut.command);
-      }
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [setCollapsed, search, navigate]);
   return (
     <div className={`app ${collapsed ? "sidebar-is-collapsed" : ""} ${window.muster?.desktop ? "muster-desktop" : ""} ${window.muster?.platform === "darwin" ? "muster-mac" : ""}`} >
-      <DesktopIntegration onNewTask={() => setNewTask(true)} onShortcuts={() => setHelp(true)} />
+      <DesktopIntegration onNewTask={() => setNewTask(true)} />
       <Sidebar
         collapsed={collapsed}
         mobileOpen={mobileOpen}
         onToggle={toggleSidebar}
         onCloseMobile={() => setMobileOpen(false)}
-        onSearch={() => setSearch(0)}
         onNewTask={() => setNewTask(true)}
       />
       <main className="main">
@@ -86,39 +55,25 @@ export function App() {
           <button
             className="sidebar-restore icon-button desktop-only"
             aria-label={t("ui.expandSidebar")}
-            title={`${t("ui.expandSidebar")} (⌘B)`}
+            title={t("ui.expandSidebar")}
             onClick={toggleSidebar}
           >
             <PanelLeft size={16} />
           </button>
         )}
         <Routes>
-          <Route
-            path="/"
-            element={<Workspace onNewTask={() => setNewTask(true)} />}
-          />
-          <Route
-            path="/topics/:id"
-            element={<Workspace onNewTask={() => setNewTask(true)} />}
-          />
-          <Route
-            path="/todos/:id"
-            element={<TodoPage key={location.pathname} />}
-          />
+          <Route path="/" element={<Home />} />
+          <Route path="/w/:id" element={<Workspace key={location.pathname} onNewTask={() => setNewTask(true)} />} />
+          <Route path="/w/:id/settings" element={<WorkspaceSettingsPage key={location.pathname} />} />
+          <Route path="/todos/:id" element={<TodoPage key={location.pathname} />} />
+          <Route path="/agents" element={<Agents />} />
           <Route path="/agents/:id" element={<AgentPage key={location.pathname} />} />
           <Route path="/skills" element={<SkillsPage />} />
           <Route path="/skills/new" element={<NewSkillPage />} />
           <Route path="/skills/:slug" element={<SkillPage key={location.pathname} />} />
-          <Route path="/schedules" element={<SchedulesPage />} />
           <Route path="/connections" element={<ConnectionsPage />} />
-          <Route path="/secrets" element={<Navigate replace to="/settings?tab=secrets" />} />
-          <Route path="/agents" element={<Agents />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/projects/:id" element={<ProjectPage key={location.pathname} />} />
-          <Route path="/projects/:id/settings" element={<ProjectSettingsPage key={location.pathname} />} />
           <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/machines" element={<Navigate replace to="/settings?tab=machines" />} />
-          <Route path="/usage" element={<Navigate replace to="/settings?tab=usage" />} />
+          <Route path="/projects/:id" element={<LegacyProjectRedirect />} />
           <Route
             path="*"
             element={
@@ -132,19 +87,11 @@ export function App() {
           />
         </Routes>
       </main>
-      {search !== null && <CommandPalette initialTab={search} onClose={() => setSearch(null)} />}
-      {help && <ShortcutsDialog onClose={() => setHelp(false)} />}
       {newTask && (
-        <Routes>
-          <Route
-            path="/topics/:id"
-            element={<NewTaskRouteDialog onClose={() => setNewTask(false)} />}
-          />
-          <Route
-            path="*"
-            element={<NewTaskDialog initialProjectId={location.pathname.match(/^\/projects\/([^/]+)/)?.[1]} onClose={() => setNewTask(false)} />}
-          />
-        </Routes>
+        <NewTaskDialog
+          initialProjectId={location.pathname.match(/^\/w\/([^/]+)/)?.[1]}
+          onClose={() => setNewTask(false)}
+        />
       )}
     </div>
   );

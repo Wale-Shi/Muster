@@ -1,5 +1,5 @@
 import { prepareArtifacts } from "./artifacts.js";
-import { prepareAttachments, prepareSkills, redactor, secretEvents, jobCredentials } from "./resources.js";
+import { prepareSkills, redactor, secretEvents, jobCredentials } from "./resources.js";
 import { access, mkdir, readFile, writeFile, rm, rename } from "node:fs/promises";
 import { constants } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
@@ -207,7 +207,6 @@ export class Daemon {
     try {
       if (active.stopped) { payload = { status: "stopped" }; return; }
       job = await prepareSkills(job, this.options.client);
-      job = await prepareAttachments(job, this.options.client);
       job = await prepareArtifacts(job, this.options.client.options.home);
       let cwd: string;
       if (job.project) { workspace = await this.worktrees.prepare(job); cwd = workspace.cwd; }
@@ -243,18 +242,13 @@ export class Daemon {
         })();
         const result = await runtime.result;
         payload = { status: active.stopped ? "stopped" : result.status, usage: { ...result.usage, durationMs: Date.now() - started }, sessionState: result.sessionState, ...(result.error ? { error: result.error } : {}) };
-        if (job.readOnly) payload.plan = result.text;
-        else if (workspace) { Object.assign(payload, await this.worktrees.checkpoint(workspace, await this.options.client.turnNumber(job), job)); if (result.status === "done" && !active.stopped && job.pushBranch) await this.worktrees.push(workspace); }
+        if (workspace) Object.assign(payload, await this.worktrees.checkpoint(workspace, await this.options.client.turnNumber(job), job));
       }
     } catch (error) { payload = { ...payload, status: active.stopped ? "stopped" : "failed", error: errorText(error) }; }
     finally {
       if (workspace) payload.baseCommit = workspace.baseCommit;
       inboxAbort.abort();
       await inboxTask;
-      if (job.readOnly && workspace) {
-        try { await this.worktrees.reset(workspace); }
-        catch (error) { payload.status = "failed"; payload.error = `Read-only cleanup failed: ${errorText(error)}`; }
-      }
       secured.flush();
       payload = redact(payload);
       for (;;) {

@@ -6,7 +6,6 @@ import { mcpServers, writeBridge, type Bridge } from "./bridge.js";
 import { errorText } from "../util.js";
 
 // Write-capable tool kinds; plan turns reject them when the agent asks.
-const WRITE_KINDS = new Set(["edit", "delete", "move", "execute"]);
 const pairs = (record: Record<string, string> = {}) => Object.entries(record).map(([name, value]) => ({ name, value }));
 const find = (values: Wire[] | undefined, pattern: RegExp, key = "id") => values?.find((value) => pattern.test(String(value[key] ?? "")) || pattern.test(String(value.name ?? "")));
 
@@ -52,10 +51,7 @@ export class AcpRuntime implements Runtime {
     const flush = () => { if (current) { reply = current; ctx.emit({ type: "message.completed", content: current }); current = ""; } };
     const permission = (params: Wire) => {
       const options = (params.options ?? []) as Wire[];
-      const deny = job.readOnly && WRITE_KINDS.has(String(params.toolCall?.kind));
-      const choice = deny
-        ? options.find((o) => o.kind === "reject_once") ?? options.find((o) => String(o.kind).startsWith("reject"))
-        : options.find((o) => o.kind === "allow_always") ?? options.find((o) => o.kind === "allow_once");
+      const choice = options.find((o) => o.kind === "allow_always") ?? options.find((o) => o.kind === "allow_once");
       return choice ? { outcome: { outcome: "selected", optionId: choice.optionId } } : { outcome: { outcome: "cancelled" } };
     };
     const update = (u: Wire) => {
@@ -98,11 +94,9 @@ export class AcpRuntime implements Runtime {
       }
       const effort = options.find((o) => o.category === "thought_level" || /reason|effort|thought/i.test(String(o.id)));
       if (job.agent.reasoning && effort) await rpc("session/set_config_option", { sessionId, configId: effort.id, value: job.agent.reasoning }).catch(() => undefined);
-      // Plan turns use a read-only mode when the agent has one; builds leave it.
       const modes = session.modes?.availableModes as Wire[] | undefined;
-      // Builds take the most permissive mode on offer (Droid's auto-high over auto-low).
-      const mode = job.readOnly ? find(modes, /plan|read.?only|^ask$|^spec$/i)
-        : find(modes, /yolo|bypass|full.?access/i) ?? find(modes, /^auto.?high$/i) ?? find(modes, /^auto/i) ?? find(modes, /^(default|code|agent|build)$/i);
+      // Take the most permissive mode on offer (Droid's auto-high over auto-low).
+      const mode = find(modes, /yolo|bypass|full.?access/i) ?? find(modes, /^auto.?high$/i) ?? find(modes, /^auto/i) ?? find(modes, /^(default|code|agent|build)$/i);
       if (mode && mode.id !== session.modes?.currentModeId) await rpc("session/set_mode", { sessionId, modeId: mode.id }).catch(() => undefined);
     };
     const run = async (content: string): Promise<void> => {
@@ -124,7 +118,7 @@ export class AcpRuntime implements Runtime {
     };
     void (async () => {
       const init = await (async () => {
-        process = new JsonProcess(this.command, this.args, ctx.cwd, job.env);
+        process = new JsonProcess(this.command, this.args, ctx.cwd);
         process.ignoreInvalid = true;
         process.onFailure = (error) => settle(stopped ? "stopped" : "failed", error.message);
         process.onMessage = onMessage;

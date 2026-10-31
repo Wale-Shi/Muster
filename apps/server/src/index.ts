@@ -22,14 +22,12 @@ if (isMain) {
     autoFollowUp: process.env.MUSTER_CHIEF_AUTO_FOLLOW_UP !== "false",
     serveWeb: true,
   });
-  services.schedules.tick();
-  const scheduleTimer = setInterval(() => services.schedules.tick(), 30000); scheduleTimer.unref();
   const offlineTimer = setInterval(() => services.scheduler.failOfflineMachines(), 5_000);
   offlineTimer.unref();
   const server = serve({ fetch: app.fetch, hostname: process.env.HOST ?? "127.0.0.1", port }, (info) => {
     if (!process.env.MUSTER_PUBLIC_URL) services.orchestrator.publicUrl = `http://127.0.0.1:${info.port}`;
     console.log(`Muster server listening on http://127.0.0.1:${info.port}`);
   });
-  const stop = () => { clearInterval(scheduleTimer); clearInterval(offlineTimer); if ("closeAllConnections" in server) server.closeAllConnections(); server.close(() => { services.db.close(); process.exit(0); }); };
+  const stop = () => { clearInterval(offlineTimer); if ("closeAllConnections" in server) server.closeAllConnections(); server.close(() => { services.db.close(); process.exit(0); }); };
   process.once("SIGTERM", stop); process.once("SIGINT", stop);
 }

@@ -9,7 +9,7 @@ import { DoneDialog } from "./DoneDialog";
 
 const todo: Todo = {
   id: "task", number: 5, title: "Action copy", spec: "", phase: "review",
-  projectId: "project", agentId: null, planAgentId: null, mode: "plan", tags: [],
+  projectId: "project", agentId: null,
   createdBy: "user", topicId: null, previousGate: null,
   createdAt: "2026-10-25", updatedAt: "2026-10-25", doneAt: null,
 };
@@ -19,16 +19,14 @@ beforeEach(() => {
 });
 afterEach(() => { vi.restoreAllMocks(); localStorage.clear(); });
 
-for (const copy of [
-  { locale: "en" as const, done: "Done", merge: "Done & merge", pending: "Finishing…" },
-  { locale: "zh-CN" as const, done: "完成", merge: "完成并合并", pending: "正在完成…" },
-]) {
-  it.each([true, false])(`switches action copy and submits merge=%s in ${copy.locale}`, async (merge) => {
+const copy = { done: "完成", merge: "完成并合并", pending: "正在完成…" };
+{
+  it.each([true, false])("switches action copy and submits merge=%s", async (merge) => {
     let finish!: () => void;
     const action = vi.spyOn(api, "action").mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
     const onClose = vi.fn();
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-    render(<I18nProvider initial={copy.locale}><QueryClientProvider client={client}>
+    render(<I18nProvider><QueryClientProvider client={client}>
       <DoneDialog todo={todo} onClose={onClose} />
     </QueryClientProvider></I18nProvider>);
     const user = userEvent.setup();

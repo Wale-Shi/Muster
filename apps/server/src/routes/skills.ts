@@ -2,20 +2,15 @@ import { z } from "zod";
 import { stringify } from "yaml";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { memorySchema, githubSkillSchema, putSecretSchema, createSkillSchema, type SkillFile } from "@muster/shared";
+import { githubSkillSchema, createSkillSchema, type SkillFile } from "@muster/shared";
 import type { AppServices } from "../services.js";
 import { body } from "./helpers.js";
-import { now } from "../db/index.js";
 import { StateError } from "../orchestrator/state.js";
 import { frontmatter, validateFiles, parseGithubUrl } from "../resources/skills.js";
 
-export function resourceRoutes({ db, memories, skills, secrets, events }: AppServices): Hono {
+export function skillRoutes({ db, skills, events }: AppServices): Hono {
   const app = new Hono();
   const changed = (type: string) => events.emit({ type: `${type}.changed`, payload: {} });
-  app.get("/agents/:id/memories", (c) => c.json({ data: memories.list(c.req.param("id")) }));
-  app.post("/agents/:id/memories", async (c) => { const input = await body(c, memorySchema); const data = memories.create(c.req.param("id"), input.content, "user"); changed("memory"); return c.json({ data }, 201); });
-  app.patch("/agents/:id/memories/:memoryId", async (c) => { const input = await body(c, memorySchema); const data = memories.update(c.req.param("id"), c.req.param("memoryId"), input.content); changed("memory"); return c.json({ data }); });
-  app.delete("/agents/:id/memories/:memoryId", (c) => { memories.delete(c.req.param("id"), c.req.param("memoryId")); changed("memory"); return c.body(null, 204); });
   app.get("/skills", (c) => c.json({ data: skills.list() }));
   app.post("/skills/github", async (c) => { const input = await body(c, githubSkillSchema); if (c.req.query("preview") === "true") { parseGithubUrl(input.url); const files = await skills.fetcher(input.url); const meta = frontmatter(Buffer.from(files.find((f) => f.path === "SKILL.md")?.content ?? "", "base64").toString("utf8")); return c.json({ data: [{ files, name: meta.name, description: meta.description, source: { type: "github", url: input.url } }] }); } const data = await skills.github(input.url); changed("skill"); return c.json({ data }, 201); });
   app.use("/skills/upload", bodyLimit({ maxSize: 6 * 1024 * 1024, onError: (c) => c.json({ error: "Upload exceeds 5 MB" }, 413) }));
@@ -54,18 +49,5 @@ export function resourceRoutes({ db, memories, skills, secrets, events }: AppSer
   });
   app.get("/skills/:slug", (c) => { const skill = skills.get(c.req.param("slug")); const files = skills.archive(skill.slug).files; return c.json({ data: { ...skill, instructions: Buffer.from(files.find((f) => f.path === "SKILL.md")!.content, "base64").toString("utf8"), files: files.map((f) => f.path), agents: db.rows("SELECT * FROM agents").map((r) => db.agent(r)).filter((a) => a.defaultSkillIds?.includes(skill.id)) } }); });
   app.delete("/skills/:slug", (c) => { skills.delete(c.req.param("slug")); changed("skill"); changed("agent"); return c.body(null, 204); });
-  app.get("/secrets", (c) => c.json({ data: secrets.list(c.req.query("projectId")) }));
-  app.put("/secrets", async (c) => {
-    const input = await body(c, putSecretSchema);
-    const message = input.requestId ? db.row("SELECT * FROM messages WHERE id=?", input.requestId) : undefined;
-    if (input.requestId) {
-      const request = message ? db.message(message).meta.secretRequest as { name?: string; scope?: string; projectId?: string } | undefined : undefined;
-      if (!request || request.name !== input.name || request.scope !== input.scope || (request.projectId ?? null) !== (input.projectId ?? null)) throw new StateError("Secret request does not match", 400);
-    }
-    const data = db.transaction(() => { const secret = secrets.put(input); if (message) { const meta = { ...db.message(message).meta, fulfilledAt: now() }; db.run("UPDATE messages SET meta_json=? WHERE id=?", JSON.stringify(meta), message.id); } return secret; });
-    changed("secret"); if (message) events.emit({ type: "message.created", conversationId: String(message.conversation_id), payload: db.message(db.row("SELECT * FROM messages WHERE id=?", message.id)!) });
-    return c.json({ data });
-  });
-  app.delete("/secrets/:id", (c) => { secrets.delete(c.req.param("id")); changed("secret"); return c.body(null, 204); });
   return app;
 }

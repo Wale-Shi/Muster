@@ -2,13 +2,13 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
-import type { TodoDetail } from "../api/client";
+import { api, type TodoDetail } from "../api/client";
 import { I18nProvider } from "../i18n";
 import { TodoActions } from "./TodoActions";
 
 const todo: TodoDetail = {
   id: "task", number: 5, title: "Action copy", spec: "", phase: "review",
-  projectId: "project", agentId: null, planAgentId: null, mode: "plan", tags: [],
+  projectId: "project", agentId: null,
   createdBy: "user", topicId: null, previousGate: null,
   createdAt: "2026-10-25", updatedAt: "2026-10-25", doneAt: null, builds: [],
 };
@@ -18,7 +18,7 @@ const build = (status: TodoDetail["builds"][number]["turns"][number]["status"]):
   turns: [{ id: "turn", buildId: "build", kind: "build", status, machineId: null, prompt: "", startedAt: null, endedAt: null, error: null, tokensIn: 0, tokensOut: 0 }],
   documents: [],
 }];
-afterEach(() => localStorage.clear());
+afterEach(() => { localStorage.clear(); vi.restoreAllMocks(); });
 
 it.each([
   { phase: "queued" as const, turn: "queued" as const },
@@ -26,32 +26,34 @@ it.each([
 ])("enables Stop while the last turn is $turn", ({ phase, turn }) => {
   const client = new QueryClient();
   render(
-    <I18nProvider initial="en"><QueryClientProvider client={client}>
+    <I18nProvider><QueryClientProvider client={client}>
       <TodoActions todo={{ ...todo, phase, builds: build(turn) }} onDone={() => {}} />
     </QueryClientProvider></I18nProvider>,
   );
-  expect(screen.getByRole("button", { name: "Stop" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "停止" })).toBeEnabled();
 });
 
-it.each([
-  { locale: "en" as const, done: "Done", confirm: "Confirm plan", reopen: "Reopen" },
-  { locale: "zh-CN" as const, done: "完成", confirm: "确认计划", reopen: "重新打开" },
-])("uses action copy for review, confirm and reopen in $locale", async ({ locale, done, confirm, reopen }) => {
+it("starts in one click and offers review, rerun and reopen actions", async () => {
   const onDone = vi.fn();
+  const action = vi.spyOn(api, "action").mockResolvedValue(undefined);
   const client = new QueryClient();
   const view = (phase: TodoDetail["phase"]) => (
-    <I18nProvider initial={locale}><QueryClientProvider client={client}>
+    <I18nProvider><QueryClientProvider client={client}>
       <TodoActions todo={{ ...todo, phase }} onDone={onDone} />
     </QueryClientProvider></I18nProvider>
   );
-  const { rerender } = render(view("review"));
-  await userEvent.setup().click(screen.getByRole("button", { name: done }));
+  const user = userEvent.setup();
+  const { rerender } = render(view("todo"));
+  await user.click(screen.getByRole("button", { name: "启动" }));
+  expect(action).toHaveBeenCalledWith(todo.id, "start", undefined);
+  rerender(view("review"));
+  await user.click(screen.getByRole("button", { name: "完成" }));
   expect(onDone).toHaveBeenCalledTimes(1);
-  rerender(view("confirm"));
-  expect(screen.getByRole("button", { name: confirm })).toBeEnabled();
-  expect(screen.queryByRole("button", { name: done })).not.toBeInTheDocument();
+  rerender(view("failed"));
+  expect(screen.getByRole("button", { name: /重新执行/ })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "完成" })).not.toBeInTheDocument();
   for (const phase of ["done", "closed"] as const) {
     rerender(view(phase));
-    expect(screen.getByRole("button", { name: reopen })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "重新打开" })).toBeEnabled();
   }
 });

@@ -2,21 +2,21 @@ import { useConnections } from "./Connections";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
-import { CLI_DEFAULT_MODEL, type Agent, type AgentMemory, type AgentPermissions, type Skill, type Todo } from "@muster/shared";
+import { Trash2, X } from "lucide-react";
+import { CLI_DEFAULT_MODEL, type Agent, type AgentPermissions, type Project, type Skill, type Todo } from "@muster/shared";
 import { request } from "../api/client";
 import { useI18n } from "../i18n";
-import { Avatar, ErrorNotice, Loading, PhaseBadge, Section, Segmented, SettingRow, Switch } from "../components/ui";
+import { Avatar, ErrorNotice, Loading, PhaseBadge, Section, SettingRow, Switch } from "../components/ui";
 import { RuntimeOptions } from "../components/RuntimeOptions";
 import { initialModel, keepReasoning, ModelSelect, ReasoningSelect, reasoningLevels } from "../components/ModelFields";
 import { useMachines } from "../api/queries";
 
-type Profile = Agent & { inProgress: Todo[]; memoryCount: number; skillCount: number };
-const permissionKeys: (keyof AgentPermissions)[] = ["pushBranch", "secrets", "createSkills", "updateSkills"];
+type Profile = Agent & { inProgress: Todo[]; workspaces: Project[]; skillCount: number };
+const permissionKeys: (keyof AgentPermissions)[] = ["createSkills", "updateSkills"];
 
 export function AgentPage() {
   const { id = "" } = useParams(); const { t, label } = useI18n(); const navigate = useNavigate(); const client = useQueryClient();
-  const [tab, setTab] = useState<"overview" | "memory">("overview"); const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(false);
   const agent = useQuery({ queryKey: ["agent", id], queryFn: () => request<Profile>(`/agents/${id}`) });
   const connections = useConnections();
   const machines = useMachines();
@@ -24,7 +24,7 @@ export function AgentPage() {
   const save = useMutation({ mutationFn: (value: Partial<Agent>) => request<Agent>(`/agents/${id}`, "PATCH", value), onSuccess: () => { void client.invalidateQueries({ queryKey: ["agent", id] }); void client.invalidateQueries({ queryKey: ["agents"] }); } });
   const remove = useMutation({ mutationFn: () => request(`/agents/${id}`, "DELETE"), onSuccess: () => { void client.invalidateQueries({ queryKey: ["agents"] }); navigate("/agents"); } });
   if (!agent.data) return <div className="management-page"><header className="page-header"><Link to="/agents">{t("ui.agents")}</Link></header><div className="page-content"><ErrorNotice error={agent.error} />{agent.isPending && <Loading />}</div></div>;
-  const a = agent.data; const permissions = { pushBranch: false, secrets: false, createSkills: false, updateSkills: false, ...a.permissions };
+  const a = agent.data; const permissions = { createSkills: false, updateSkills: false, ...a.permissions };
   const defaultSkills = skills.data?.filter((s) => a.defaultSkillIds?.includes(s.id)) ?? [];
   const otherSkills = skills.data?.filter((s) => !a.defaultSkillIds?.includes(s.id)) ?? [];
   const rename = (value: string) => { const name = value.trim(); if (name && name !== a.name) save.mutate({ name }); };
@@ -46,8 +46,10 @@ export function AgentPage() {
             </div>
           </section>
           <ErrorNotice error={save.error || remove.error || skills.error} />
-          <Segmented label={t("parity.overview")} value={tab} onChange={setTab} options={[{ value: "overview", label: t("parity.overview") }, { value: "memory", label: `${t("parity.memory")} (${a.memoryCount})` }]} />
-          {tab === "memory" ? <MemoryTab agentId={id} /> : <>
+          <>
+            {(a.isChief || a.workspaces.length > 0) && <Section title={t("ws.leads")} description={a.isChief ? t("ws.defaultMasterHelp") : undefined}>
+              {a.workspaces.length ? a.workspaces.map((w) => <SettingRow key={w.id} label={<Link to={`/w/${w.id}`}>{w.name}</Link>}><span className="mono muted">{w.baseBranch}</span></SettingRow>) : <div className="settings-empty">{t("ws.noLeads")}</div>}
+            </Section>}
             <Section className="agent-progress" title={t("parity.inProgress")}>
               {a.inProgress.length ? a.inProgress.map((todo) => <SettingRow key={todo.id} label={<Link to={`/todos/${todo.id}`}>#{todo.number} {todo.title}</Link>}><PhaseBadge phase={todo.phase} /></SettingRow>) : <div className="settings-empty">{t("parity.noWork")}</div>}
             </Section>
@@ -73,34 +75,15 @@ export function AgentPage() {
               </div><ErrorNotice error={connections.error} />
             </Section>
             <Section title={t("parity.permissions")}>
-              {permissionKeys.map((key) => <SettingRow key={key} label={t(key === "secrets" ? "parity.team" : `parity.${key}`)} help={t(`parity.${key}Help`)}><Switch label={t(key === "secrets" ? "parity.team" : `parity.${key}`)} checked={permissions[key]} disabled={save.isPending} onChange={(checked) => save.mutate({ permissions: { ...permissions, [key]: checked } })} /></SettingRow>)}
+              {permissionKeys.map((key) => <SettingRow key={key} label={t(`parity.${key}`)} help={t(`parity.${key}Help`)}><Switch label={t(`parity.${key}`)} checked={permissions[key]} disabled={save.isPending} onChange={(checked) => save.mutate({ permissions: { ...permissions, [key]: checked } })} /></SettingRow>)}
             </Section>
             {!a.isChief && <Section title={t("parity.danger")}>
               <SettingRow label={<span className="danger-text">{t("parity.deleteAgent")}</span>} help={t("parity.deleteAgentHelp")}><button className="button danger" aria-label={t("parity.deleteAgent")} disabled={remove.isPending} onClick={() => { if (window.confirm(t("parity.deleteConfirm"))) remove.mutate(); }}><Trash2 size={14} />{t("parity.delete")}</button></SettingRow>
             </Section>}
-          </>}
+          </>
         </div>
       </div>
     </div>
   );
 }
 
-function MemoryTab({ agentId }: { agentId: string }) {
-  const { t, formatRelative } = useI18n(); const client = useQueryClient(); const [content, setContent] = useState(""); const [editing, setEditing] = useState<string | null>(null);
-  const path = `/agents/${agentId}/memories`; const memories = useQuery({ queryKey: ["memories", agentId], queryFn: () => request<AgentMemory[]>(path) });
-  const mutate = useMutation({ mutationFn: ({ method, id, content }: { method: string; id?: string; content?: string }) => request(id ? `${path}/${id}` : path, method, content === undefined ? undefined : { content }), onSuccess: () => { setContent(""); setEditing(null); void client.invalidateQueries({ queryKey: ["memories", agentId] }); void client.invalidateQueries({ queryKey: ["agent", agentId] }); } });
-  return (
-    <Section title={t("parity.memory")} description={t("parity.memoryHelp")}>
-      <form className="memory-compose" onSubmit={(e) => { e.preventDefault(); if (content.trim()) mutate.mutate({ method: "POST", content }); }}>
-        <textarea aria-label={t("parity.addMemory")} placeholder={t("parity.memoryPlaceholder")} value={content} rows={2} onChange={(e) => setContent(e.target.value)} maxLength={16000} onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) e.currentTarget.form?.requestSubmit(); }} />
-        <div className="row"><button className="button primary" disabled={!content.trim() || mutate.isPending}><Plus size={14} />{t("parity.addMemory")}</button></div>
-      </form>
-      {(memories.error || mutate.error) && <div className="memory-compose"><ErrorNotice error={memories.error || mutate.error} /></div>}
-      {memories.isPending && <div className="settings-empty"><Loading /></div>}
-      {memories.data?.length === 0 && <div className="settings-empty">{t("parity.memoryEmpty")}</div>}
-      {memories.data?.map((m) => editing === m.id
-        ? <form key={m.id} className="memory-compose" onSubmit={(e) => { e.preventDefault(); mutate.mutate({ method: "PATCH", id: m.id, content: String(new FormData(e.currentTarget).get("content")) }); }}><textarea name="content" required defaultValue={m.content} maxLength={16000} rows={3} autoFocus /><div className="row"><button type="button" className="button ghost" onClick={() => setEditing(null)}>{t("parity.cancel")}</button><button className="button primary" disabled={mutate.isPending}>{t("parity.save")}</button></div></form>
-        : <div className="memory-row" key={m.id}><span className="memory-source" title={formatRelative(m.updatedAt)}>{t(`parity.${m.source}`)}</span><p>{m.content}</p><div className="row-actions"><button className="icon-button" aria-label={t("parity.edit")} onClick={() => setEditing(m.id)}><Pencil size={14} /></button><button className="icon-button" aria-label={t("parity.delete")} disabled={mutate.isPending} onClick={() => { if (window.confirm(t("parity.deleteConfirm"))) mutate.mutate({ method: "DELETE", id: m.id }); }}><Trash2 size={14} /></button></div></div>)}
-    </Section>
-  );
-}

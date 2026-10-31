@@ -10,4 +10,4 @@ export function viewMenuRoles(packaged: boolean): NonNullable<MenuItemConstructo
   ];
 }
 
-export const commandAccelerators = { settings: "CmdOrCtrl+,", shortcuts: "CmdOrCtrl+/" } as const;
+export const commandAccelerators = { settings: "CmdOrCtrl+," } as const;

@@ -15,5 +15,5 @@ export async function prepareArtifacts(job: TurnJob, home: string): Promise<Turn
     const info = await lstat(directory);
     if (!info.isDirectory() || info.isSymbolicLink() || await realpath(directory) !== directory) throw new Error("Unsafe artifact directory");
   }
-  return { ...job, systemInstructions: job.systemInstructions + `\n\nBuild artifact directory: ${JSON.stringify(directory)}\nSave screenshots and other deliverables in this directory. If a tool writes a temporary file, copy it here before referencing it. Use a unique filename for each revision. Reference images with Markdown, for example ![Screenshot](<${directory}/screenshot.png>). Only png/jpg/jpeg/gif/webp up to 10 MiB can be displayed. Files in /tmp cannot be displayed. This does not grant write permission: in read-only/PLAN turns do not create or copy artifacts; you may reference existing files.\n` };
+  return { ...job, systemInstructions: job.systemInstructions + `\n\nBuild artifact directory: ${JSON.stringify(directory)}\nSave screenshots and other deliverables in this directory. If a tool writes a temporary file, copy it here before referencing it. Use a unique filename for each revision. Reference images with Markdown, for example ![Screenshot](<${directory}/screenshot.png>). Only png/jpg/jpeg/gif/webp up to 10 MiB can be displayed. Files in /tmp cannot be displayed.\n` };
 }

@@ -8,14 +8,13 @@ import { makeJob } from "./helpers.js";
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 async function setup() { const cwd = await mkdtemp(join(tmpdir(), "muster-mock-")); roots.push(cwd); const events: AgentEvent[] = []; return { cwd, events, ctx: { cwd, emit: (event: AgentEvent) => { events.push(event); } } }; }
-it("streams a deterministic plan, echoes steering, and resumes", async () => {
+it("streams a deterministic master-agent reply, echoes steering, and resumes", async () => {
   const { ctx, events, cwd } = await setup();
-  const running = new MockRuntime(1).start(makeJob({ readOnly: true, kind: "plan", sessionState: { turns: 2 } }), ctx);
+  const running = new MockRuntime(1).start(makeJob({ kind: "chief", todoId: null, topicId: "topic", branch: null, sessionState: { turns: 2 } }), ctx);
   await running.steer("Also test it");
   const result = await running.result;
-  expect(result.status).toBe("done"); expect(result.text).toContain("# Plan"); expect(result.text).toContain("Steer: Also test it");
+  expect(result.status).toBe("done"); expect(result.text).toContain("Chief: Add a greeting"); expect(result.text).toContain("Steer: Also test it");
   expect(result.sessionState.turns).toBe(3); expect(events.filter((event) => event.type === "message.delta").length).toBeGreaterThan(2);
-  expect(events.some((event) => event.type === "plan.updated")).toBe(true);
   await expect(readFile(join(cwd, "MUSTER_MOCK.md"))).rejects.toThrow();
 });
 it("writes the prompt on writable project turns and reports usage", async () => {

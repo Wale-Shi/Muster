@@ -1,7 +1,6 @@
-import { TopicMenu } from "../components/TopicMenu";
 import { useI18n } from "../i18n";
-import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router";
+import { useCallback, useState } from "react";
+import { Link, Navigate, useParams } from "react-router";
 import {
   DndContext,
   DragOverlay,
@@ -19,30 +18,36 @@ import {
   MessageSquare,
   Minimize2,
   PanelRightClose,
+  Settings,
 } from "lucide-react";
 import type { Todo } from "@muster/shared";
-import { useAgents, useProjects, useTodos, useTopics } from "../api/queries";
+import { useAgents, useProject, useProjects, useTodos, useTopic } from "../api/queries";
 import { useStored } from "../hooks/usePreferences";
 import { Board, TaskCard } from "../components/Board";
 import { Conversation } from "../components/Conversation";
 import { DoneDialog } from "../components/DoneDialog";
 import { Resizable } from "../components/Resizable";
-import { ErrorNotice, Loading } from "../components/ui";
+import { Avatar, ErrorNotice, Loading } from "../components/ui";
+import { WorkspaceEmpty } from "./Workspaces";
 
+/** `/` opens the first workspace, or offers to create one. */
+export function Home() {
+  const projects = useProjects();
+  if (projects.isPending) return <Loading />;
+  const first = projects.data?.[0];
+  return first ? <Navigate replace to={`/w/${first.id}`} /> : <WorkspaceEmpty error={projects.error} />;
+}
+
+/** One workspace: its master agent's conversation beside the workspace's task board. */
 export function Workspace({ onNewTask }: { onNewTask: () => void }) {
   const { t } = useI18n();
-  const { id } = useParams();
-  const topics = useTopics();
+  const { id = "" } = useParams();
+  const project = useProject(id);
+  const topic = useTopic(project.data?.topicId);
   const todos = useTodos();
-  const projects = useProjects();
   const agents = useAgents();
-  const topic =
-    topics.data?.find((item) => item.id === id) ??
-    (!id
-      ? [...(topics.data ?? [])].sort((a, b) =>
-          a.createdAt.localeCompare(b.createdAt),
-        )[0]
-      : undefined);
+  const master = agents.data?.find((agent) => agent.id === project.data?.chiefAgentId) ?? agents.data?.find((agent) => agent.isChief);
+  const tasks = todos.data?.filter((todo) => todo.projectId === id) ?? [];
   const [boardVisible, setBoardVisible] = useStored("board-visible", true);
   const [maximized, setMaximized] = useState(false);
   const [mobileSide, setMobileSide] = useState<"left" | "right">(() => window.matchMedia("(min-width: 768px) and (max-width: 1050px)").matches ? "right" : "left");
@@ -54,19 +59,10 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor),
   );
-  useEffect(() => {
-    const handler = (event: Event) => {
-      const command = (event as CustomEvent<string>).detail;
-      if (command === "panel") { setBoardVisible((v) => !v); setMaximized(false); }
-      if (command === "maximize") { setBoardVisible(true); setMaximized((v) => !v); setMobileSide("right"); }
-    };
-    window.addEventListener("muster:shortcut", handler);
-    return () => window.removeEventListener("muster:shortcut", handler);
-  }, [setBoardVisible]);
   const consumeReference = useCallback(() => setReference(null), []);
   const dragEnd = (event: DragEndEvent) => {
     setDragging(null);
-    const todo = todos.data?.find((item) => item.id === event.active.id);
+    const todo = tasks.find((item) => item.id === event.active.id);
     if (!todo) return;
     if (event.over?.id === "chat-composer") setReference(todo);
     if (event.over?.id === "column-done") {
@@ -77,17 +73,17 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
       }
     }
   };
-  if (topics.isPending) return <Loading />;
+  if (project.isPending) return <Loading />;
+  if (!project.data) return <div className="page-content"><ErrorNotice error={project.error ?? t("ws.notFound")} /></div>;
+  const workspace = project.data;
   return (
     <div className="workspace page-fill">
       <header className="page-header">
         <div className="breadcrumb">
-          <span className="dim">{t("ui.workspace")}</span>
-          <span className="dim">/</span>
-          <span title={topic?.title}>{topic?.title ?? t("ui.topicNotFound")}</span>
+          <span title={workspace.name}><strong>{workspace.name}</strong></span>
+          <span className="chip mono" title={workspace.repoUrl}>{workspace.baseBranch}</span>
         </div>
         <div className="row">
-          {topic && <TopicMenu topic={topic} chiefId={agents.data?.find((a) => a.isChief)?.id} />}
           <div className="mobile-panel-tabs">
             <button
               className={mobileSide === "left" ? "active" : ""}
@@ -107,9 +103,12 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
               {t("ui.board")}
             </button>
           </div>
+          <Link className="icon-button" to={`/w/${workspace.id}/settings`} aria-label={t("ws.settings")} title={t("ws.settings")}>
+            <Settings size={15} />
+          </Link>
           <button
             className="icon-button desktop-only"
-            title={`${t("ui.toggleBoard")} (⌘⌥B)`}
+            title={t("ui.toggleBoard")}
             aria-label={t("ui.toggleBoard")}
             onClick={() => {
               setBoardVisible((prior) => !prior);
@@ -130,9 +129,7 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
           </button>
         </div>
       </header>
-      <ErrorNotice
-        error={topics.error || todos.error || projects.error || agents.error}
-      />
+      <ErrorNotice error={topic.error || todos.error || agents.error} />
       {notice && (
         <div className="notice" role="status">
           {t("ui.tasksMustReachReviewBeforeTheyCanBeMarkedDone")}
@@ -153,11 +150,7 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
           const pointer = pointerWithin(args);
           return pointer.length ? pointer : rectIntersection(args);
         }}
-        onDragStart={(event) =>
-          setDragging(
-            todos.data?.find((todo) => todo.id === event.active.id) ?? null,
-          )
-        }
+        onDragStart={(event) => setDragging(tasks.find((todo) => todo.id === event.active.id) ?? null)}
         onDragEnd={dragEnd}
         onDragCancel={() => setDragging(null)}
       >
@@ -171,42 +164,27 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
           left={
             <div className="conversation-panel">
               <div className="panel-heading">
-                <span className="chief-avatar">✳</span>
-                <strong>Chief</strong>
-                <span className="muted">{t("ui.yourTeamCoordinated")}</span>
+                <Avatar name={master?.name ?? "Chief"} small />
+                <strong>{master?.name ?? "Chief"}</strong>
+                <span className="muted">{t("ws.masterOf", { name: workspace.name })}</span>
+                {master && <Link className="link panel-heading-action" to={`/agents/${master.id}`}>{t("ws.masterSettings")}</Link>}
               </div>
               <Conversation
-                key={topic?.id ?? "none"}
-                conversationId={topic?.id ?? ""}
-                status={topic?.activity ?? "idle"}
-                runtime={agents.data?.find((agent) => agent.isChief)?.runtime}
-                disabled={!topic ? t("ui.createATopicToGetStarted") : undefined}
+                key={workspace.topicId}
+                conversationId={workspace.topicId}
+                agentName={master?.name ?? "Chief"}
+                status={topic.data?.activity ?? "idle"}
+                runtime={master?.runtime}
                 reference={reference}
                 onReferenceConsumed={consumeReference}
               />
             </div>
           }
-          right={
-            <Board
-              todos={todos.data ?? []}
-              projects={projects.data ?? []}
-              agents={agents.data ?? []}
-              onNew={onNewTask}
-            />
-          }
+          right={<Board todos={tasks} agents={agents.data ?? []} onNew={onNewTask} />}
         />
         <DragOverlay>
           {dragging ? (
-            <TaskCard
-              todo={dragging}
-              project={projects.data?.find(
-                (project) => project.id === dragging.projectId,
-              )}
-              agent={agents.data?.find(
-                (agent) => agent.id === dragging.agentId,
-              )}
-              overlay
-            />
+            <TaskCard todo={dragging} agent={agents.data?.find((agent) => agent.id === dragging.agentId)} overlay />
           ) : null}
         </DragOverlay>
       </DndContext>

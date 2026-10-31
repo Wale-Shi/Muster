@@ -1,17 +1,12 @@
 import { localImageRoutes } from "./routes/local-images.js";
 import type { ImageMapping } from "./resources/local-images.js";
-import { Attachments } from "./resources/attachments.js";
-import { attachmentRoutes } from "./routes/attachments.js";
-import { projectGitRoutes } from "./routes/project-git.js";
 import { Settings } from "./resources/settings.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { Connections } from "./resources/connections.js";
-import { Schedules } from "./resources/schedules.js";
 import { existsSync, mkdtempSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { Memories } from "./resources/memories.js";
-import { Secrets } from "./resources/secrets.js";
+import { Vault } from "./resources/vault.js";
 import { Skills, type GithubFetcher } from "./resources/skills.js";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
@@ -47,10 +42,10 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
   const events = new EventBus(db);
   const orchestrator = new Orchestrator(db, events, options.publicUrl ?? "http://127.0.0.1:7420", options.autoFollowUp ?? true);
   const dataDir = options.dataDir ?? (options.databasePath && options.databasePath !== ":memory:" ? dirname(options.databasePath) : mkdtempSync(join(tmpdir(), "muster-data-")));
-  const memories = new Memories(db); const secrets = new Secrets(db, dataDir); const skills = new Skills(db, join(dataDir, "skills"), options.githubFetcher);
-  const connections = new Connections(db, secrets, events); const schedules = new Schedules(db, orchestrator);
-  const scheduler = new Scheduler(db, orchestrator, events, memories, secrets, skills, connections);
-  const services: AppServices = { settings: new Settings(db), attachments: new Attachments(db, join(dataDir, "attachments")), dataDir, db, events, orchestrator, scheduler, memories, secrets, skills, connections, schedules, enrollKey: options.enrollKey ?? null, claimWaitMs: options.claimWaitMs ?? 25_000 };
+  const skills = new Skills(db, join(dataDir, "skills"), options.githubFetcher);
+  const connections = new Connections(db, new Vault(dataDir), events);
+  const scheduler = new Scheduler(db, orchestrator, events, skills, connections);
+  const services: AppServices = { settings: new Settings(db), dataDir, db, events, orchestrator, scheduler, skills, connections, enrollKey: options.enrollKey ?? null, claimWaitMs: options.claimWaitMs ?? 25_000 };
   const app = new Hono();
 
   app.onError((error, c) => {
@@ -65,9 +60,9 @@ export function createApp(options: CreateAppOptions = {}): { app: Hono; services
   app.route("/api/machine", machineRoutes(services));
   app.route("/api/events", eventRoutes(services));
   app.all("/api/mcp", (c) => handleExternalMcp(c.req.raw, services));
+  // A workspace-scoped endpoint: another AI connected here assigns work to that workspace's master agent.
+  app.all("/api/mcp/workspaces/:id", (c) => handleExternalMcp(c.req.raw, services, c.req.param("id")));
   app.route("/api", settingsRoutes(services));
-  app.route("/api", projectGitRoutes(services));
-  app.route("/api", attachmentRoutes(services));
   app.route("/api", localImageRoutes(services, options.imageMappings));
   app.route("/api", apiRoutes(services));
   app.all("/mcp", (c) => handleMcp(c.req.raw, services));

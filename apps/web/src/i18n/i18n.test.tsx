@@ -1,141 +1,55 @@
-import { SettingsPage } from "../pages/Settings";
-import { workspaceSettingsSchema } from "@muster/shared";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { render } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import type { Message } from "@muster/shared";
-import { createI18n, dictionaries, I18nProvider } from ".";
+import { createI18n, I18nProvider } from ".";
+import { messages } from "./zh-CN";
 import { systemMessage } from "./system";
 import { displayError } from "./errors";
-import { PhaseBadge } from "../components/ui";
-import { Board } from "../components/Board";
-import { Sidebar } from "../components/Sidebar";
-import { api } from "../api/client";
 
 function leaves(value: object, prefix = ""): Record<string, string> {
   return Object.fromEntries(Object.entries(value).flatMap(([key, item]) => typeof item === "string" ? [[`${prefix}${key}`, item]] : Object.entries(leaves(item as object, `${prefix}${key}.`))));
 }
-const placeholders = (value: string) => [...value.matchAll(/\{(\w+)\}/g)].map((match) => match[1]).sort();
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); delete window.muster; });
 
-describe("dictionaries", () => {
-  for (const [locale, messages] of Object.entries(dictionaries)) {
-    it(`${locale} has complete copy and matching interpolation placeholders`, () => {
-      const source = leaves(dictionaries.en), translated = leaves(messages);
-      expect(Object.keys(translated).sort()).toEqual(Object.keys(source).sort());
-      for (const [key, value] of Object.entries(translated)) {
-        expect(value.trim(), key).not.toBe("");
-        expect(placeholders(value), key).toEqual(placeholders(source[key]!));
-      }
-    });
-  }
-  it("uses plurals, interpolation and active-locale formatters", () => {
-    const en = createI18n("en"), zh = createI18n("zh-CN");
-    expect(en.t("count.active", { count: 1 })).toBe("1 active task");
-    expect(en.t("count.active", { count: 2 })).toBe("2 active tasks");
-    expect(zh.t("count.active", { count: 2 })).toBe("2 个活跃任务");
-    expect(zh.t("text.edit", { name: "Atlas {test}" })).toBe("编辑 Atlas {test}");
-    expect(zh.formatNumber(12345)).toBe(new Intl.NumberFormat("zh-CN").format(12345));
-    expect(zh.formatRelative(0, 120000)).toBe(new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto", style: "short" }).format(-2, "minute"));
-    expect(zh.formatDuration(120000)).toBe(new Intl.NumberFormat("zh-CN", { style: "unit", unit: "minute", unitDisplay: "narrow" }).format(2));
-    expect(zh.formatDate(0, { timeZone: "UTC", dateStyle: "medium" })).toBe(new Intl.DateTimeFormat("zh-CN", { timeZone: "UTC", dateStyle: "medium" }).format(0));
+describe("dictionary", () => {
+  it("has no empty copy", () => {
+    for (const [key, value] of Object.entries(leaves(messages))) expect(value.trim(), key).not.toBe("");
+  });
+  it("uses plurals, interpolation and Chinese formatters", () => {
+    const { t, formatNumber, formatRelative, formatDuration, formatDate } = createI18n();
+    expect(t("count.active", { count: 2 })).toBe("2 个活跃任务");
+    expect(t("text.editMessage", { content: "Atlas {test}" })).toBe("编辑：Atlas {test}");
+    expect(t("ws.masterOf", { name: "Shop" })).toBe("Shop 的 master agent");
+    expect(formatNumber(12345)).toBe(new Intl.NumberFormat("zh-CN").format(12345));
+    expect(formatRelative(0, 120000)).toBe(new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto", style: "short" }).format(-2, "minute"));
+    expect(formatDuration(120000)).toBe(new Intl.NumberFormat("zh-CN", { style: "unit", unit: "minute", unitDisplay: "narrow" }).format(2));
+    expect(formatDate(0, { timeZone: "UTC", dateStyle: "medium" })).toBe(new Intl.DateTimeFormat("zh-CN", { timeZone: "UTC", dateStyle: "medium" }).format(0));
+  });
+  it("formats compact card ages", () => {
+    const now = Date.parse("2026-01-01T12:00:00Z");
+    expect(createI18n().formatAge(now - 57 * 60_000, now)).toBe("57分钟");
   });
 });
 
-it("switches sidebar and board instantly, persists language and informs desktop", async () => {
-  vi.spyOn(api, "topics").mockResolvedValue([]);
-  vi.spyOn(api, "machines").mockResolvedValue([]);
-  vi.spyOn(api, "todos").mockResolvedValue([]);
-  vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })));
-  let settingsData = workspaceSettingsSchema.parse({});
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
-    if (url === "/api/settings" && init?.method === "PATCH") settingsData = { ...settingsData, ...JSON.parse(String(init.body)) };
-    return Response.json({ data: url === "/api/settings" ? settingsData : [] });
-  }));
-  const setLocale = vi.fn().mockResolvedValue(undefined);
-  window.muster = { desktop: true, platform: "darwin", setLocale, chooseFolder: vi.fn(), openPath: vi.fn(), onCommand: vi.fn() };
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<I18nProvider initial="en"><QueryClientProvider client={client}><MemoryRouter>
-    <Sidebar collapsed={false} mobileOpen={false} onToggle={() => {}} onCloseMobile={() => {}} onSearch={() => {}} onNewTask={() => {}} />
-    <Board todos={[]} agents={[]} projects={[]} onNew={() => {}} /><SettingsPage />
-  </MemoryRouter></QueryClientProvider></I18nProvider>);
-  expect(screen.getByRole("heading", { name: "Backlog" })).toBeVisible();
-  expect(document.documentElement.lang).toBe("en");
-  expect(screen.getByRole("link", { name: /Settings/ })).toHaveAttribute("href", "/settings");
-  fireEvent.click(await screen.findByRole("tab", { name: "Light" }));
-  await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
-  await waitFor(() => expect(localStorage.getItem("muster.theme")).toBe("light"));
-  fireEvent.change(screen.getByLabelText("Language"), { target: { value: "zh-CN" } });
-  expect(await screen.findByRole("heading", { name: "待办" })).toBeVisible();
-  expect(screen.getByRole("link", { name: "工作区" })).toBeVisible();
-  expect(screen.getByText("暂无待办任务")).toBeVisible();
-  expect(document.documentElement.lang).toBe("zh-CN");
-  expect(document.title).toBe("Muster");
-  expect(localStorage.getItem("muster.locale")).toBe("zh-CN");
-  expect(setLocale).toHaveBeenLastCalledWith("zh-CN");
-});
-
-it("uses saved preference, ignores invalid storage and tolerates unavailable storage", () => {
-  localStorage.setItem("muster.locale", "zh-CN");
-  const first = render(<I18nProvider><span /></I18nProvider>);
-  expect(document.documentElement.lang).toBe("zh-CN");
-  first.unmount();
-  localStorage.setItem("muster.locale", "retired-locale");
-  vi.spyOn(navigator, "languages", "get").mockReturnValue(["zh-Hant"] );
-  const second = render(<I18nProvider><span /></I18nProvider>);
-  expect(document.documentElement.lang).toBe("zh-CN");
-  second.unmount();
-  vi.spyOn(localStorage, "getItem").mockImplementation(() => { throw new Error("blocked"); });
-  vi.spyOn(localStorage, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+it("sets the document language and title", () => {
   render(<I18nProvider><span /></I18nProvider>);
   expect(document.documentElement.lang).toBe("zh-CN");
+  expect(document.title).toBe("Muster");
 });
 
 it("translates structured notices and known errors while preserving stored content", () => {
-  const { t, label } = createI18n("zh-CN");
-  const message: Message = { id: "m", conversationId: "c", turnId: null, role: "system", content: "Todo #1 Keep Title entered confirm.", createdAt: "2026-01-01", meta: { todoId: "t", phase: "confirm" } };
-  expect(systemMessage(message, t, label)).toBe("任务 #1 Keep Title 的计划已就绪，等待你确认。");
-  expect(systemMessage({ ...message, meta: { todoId: "t", phase: "building" } }, t, label)).toBe("任务 #1 Keep Title 已进入构建中阶段。");
+  const { t, label } = createI18n();
+  const message: Message = { id: "m", conversationId: "c", turnId: null, role: "system", content: "Task #1 Keep Title (taskId t) entered review.", createdAt: "2026-01-01", meta: { todoId: "t", phase: "review" } };
+  expect(systemMessage(message, t, label)).toBe("任务 #1 Keep Title 已完成，等待验收。");
+  // Older notices kept the "Todo" wording and had no structured task fields.
+  expect(systemMessage({ ...message, content: "Todo #1 Keep Title entered done.", meta: { todoId: "t", phase: "done" } }, t, label)).toBe("任务 #1 Keep Title 已完成。");
+  expect(systemMessage({ ...message, meta: { todoId: "t", phase: "building" } }, t, label)).toBe("任务 #1 Keep Title 已进入执行中阶段。");
+  expect(systemMessage({ ...message, meta: { todoNumber: 2, todoTitle: "Other", todoId: "t", phase: "failed" } }, t, label)).toBe("任务 #2 Other 执行失败。");
   expect(systemMessage({ ...message, meta: {} }, t, label)).toBe(message.content);
   expect(systemMessage({ ...message, meta: { code: "no_file_changes" } }, t, label)).toBe("本次构建没有文件变更");
-  expect(message.content).toBe("Todo #1 Keep Title entered confirm.");
   expect(displayError(new Error("Invalid request"), t, label)).toContain("请求无效");
-  expect(displayError(new Error("Cannot start todo from review"), t, label)).toContain("评审");
+  expect(displayError(new Error("Workspace still has tasks"), t, label)).toBe("工作空间里还有任务，无法删除");
+  expect(displayError(new Error("Cannot start todo from review"), t, label)).toContain("待验收");
+  expect(displayError(new Error("Messages can only steer a running turn or revise at review (current: done)"), t, label)).toContain("已完成");
   expect(displayError(new Error("external error text"), t, label)).toBe("external error text");
   expect(label("runtime", "claude")).toBe("Claude Code");
-  const english = createI18n("en");
-  expect(systemMessage(message, english.t, english.label)).toBe("Task #1 Keep Title has a plan ready for your confirmation.");
-  expect(systemMessage({ ...message, meta: { todoId: "t", phase: "review" } }, english.t, english.label)).toBe("Task #1 Keep Title is ready for your review.");
-});
-it("formats compact card ages in both languages", () => {
-  const now = Date.parse("2026-01-01T12:00:00Z");
-  expect(createI18n("en").formatAge(now - 57 * 60_000, now)).toBe("57m");
-  expect(createI18n("en").formatAge(now - 3 * 3_600_000, now)).toBe("3h");
-  expect(createI18n("zh-CN").formatAge(now - 57 * 60_000, now)).toBe("57分钟");
-});
-
-
-it.each([
-  { locale: "en" as const, action: "Done", merge: "Done & merge", state: "Done", notice: "Task #5 Action copy is done." },
-  { locale: "zh-CN" as const, action: "完成", merge: "完成并合并", state: "已完成", notice: "任务 #5 Action copy 已完成。" },
-])("preserves completion status copy independently of actions in $locale", ({ locale, action, merge, state, notice }) => {
-  const { t, label } = createI18n(locale);
-  expect(t("ui.completeTask")).toBe(action);
-  expect(t("ui.completeAndMerge")).toBe(merge);
-  expect(t("ui.done")).toBe(state);
-  expect(label("phase", "done")).toBe(state);
-  expect(label("status", "done")).toBe(state);
-  render(<I18nProvider initial={locale}><MemoryRouter>
-    <PhaseBadge phase="done" />
-    <Board todos={[]} agents={[]} projects={[]} onNew={() => {}} />
-  </MemoryRouter></I18nProvider>);
-  expect(screen.getByRole("heading", { name: state })).toBeVisible();
-  expect(document.querySelector(".phase-badge.done")).toHaveTextContent(state);
-  const message: Message = {
-    id: "m", conversationId: "c", turnId: null, role: "system",
-    content: "Todo #5 Action copy entered done.", createdAt: "2026-10-25",
-    meta: { todoId: "task", phase: "done" },
-  };
-  expect(systemMessage(message, t, label)).toBe(notice);
 });

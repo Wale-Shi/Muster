@@ -6,11 +6,11 @@ export class ClaudeRuntime implements Runtime {
   constructor(private command = "claude", private prefix: string[] = []) {}
   start(job: TurnJob, ctx: RuntimeContext): RunningTurn {
     let sessionId = typeof job.sessionState?.sessionId === "string" ? job.sessionState.sessionId : "";
-    const args = [...this.prefix, "-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", job.readOnly ? "plan" : "bypassPermissions", "--system-prompt-snapshot", "off", "--append-system-prompt", job.systemInstructions,
+    const args = [...this.prefix, "-p", "--output-format", "stream-json", "--input-format", "stream-json", "--verbose", "--include-partial-messages", "--permission-mode", "bypassPermissions", "--system-prompt-snapshot", "off", "--append-system-prompt", job.systemInstructions,
       ...(job.agent.model && job.agent.model !== CLI_DEFAULT_MODEL ? ["--model", job.agent.model] : []),
       ...(job.agent.reasoning ? ["--effort", job.agent.reasoning] : []),
       ...(sessionId ? ["--resume", sessionId] : []), "--mcp-config", JSON.stringify({ mcpServers: { ...Object.fromEntries((job.connections ?? []).map((c) => [c.identifier, c.transport === "http" ? { type: "http", url: c.url, headers: c.headers ?? {} } : { type: "stdio", command: c.command, args: c.args ?? [], env: c.env ?? {} }])), muster: { type: "http", url: job.mcp.url, headers: { Authorization: `Bearer ${job.mcp.token}` } } } })];
-    const process = new JsonProcess(this.command, args, ctx.cwd, job.env);
+    const process = new JsonProcess(this.command, args, ctx.cwd);
     let stopped = false;
     let finished = false;
     let text = "";

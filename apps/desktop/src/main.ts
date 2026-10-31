@@ -16,8 +16,7 @@ import { revealOnly } from "./open-path.js";
 import { chooseServer } from "./ports.js";
 import { Worker, waitForServer } from "./workers.js";
 import type { DesktopCommand } from "./bridge.js";
-import type { Locale } from "@muster/shared";
-import { desktopError, desktopText, isLocale, notificationTitle, resolveLocale } from "./i18n.js";
+import { desktopError, desktopText, notificationTitle } from "./i18n.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "../../../..");
@@ -27,8 +26,7 @@ const currentBundleId = process.platform === "darwin" && app.isPackaged
   ? execFileSync("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleIdentifier", join(currentBundle, "Contents/Info.plist")], { encoding: "utf8" }).trim() : "";
 if (needsInstallation({ platform: process.platform, packaged: app.isPackaged, executable: process.execPath, home: homedir(), bundleId: currentBundleId, smoke: process.argv.includes("--smoke-test"), data: process.env.MUSTER_DATA_DIR })) {
   await app.whenReady();
-  const installLocale = resolveLocale(app.getPreferredSystemLanguages());
-  const copy = (key: Parameters<typeof desktopText>[1]) => desktopText(installLocale, key);
+  const copy = (key: Parameters<typeof desktopText>[0]) => desktopText(key);
   const choice = await dialog.showMessageBox({ type: "info", message: copy("installRequired"), detail: currentBundle, buttons: [copy("moveApp"), copy("quitApp")], defaultId: 0, cancelId: 1 });
   if (choice.response === 0) {
     try {
@@ -47,8 +45,7 @@ mkdirSync(logs, { recursive: true, mode: 0o700 });
 app.setPath("userData", join(data, "desktop"));
 app.setPath("logs", logs);
 const smoke = process.argv.includes("--smoke-test");
-let locale: Locale = "en";
-const t = (key: Parameters<typeof desktopText>[1], params?: Record<string, string | number>) => desktopText(locale, key, params);
+const t = desktopText;
 let machineStatus: { online: boolean; running: number } | undefined;
 let window: BrowserWindow | undefined;
 let tray: Tray | undefined;
@@ -107,11 +104,6 @@ function integrations() {
     if (!trusted(event)) throw new Error(t("untrusted"));
     return window?.isFullScreen() ?? false;
   });
-  ipcMain.handle("muster:set-locale", (event, value: unknown) => {
-    if (!trusted(event)) throw new Error(t("untrusted"));
-    if (!isLocale(value)) throw new Error(t("invalidLocale"));
-    locale = value; rebuildMenu(); rebuildTray();
-  });
   ipcMain.handle("muster:choose-folder", async (event) => {
     if (!trusted(event) || !window) throw new Error(t("untrusted"));
     const result = await dialog.showOpenDialog(window, { properties: ["openDirectory"], title: t("folder") });
@@ -144,7 +136,6 @@ function rebuildMenu() {
       { label: t("logs"), click: () => { void shell.openPath(logs); } },
       { type: "separator" }, process.platform === "darwin" ? { role: "close" as const } : { role: "quit" as const },
     ] }, { role: "editMenu", label: t("edit") }, { label: t("view"), submenu: viewMenuRoles(app.isPackaged).map((role) => ({ role })) }, { role: "windowMenu", label: t("window") },
-    { label: t("help"), submenu: [{ label: t("shortcuts"), accelerator: commandAccelerators.shortcuts, click: () => command({ type: "shortcuts" }) }] },
   ]));
 }
 function rebuildTray() {
@@ -189,7 +180,6 @@ async function refreshStatus() {
 
 async function launch() {
   log(`Executable=${process.execPath} resources=${process.resourcesPath} bundle=${currentBundle} bundleId=${currentBundleId}`);
-  locale = resolveLocale(app.getPreferredSystemLanguages());
   const env = { ...process.env, PATH: await resolvePath(), MUSTER_DATA_DIR: data, MUSTER_HOME: data };
   // Retry discovery when another application wins the bind race.
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -207,7 +197,7 @@ async function launch() {
   if (server) failed("Server", server);
   if (daemon) failed("Daemon", daemon);
   void watchEvents(origin, eventsAbort.signal, async (event) => {
-    if (event.type !== "todo.changed" || !event.todoId || !["confirm", "review", "failed", "done"].includes(event.payload?.phase ?? "")) return;
+    if (event.type !== "todo.changed" || !event.todoId || !["review", "failed", "done"].includes(event.payload?.phase ?? "")) return;
     void refreshStatus();
     await readNotificationPreferences();
     if (!shouldNotify(event.payload?.phase ?? "", notificationPreferences)) return;
@@ -215,7 +205,7 @@ async function launch() {
     const response = await fetch(`${origin}/api/todos/${encodeURIComponent(event.todoId)}`, { signal: AbortSignal.timeout(3000) });
     if (!response.ok) return;
     const { data: todo } = await response.json() as { data: TodoStatus };
-    const notification = new Notification({ title: notificationTitle(locale, event.payload?.phase ?? "failed"), body: todo.title });
+    const notification = new Notification({ title: notificationTitle(event.payload?.phase ?? "failed"), body: todo.title });
     notification.on("click", () => command({ type: "open-todo", id: todo.id }));
     notification.on("failed", (_event, error) => log(`Notification failed: ${error}`));
     notification.show();
@@ -257,7 +247,7 @@ else {
   });
   const startup = app.whenReady().then(launch).catch((error: unknown) => {
     log(error instanceof Error ? error.stack ?? error.message : String(error));
-    if (!smoke) dialog.showErrorBox(t("startup"), t("startupError", { error: desktopError(locale, error), logs }));
+    if (!smoke) dialog.showErrorBox(t("startup"), t("startupError", { error: desktopError(error), logs }));
     process.exitCode = 1;
     app.quit();
   });

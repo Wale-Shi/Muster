@@ -12,6 +12,8 @@ describe("phase helpers", () => {
   it("enforces transitions and turn results", () => {
     expect(canTransition("todo", "queued")).toBe(true);
     expect(canTransition("todo", "done")).toBe(false);
-    expect(completedPhaseForTurn("revise", "confirm")).toBe("confirm");
+    expect(completedPhaseForTurn("build")).toBe("review");
+    expect(completedPhaseForTurn("revise")).toBe("review");
+    expect(completedPhaseForTurn("merge")).toBe("done");
   });
 });

@@ -21,7 +21,7 @@ async function setup() {
   const dataDir = await directory(); const { app, services } = createApp({ dataDir, claimWaitMs: 0, autoFollowUp: false }); cleanup.push(() => services.db.close());
   const { projectId, agentId } = await seedProjectAndAgent(app), todoId = await createTodo(app, projectId, agentId), machine = await enroll(app);
   await writeFile(join(dataDir, "machine.json"), JSON.stringify(machine));
-  await requestJson(app, `/api/todos/${todoId}/start`, "POST", { mode: "run" });
+  await requestJson(app, `/api/todos/${todoId}/start`, "POST", {});
   const { json: job } = await requestJson(app, "/api/machine/claim", "POST", {}, machine.token);
   const buildId = job.buildId as string;
   async function request(src: string, options: { content?: string; role?: "agent" | "user"; todoId?: string; buildId?: string; origin?: string; header?: string } = {}) {

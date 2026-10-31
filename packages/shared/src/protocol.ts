@@ -5,11 +5,8 @@ import type { agentEventSchema, turnCompleteSchema, eventUploadSchema } from "./
 
 export interface TurnJob {
   task?: { number: number; title: string; summary: string; url: string };
-  attachments?: import("./settings.js").Attachment[];
   connections?: import("./connections.js").TurnConnection[];
   skills?: { slug: string; name: string; description: string; version: string }[];
-  env?: Record<string, string>;
-  pushBranch?: boolean;
   turnId: string;
   buildId: string;
   todoId: string | null;
@@ -26,7 +23,6 @@ export interface TurnJob {
   prompt: string;
   systemInstructions: string;
   sessionState: Record<string, unknown> | null;
-  readOnly: boolean;
   mcp: { url: string; token: string };
 }
 
@@ -51,5 +47,5 @@ export interface ServerEvent {
 export interface SyncResetEvent extends ServerEvent { type: typeof SYNC_RESET_EVENT }
 
 export const DEFAULT_MODELS = Object.fromEntries(RUNTIMES.map((runtime) => [runtime.id, runtime.defaultModel])) as Record<Runtime, string>;
-// Chief uses the CLI's configured model; change it in the Chief agent's settings.
+// The default master agent uses the CLI's configured model; change it in the agent's settings.
 export const CHIEF_MODEL = { runtime: "codex", model: CLI_DEFAULT_MODEL, reasoning: "medium" } as const;

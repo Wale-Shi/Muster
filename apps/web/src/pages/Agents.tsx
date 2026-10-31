@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Bot, Plus } from "lucide-react";
 import { DEFAULT_MODELS, type Agent, type Runtime } from "@muster/shared";
 import { api, type AgentInput } from "../api/client";
-import { useAgents, useMachines, useTodos } from "../api/queries";
+import { useAgents, useMachines, useProjects, useTodos } from "../api/queries";
 import { initialModel, keepReasoning, ModelSelect, ReasoningSelect, reasoningLevels } from "../components/ModelFields";
 import { Avatar, Dialog, Empty, ErrorNotice, Loading } from "../components/ui";
 import { RuntimeOptions } from "../components/RuntimeOptions";
@@ -130,6 +130,7 @@ export function Agents() {
   const { t, label } = useI18n();
   const agents = useAgents();
   const todos = useTodos();
+  const projects = useProjects();
   const [editing, setEditing] = useState<Agent | null | undefined>(undefined);
   return (
     <div className="management-page">
@@ -153,6 +154,7 @@ export function Agents() {
         ) : (
           <div className="agent-grid">
             {agents.data.map((agent) => {
+              const leads = (agentId: string) => projects.data?.filter((project) => project.chiefAgentId === agentId).length ?? 0;
               const active =
                 todos.data?.filter(
                   (todo) =>
@@ -166,7 +168,7 @@ export function Agents() {
                     <div>
                       <h3>
                         {agent.name}
-                        {agent.isChief && <span className="badge">Chief</span>}
+                        {agent.isChief ? <span className="badge">{t("ws.defaultMaster")}</span> : leads(agent.id) > 0 && <span className="badge">{t("ws.master")}</span>}
                       </h3>
                       <span className="mono muted">{label("runtime", agent.runtime)}</span>
                     </div>

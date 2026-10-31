@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { createApp, type CreateAppOptions } from "./app.js";
-import { createTodo, requestJson, seedProjectAndAgent } from "./test/helpers.js";
+import { requestJson } from "./test/helpers.js";
 
 const databases: Array<ReturnType<typeof createApp>["services"]["db"]> = [];
 afterEach(() => { while (databases.length) databases.pop()?.close(); });
@@ -60,8 +60,8 @@ describe("request security", () => {
     expect((await app.request("/api/settings", { method: "PATCH", headers: { "content-type": "text/plain" }, body: "{}" })).status).toBe(415);
   });
   it("rejects a multipart upload from another origin but keeps same-origin uploads working", async () => {
-    const app = setup(), { projectId, agentId } = await seedProjectAndAgent(app), todoId = await createTodo(app, projectId, agentId);
-    const upload = (headers: Record<string, string>) => { const form = new FormData(); form.append("files", new File(["hello"], "notes.txt")); return app.request(`http://127.0.0.1:7420/api/todos/${todoId}/attachments`, { method: "POST", headers, body: form }); };
+    const app = setup(); let count = 0;
+    const upload = (headers: Record<string, string>) => { const form = new FormData(); form.append("files", new File([`---\nname: Upload ${++count}\ndescription: Test\n---\nWork`], "SKILL.md")); return app.request("http://127.0.0.1:7420/api/skills/upload", { method: "POST", headers, body: form }); };
     expect((await upload({ origin: "https://evil.test" })).status).toBe(403);
     expect((await upload({ origin: "http://127.0.0.1:7420" })).status).toBe(201);
     expect((await upload({})).status).toBe(201);

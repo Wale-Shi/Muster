@@ -14,7 +14,7 @@ export async function fixture(): Promise<{ root: string; origin: string; ws: str
   return { root, origin, ws, job: makeJob({ project: { id: "project-1", repoUrl: origin, baseBranch: "main" } }) };
 }
 export function makeJob(overrides: Partial<TurnJob> = {}): TurnJob {
-  return { turnId: "turn-1", buildId: "build-1", todoId: "todo-1", topicId: null, kind: "build", project: null, branch: "muster/conv-build-1", agent: { runtime: "mock", model: "mock-1", reasoning: null, role: "Builder" }, prompt: "Add a greeting", systemInstructions: "Follow the task", sessionState: null, readOnly: false, mcp: { url: "http://localhost:7420/mcp", token: "test-only" }, ...overrides };
+  return { turnId: "turn-1", buildId: "build-1", todoId: "todo-1", topicId: null, kind: "build", project: null, branch: "muster/conv-build-1", agent: { runtime: "mock", model: "mock-1", reasoning: null, role: "Builder" }, prompt: "Add a greeting", systemInstructions: "Follow the task", sessionState: null, mcp: { url: "http://localhost:7420/mcp", token: "test-only" }, ...overrides };
 }
 export async function until<T>(read: () => Promise<T>, predicate: (value: T) => boolean, timeout = 8000): Promise<T> {
   const deadline = Date.now() + timeout;

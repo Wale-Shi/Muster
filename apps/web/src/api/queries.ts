@@ -9,8 +9,10 @@ export const useProjects = () =>
   useQuery({ queryKey: ["projects"], queryFn: api.projects });
 export const useAgents = () =>
   useQuery({ queryKey: ["agents"], queryFn: api.agents });
-export const useTopics = () =>
-  useQuery({ queryKey: ["topics"], queryFn: api.topics });
+export const useProject = (id: string) =>
+  useQuery({ queryKey: ["projects", id], queryFn: () => api.project(id), enabled: !!id });
+export const useTopic = (id: string | undefined) =>
+  useQuery({ queryKey: ["topics", id], queryFn: () => api.topic(id!), enabled: !!id });
 export const useTodo = (id: string) =>
   useQuery({
     queryKey: ["todo", id],

@@ -1,4 +1,3 @@
-import { TodoSchedules } from "./Schedules";
 import { useI18n } from "../i18n";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
@@ -44,18 +43,8 @@ export function TodoPage() {
       </div>
     );
   const build = todo.builds.at(-1);
-  const agentId =
-    todo.phase === "planning"
-      ? (todo.planAgentId ?? todo.agentId)
-      : todo.agentId;
-  const queuedTurn = todo.phase === "queued" ? build?.turns.at(-1) : undefined;
-  const planAgentQueued =
-    queuedTurn?.kind === "plan" ||
-    (queuedTurn?.kind === "revise" && todo.previousGate === "confirm");
-  const runtime = agents.data?.find(
-    (item) => item.id === (planAgentQueued ? (todo.planAgentId ?? todo.agentId) : agentId),
-  )?.runtime;
-  const agent = agents.data?.find((item) => item.id === agentId);
+  const agent = agents.data?.find((item) => item.id === todo.agentId);
+  const runtime = agent?.runtime;
   const project = projects.data?.find((item) => item.id === todo.projectId);
   const tokensIn = todo.builds.reduce((sum, item) => sum + item.tokensIn, 0);
   const tokensOut = todo.builds.reduce((sum, item) => sum + item.tokensOut, 0);
@@ -63,18 +52,16 @@ export function TodoPage() {
   const status =
     todo.phase === "queued"
       ? "queued"
-      : ["planning", "building"].includes(todo.phase)
+      : todo.phase === "building"
         ? "running"
         : "idle";
-  const canMessage = ["queued", "planning", "building", "confirm", "review"].includes(
-    todo.phase,
-  );
+  const canMessage = ["queued", "building", "review"].includes(todo.phase);
   return (
     <div className="page-fill todo-page">
       <header className="todo-header">
         <div className="todo-title-row">
           <Link
-            to={todo.topicId ? `/topics/${todo.topicId}` : "/"}
+            to={`/w/${todo.projectId}`}
             className="icon-button"
             aria-label={t("ui.backToWorkspace")}
           >
@@ -92,12 +79,11 @@ export function TodoPage() {
         </div>
         <div className="todo-metadata">
           <PhaseBadge phase={todo.phase} />
-          <TodoSchedules todoId={todo.id} />
           <span className="metadata-divider" />
-          <span className="project-tag" title={project?.name}>
+          <Link className="project-tag" title={project?.name} to={`/w/${todo.projectId}`}>
             <span className="project-square" />
-            {project?.name ?? t("ui.project")}
-          </span>
+            {project?.name ?? t("ws.workspace")}
+          </Link>
           {agent && (
             <span className="row muted">
               <Avatar name={agent.name} small />
@@ -142,7 +128,7 @@ export function TodoPage() {
               setPanelVisible(true);
             }}
           >
-            {t("ui.planChanges")}
+            {t("ui.changes")}
           </button>
         </div>
       </header>
@@ -171,7 +157,7 @@ export function TodoPage() {
                     : t("ui.reopenOrRerunThisTaskToContinue")
             }
             initialSpec={todo.spec}
-            placeholder={t("ui.sendFeedbackToYourAgent")}
+            placeholder={todo.phase === "review" ? t("ws.reviewFeedback") : t("ui.sendFeedbackToYourAgent")}
             onDone={() => {
               if (todo.phase === "review") setDone(true);
             }}

@@ -7,7 +7,7 @@ beforeEach(() => {
 });
 afterEach(() => { delete window.muster; vi.unstubAllGlobals(); });
 it("starts the desktop window dark", () => {
-  window.muster = { desktop: true, setLocale: vi.fn().mockResolvedValue(undefined), platform: "darwin", chooseFolder: vi.fn(), openPath: vi.fn(), onCommand: vi.fn() };
+  window.muster = { desktop: true, platform: "darwin", chooseFolder: vi.fn(), openPath: vi.fn(), onCommand: vi.fn() };
   expect(renderHook(() => useTheme()).result.current.theme).toBe("dark");
   expect(document.documentElement.dataset.theme).toBe("dark");
 });
@@ -17,6 +17,6 @@ it("follows the system appearance in a browser", () => {
 });
 it("keeps a theme the user chose in the desktop window", () => {
   localStorage.setItem("muster.theme", "light");
-  window.muster = { desktop: true, setLocale: vi.fn().mockResolvedValue(undefined), platform: "darwin", chooseFolder: vi.fn(), openPath: vi.fn(), onCommand: vi.fn() };
+  window.muster = { desktop: true, platform: "darwin", chooseFolder: vi.fn(), openPath: vi.fn(), onCommand: vi.fn() };
   expect(renderHook(() => useTheme()).result.current.theme).toBe("light");
 });

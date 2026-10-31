@@ -16,13 +16,19 @@ export class Orchestrator {
     return this.db.todo(row);
   }
 
-  private getAgent(agentId: string | null, kind: TurnKind): Agent {
+  private getAgent(agentId: string | null): Agent {
     let row = agentId ? this.db.row("SELECT * FROM agents WHERE id = ?", agentId) : undefined;
-    if (!row && kind === "chief") row = this.db.row("SELECT * FROM agents WHERE is_chief = 1 LIMIT 1");
     if (!row) row = this.db.row("SELECT * FROM agents WHERE is_chief = 0 ORDER BY created_at LIMIT 1");
     if (!row) row = this.db.row("SELECT * FROM agents ORDER BY is_chief DESC LIMIT 1");
     if (!row) throw new StateError("No agent available", 422);
     return this.db.agent(row);
+  }
+
+  /** The workspace's main conversation. */
+  topicFor(projectId: string): string {
+    const row = this.db.row("SELECT id FROM topics WHERE project_id=?", projectId);
+    if (!row) throw new StateError("Workspace conversation not found", 404);
+    return String(row.id);
   }
 
   private createBuild(todoId: string): string {
@@ -39,47 +45,26 @@ export class Orchestrator {
   private enqueue(todo: Todo, kind: TurnKind, feedback?: string, newBuild = false): string {
     if (newBuild) this.db.run("UPDATE builds SET status = 'failed' WHERE todo_id = ? AND status = 'active'", todo.id);
     const buildId = newBuild ? this.createBuild(todo.id) : this.activeBuild(todo.id);
-    const usePlanAgent = kind === "plan" || (kind === "revise" && todo.previousGate === "confirm");
-    const selectedAgent = usePlanAgent ? (todo.planAgentId ?? todo.agentId) : todo.agentId;
-    const agent = this.getAgent(selectedAgent, kind);
-    if (!selectedAgent) this.db.run(`UPDATE todos SET ${usePlanAgent ? "plan_agent_id" : "agent_id"} = ? WHERE id = ?`, agent.id, todo.id);
+    const agent = this.getAgent(todo.agentId);
+    if (!todo.agentId) this.db.run("UPDATE todos SET agent_id = ? WHERE id = ?", agent.id, todo.id);
     const turnId = id();
-    let prompt = buildPrompt(kind, todo, agent, feedback).prompt;
-    const plan = this.db.row("SELECT d.content FROM documents d JOIN builds b ON b.id=d.build_id WHERE b.todo_id=? AND d.kind='plan' ORDER BY d.rowid DESC LIMIT 1", todo.id);
-    if (!newBuild && plan && (kind === "build" || kind === "revise")) prompt += `\n\nCurrent plan:\n${String(plan.content)}`;
+    const prompt = buildPrompt(kind, todo, agent, feedback).prompt;
     this.db.run("INSERT INTO turns (id, build_id, kind, status, prompt, tokens_in, tokens_out) VALUES (?, ?, ?, 'queued', ?, 0, 0)", turnId, buildId, kind, prompt);
     this.db.run("UPDATE todos SET phase = 'queued', updated_at = ? WHERE id = ?", now(), todo.id);
     this.changed(todo.id, buildId, "turn.queued", { turnId, kind });
     return turnId;
   }
 
-  start(todoId: string, mode: "plan" | "run", agentId?: string): string {
+  start(todoId: string, agentId?: string): string {
     const todo = this.getTodo(todoId);
     if (todo.phase !== "todo") throw new StateError(`Cannot start todo from ${todo.phase}`);
-    if (agentId) this.db.run("UPDATE todos SET agent_id = ?, mode = ? WHERE id = ?", agentId, mode, todoId);
-    else this.db.run("UPDATE todos SET mode = ? WHERE id = ?", mode, todoId);
-    return this.enqueue(this.getTodo(todoId), mode === "plan" ? "plan" : "build");
-  }
-
-  scheduledRestart(todoId: string, mode: "plan" | "run", agentId: string | null, machineId: string | null): string {
-    const todo = this.getTodo(todoId);
-    this.db.run("UPDATE todos SET mode=?,done_at=NULL,previous_gate=NULL WHERE id=?", mode, todoId);
-    const fresh = { ...todo, mode, previousGate: null, ...(agentId ? { agentId, planAgentId: agentId } : {}) };
-    const turnId = this.enqueue(fresh, mode === "plan" ? "plan" : "build", undefined, true);
-    this.db.run("UPDATE builds SET required_machine_id=?,scheduled_agent_id=? WHERE id=(SELECT build_id FROM turns WHERE id=?)", machineId, agentId, turnId);
-    return turnId;
-  }
-
-  confirm(todoId: string): string {
-    const todo = this.getTodo(todoId);
-    if (todo.phase !== "confirm") throw new StateError(`Cannot confirm todo from ${todo.phase}`);
-    this.db.run("UPDATE todos SET previous_gate = 'confirm' WHERE id = ?", todoId);
+    if (agentId) this.db.run("UPDATE todos SET agent_id = ? WHERE id = ?", agentId, todoId);
     return this.enqueue(this.getTodo(todoId), "build");
   }
 
   message(todoId: string, content: string): { queued: boolean; turnId?: string } {
     const todo = this.getTodo(todoId);
-    if (!["queued", "planning", "building", "confirm", "review"].includes(todo.phase)) {
+    if (!["queued", "building", "review"].includes(todo.phase)) {
       throw new StateError(`Messages cannot be sent from ${todo.phase}`);
     }
     const buildId = this.activeBuild(todoId);
@@ -91,13 +76,13 @@ export class Orchestrator {
       this.changed(todoId, buildId, "message.queued", { id: messageId, content });
       return { queued: true };
     }
-    if (todo.phase === "confirm" || todo.phase === "review") {
-      this.db.run("UPDATE todos SET previous_gate = ? WHERE id = ?", todo.phase, todoId);
+    if (todo.phase === "review") {
+      this.db.run("UPDATE todos SET previous_gate = 'review' WHERE id = ?", todoId);
       const turnId = this.enqueue(this.getTodo(todoId), "revise", content);
       this.assignMessage(sourceMessageId, turnId);
       return { queued: false, turnId };
     }
-    throw new StateError(`Messages can only steer a running turn or revise at a gate (current: ${todo.phase})`);
+    throw new StateError(`Messages can only steer a running turn or revise at review (current: ${todo.phase})`);
   }
 
   done(todoId: string, merge: boolean): string | null {
@@ -114,7 +99,7 @@ export class Orchestrator {
 
   close(todoId: string): void {
     const todo = this.getTodo(todoId);
-    const prior = todo.phase === "confirm" || todo.phase === "review" ? todo.phase : todo.previousGate;
+    const prior = todo.phase === "review" ? "review" : todo.previousGate;
     this.db.run("UPDATE todos SET phase = 'closed', previous_gate = ?, updated_at = ? WHERE id = ?", prior, now(), todoId);
     this.db.run("UPDATE turns SET stop_requested = 1 WHERE build_id IN (SELECT id FROM builds WHERE todo_id = ?) AND status = 'running'", todoId);
     this.db.run("UPDATE turns SET status = 'stopped', ended_at = ?, error = 'Todo closed' WHERE build_id IN (SELECT id FROM builds WHERE todo_id = ?) AND status = 'queued'", now(), todoId);
@@ -138,7 +123,7 @@ export class Orchestrator {
     const todo = this.getTodo(todoId);
     if (todo.phase !== "failed") throw new StateError(`Cannot rerun todo from ${todo.phase}`);
     const last = this.db.row("SELECT kind, prompt FROM turns WHERE build_id IN (SELECT id FROM builds WHERE todo_id = ?) ORDER BY rowid DESC LIMIT 1", todoId);
-    const kind = (last?.kind ?? (todo.mode === "plan" ? "plan" : "build")) as TurnKind;
+    const kind = (last?.kind === "revise" || last?.kind === "merge" ? last.kind : "build") as TurnKind;
 
     const turnId = this.enqueue(todo, kind, undefined, strategy === "restart");
     if (last) this.db.run("UPDATE turns SET prompt=? WHERE id=?", `${String(last.prompt)}\n\n${strategy === "restart" ? "Restart from a clean worktree." : "Continue from the previous attempt."}`, turnId);
@@ -174,7 +159,7 @@ export class Orchestrator {
       }
       prompt = `${CHIEF_FOLLOW_UP_PROMPT}\n\n${prompt}`;
     }
-    const agent = this.getAgent(null, "chief");
+    const agent = this.db.chiefFor(topic.project_id as string | null);
     let build = this.db.row("SELECT id FROM builds WHERE todo_id IS NULL AND branch = ? LIMIT 1", `chief:${topicId}`);
     if (!build) {
       const buildId = id();
@@ -190,19 +175,20 @@ export class Orchestrator {
 
   setPhase(todo: Todo, phase: Todo["phase"]): void {
     const doneAt = phase === "done" ? now() : null;
-    const previousGate = phase === "confirm" || phase === "review" ? phase : todo.previousGate;
+    const previousGate = phase === "review" ? "review" : todo.previousGate;
     this.db.run("UPDATE todos SET phase = ?, previous_gate = ?, updated_at = ?, done_at = ? WHERE id = ?", phase, previousGate, now(), doneAt, todo.id);
     this.changed(todo.id, null, "todo.changed", { phase });
-    if (["confirm", "review", "failed", "done"].includes(phase)) this.notifyChief(this.getTodo(todo.id), phase);
+    if (["review", "failed", "done"].includes(phase)) this.notifyChief(this.getTodo(todo.id), phase);
   }
 
+  // The workspace's master agent follows up every task in its workspace.
   private notifyChief(todo: Todo, phase: Todo["phase"]): void {
-    const topicRow = todo.topicId ? this.db.row("SELECT id FROM topics WHERE id = ?", todo.topicId) : this.db.row("SELECT id FROM topics ORDER BY created_at LIMIT 1");
+    const topicRow = this.db.row("SELECT id FROM topics WHERE project_id = ?", todo.projectId);
     if (!topicRow) return;
     const topicId = String(topicRow.id);
-    const content = `Todo #${todo.number} ${todo.title} entered ${phase}.`;
+    const content = `Task #${todo.number} ${todo.title} (taskId ${todo.id}) entered ${phase}.`;
     this.addMessage(topicId, null, "system", content, { todoId: todo.id, phase, todoNumber: todo.number, todoTitle: todo.title });
-    if (this.autoFollowUp && todo.createdBy === "chief") this.enqueueChief(topicId, content, true);
+    if (this.autoFollowUp && phase !== "done") this.enqueueChief(topicId, content, true);
   }
 
   addMessage(conversationId: string, turnId: string | null, role: "user" | "agent" | "system" | "tool", content: string, meta: Record<string, unknown>): string {
@@ -218,12 +204,12 @@ export class Orchestrator {
     if (row) this.events.emit({ type: "message.updated", conversationId: String(row.conversation_id), message: this.db.message(row), payload: {} });
   }
 
-  private revisePending(todo: Todo, buildId: string, gate: "confirm" | "review"): boolean {
+  private revisePending(todo: Todo, buildId: string): boolean {
     const pending = this.db.rows("SELECT * FROM queued_messages WHERE conversation_id=? AND delivered_at IS NULL ORDER BY rowid", buildId);
     if (!pending.length) return false;
     // Completion and ACK are serialized by the server. Anything without an ACK
     // belongs in the next prompt, including an inbox reservation racing completion.
-    this.db.run("UPDATE todos SET previous_gate=? WHERE id=?", gate, todo.id);
+    this.db.run("UPDATE todos SET previous_gate='review' WHERE id=?", todo.id);
     const turnId = this.enqueue(this.getTodo(todo.id), "revise", pending.map((message) => String(message.content)).join("\n\n"));
     for (const message of pending) {
       if (message.source_message_id) this.assignMessage(String(message.source_message_id), turnId);
@@ -249,8 +235,8 @@ export class Orchestrator {
     const todo = this.getTodo(String(row.todo_id));
     if (todo.phase === "closed") return;
     if (status !== "done") { this.setPhase(todo, row.kind === "merge" ? "review" : "failed"); return; }
-    const next = completedPhaseForTurn(row.kind as TurnKind, todo.previousGate);
-    if ((next === "confirm" || next === "review") && this.revisePending(todo, String(row.build_id), next)) return;
+    const next = completedPhaseForTurn(row.kind as TurnKind);
+    if (next === "review" && this.revisePending(todo, String(row.build_id))) return;
     if (next) this.setPhase(todo, next);
     if (next === "done") this.db.run("UPDATE builds SET status = 'done' WHERE id = ?", row.build_id);
   }
@@ -262,8 +248,7 @@ export class Orchestrator {
   phaseForClaim(turnId: string): void {
     const row = this.db.row("SELECT t.kind, b.todo_id FROM turns t JOIN builds b ON b.id = t.build_id WHERE t.id = ?", turnId);
     if (!row?.todo_id) return;
-    const todo = this.getTodo(String(row.todo_id));
-    const phase = activePhaseForTurn(row.kind as TurnKind, todo.previousGate);
-    if (phase) this.setPhase(todo, phase);
+    const phase = activePhaseForTurn(row.kind as TurnKind);
+    if (phase) this.setPhase(this.getTodo(String(row.todo_id)), phase);
   }
 }

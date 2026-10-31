@@ -32,7 +32,7 @@ async function setup(chunkDelay = 3) {
     if (!response.ok) throw new Error(`${response.status}: ${JSON.stringify(result)}`);
     return result.data;
   }
-  const project = await api<{ id: string }>("/projects", { name: "Fixture", repoUrl: f.origin, baseBranch: "main" });
+  const project = await api<{ id: string; topicId: string }>("/projects", { name: "Fixture", repoUrl: f.origin, baseBranch: "main" });
   const agent = await api<{ id: string }>("/agents", { name: "Mock", role: "Implement", runtime: "mock", model: "mock-1" });
   const client = new MachineClient({ server: url, home: join(f.root, "home"), name: "test", concurrency: 2, runtimes: ["mock"], retryMs: 1 });
   const daemon = new Daemon({ client, workspacesDir: f.ws, log: () => {}, runtimes: { mock: new MockRuntime(chunkDelay) }, heartbeatMs: 30, inboxMs: 10, flushMs: 10 });
@@ -40,39 +40,37 @@ async function setup(chunkDelay = 3) {
   const todo = async (title = "Greeting") => api<Todo>("/todos", { projectId: project.id, agentId: agent.id, title, spec: "Write a greeting" });
   const details = (id: string) => api<Details>(`/todos/${id}`);
   const phase = (id: string, target: string) => until(() => details(id), (value) => value.phase === target);
-  return { ...f, client, daemon, api, todo, details, phase, services: serverApp.services };
+  return { ...f, project, client, daemon, api, todo, details, phase, services: serverApp.services };
 }
 
 describe("daemon against the real M1 HTTP server", () => {
-  it("runs plan → confirm → build with steer → review → merge → done", async () => {
+  it("runs build with steer → review → revise → merge → done", async () => {
     const f = await setup(8); const todo = await f.todo();
-    await f.api(`/todos/${todo.id}/start`, { mode: "plan" });
-    const planned = await f.phase(todo.id, "confirm");
-    const build = planned.builds[0]!;
-    expect(build.baseCommit).toMatch(/^[a-f0-9]{40}$/);
-    expect(build.documents.find((doc) => doc.kind === "plan")?.content).toContain("# Plan");
-    await expect(readFile(join(f.ws, build.id, "MUSTER_MOCK.md"))).rejects.toThrow();
-    await f.api(`/todos/${todo.id}/confirm`, {});
+    await f.api(`/todos/${todo.id}/start`, {});
     await f.phase(todo.id, "building");
     await f.api(`/todos/${todo.id}/message`, { content: "Include tests" });
     const review = await f.phase(todo.id, "review");
-    const changes = review.builds[0]!.documents.find((doc) => doc.kind === "changes");
-    expect(changes?.content).toContain("MUSTER_MOCK.md");
-    expect(await git(join(f.ws, build.id), "log", "-1", "--format=%B")).toBe(`#${todo.number} ${todo.title}\n\nTurn: 2`);
+    const build = review.builds[0]!;
+    expect(build.baseCommit).toMatch(/^[a-f0-9]{40}$/);
+    expect(build.documents.find((doc) => doc.kind === "changes")?.content).toContain("MUSTER_MOCK.md");
+    expect(await git(join(f.ws, build.id), "log", "-1", "--format=%B")).toBe(`#${todo.number} ${todo.title}\n\nTurn: 1`);
     const messages = await f.api<Array<{ content: string }>>(`/conversations/${build.id}/messages`);
     expect(messages.some((message) => message.content.includes("Steer: Include tests"))).toBe(true);
-    expect(JSON.parse(String(f.services.db.row("SELECT session_state_json FROM turns WHERE id = ?", review.builds[0]!.turns[1]!.id)!.session_state_json))).toMatchObject({ turns: 2 });
+    await f.api(`/todos/${todo.id}/message`, { content: "Polish it" });
+    const revised = await until(() => f.details(todo.id), (value) => value.phase === "review" && value.builds[0]!.turns.length === 2);
+    expect(await git(join(f.ws, build.id), "log", "-1", "--format=%B")).toBe(`#${todo.number} ${todo.title}\n\nTurn: 2`);
+    expect(JSON.parse(String(f.services.db.row("SELECT session_state_json FROM turns WHERE id = ?", revised.builds[0]!.turns[1]!.id)!.session_state_json))).toMatchObject({ turns: 2 });
     await f.api(`/todos/${todo.id}/done`, { merge: true });
     const done = await f.phase(todo.id, "done");
     expect(done.builds[0]!.turns.map((turn) => turn.status)).toEqual(["done", "done", "done"]);
+    expect(done.builds[0]!.tokensIn).toBeGreaterThan(0);
     expect(await readFile(join(f.origin, "MUSTER_MOCK.md"), "utf8")).toContain("Greeting");
     expect(await git(f.origin, "status", "--porcelain")).toBe("");
-    expect((await f.api<{ tokensIn: number }>("/usage")).tokensIn).toBeGreaterThan(0);
     expect(JSON.parse(await readFile(join(f.root, "home", "machine.json"), "utf8"))).toMatchObject({ machineId: f.client.registration!.machineId });
   });
   it("returns a conflicting merge to review with merge failure details", async () => {
     const f = await setup(); const todo = await f.todo();
-    await f.api(`/todos/${todo.id}/start`, { mode: "run" });
+    await f.api(`/todos/${todo.id}/start`, {});
     await f.phase(todo.id, "review");
     await writeFile(join(f.origin, "MUSTER_MOCK.md"), "Competing user implementation\n");
     await git(f.origin, "add", "."); await git(f.origin, "commit", "-m", "competing change");
@@ -83,7 +81,7 @@ describe("daemon against the real M1 HTTP server", () => {
   });
   it("runs two builds concurrently and honors heartbeat stop requests", async () => {
     const f = await setup(30); const one = await f.todo("One"); const two = await f.todo("Two");
-    await f.api(`/todos/${one.id}/start`, { mode: "run" }); await f.api(`/todos/${two.id}/start`, { mode: "run" });
+    await f.api(`/todos/${one.id}/start`, {}); await f.api(`/todos/${two.id}/start`, {});
     await until(async () => f.daemon.running.length, (count) => count === 2);
     await f.phase(one.id, "building"); await f.phase(two.id, "building");
     await f.api(`/todos/${one.id}/stop`, {});
@@ -92,7 +90,7 @@ describe("daemon against the real M1 HTTP server", () => {
   });
   it("reports stopped turns on graceful shutdown", async () => {
     const f = await setup(40); const todo = await f.todo();
-    await f.api(`/todos/${todo.id}/start`, { mode: "run" }); await f.phase(todo.id, "building");
+    await f.api(`/todos/${todo.id}/start`, {}); await f.phase(todo.id, "building");
     await f.daemon.stop();
     expect((await f.details(todo.id)).builds[0]!.turns[0]!.status).toBe("stopped");
   });
@@ -107,18 +105,18 @@ describe("daemon against the real M1 HTTP server", () => {
     cleanup.push(async () => { if (child.exitCode === null) child.kill("SIGTERM"); await closed; });
     await until(async () => stdout, (text) => text.includes("Machine enrolled"));
     const todo = await f.todo("Long task ".repeat(80));
-    await f.api(`/todos/${todo.id}/start`, { mode: "run" }); await f.phase(todo.id, "building");
+    await f.api(`/todos/${todo.id}/start`, {}); await f.phase(todo.id, "building");
     child.kill("SIGTERM"); expect(await closed).toBe(0); expect(stderr).toBe("");
     expect((await f.details(todo.id)).builds[0]!.turns[0]!.status).toBe("stopped");
     const logged = await readFile(join(home, "daemon.log"), "utf8");
     expect(logged).toBe(stdout); expect(logged).toContain("Daemon stopped");
     expect(JSON.parse(await readFile(join(home, "running.json"), "utf8"))).toMatchObject({ turns: [] });
   });
-  it("resolves Chief topic IDs using M1 conversations and resumes without a project", async () => {
+  it("runs a workspace's master agent outside the repository and resumes its session", async () => {
     const f = await setup();
     const chief = (await f.api<Agent[]>("/agents")).find((agent) => agent.isChief)!;
     await f.api(`/agents/${chief.id}`, { runtime: "mock", model: "mock-1" }, "PATCH");
-    const topic = await f.api<{ id: string }>("/topics", { title: "Other topic" });
+    const topic = { id: f.project.topicId };
     const run = await f.api<{ turnId: string }>(`/topics/${topic.id}/messages`, { content: "Organize the work" });
     await until(async () => f.services.db.row("SELECT status FROM turns WHERE id = ?", run.turnId), (row) => row?.status === "done");
     expect(await readFile(join(f.root, "home", "chief", topic.id, "MUSTER_MOCK.md"), "utf8").catch(() => "missing")).toBe("missing");

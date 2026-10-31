@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { writeFile, readFile, rm, mkdir } from "node:fs/promises";
+import { writeFile, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Worktrees, git } from "../src/worktree.js";
 import { fixture } from "./helpers.js";
@@ -20,23 +20,12 @@ describe("worktree lifecycle", () => {
     expect(await git(tree.cwd, "log", "-1", "--format=%s")).toBe("muster: turn 1");
     expect((await manager.checkpoint(tree)).headCommit).toBe(first.headCommit);
     const reused = await manager.prepare(job);
-    expect(reused.startHead).toBe(first.headCommit);
+    expect(await git(reused.cwd, "rev-parse", "HEAD")).toBe(first.headCommit);
     await writeFile(join(tree.cwd, "feature.txt"), "hello again\n");
     await manager.checkpoint(reused);
     expect(await git(tree.cwd, "log", "-1", "--format=%s")).toBe("muster: turn 2");
     expect(await git(origin, "status", "--porcelain")).toBe("");
     expect(await readFile(join(origin, "README.md"), "utf8")).toBe("original\n");
-  });
-  it("restores tracked, untracked, and even model-committed readOnly changes", async () => {
-    const { manager, job } = await setup();
-    const tree = await manager.prepare({ ...job, kind: "plan", readOnly: true });
-    await writeFile(join(tree.cwd, "README.md"), "unwanted change\n");
-    await git(tree.cwd, "add", "."); await git(tree.cwd, "commit", "-m", "model commit");
-    await mkdir(join(tree.cwd, "scratch")); await writeFile(join(tree.cwd, "scratch", "tmp.txt"), "scratch");
-    await manager.reset(tree);
-    expect(await git(tree.cwd, "rev-parse", "HEAD")).toBe(tree.startHead);
-    expect(await git(tree.cwd, "status", "--porcelain")).toBe("");
-    expect(await readFile(join(tree.cwd, "README.md"), "utf8")).toBe("original\n");
   });
   it("merges --no-ff and fast-forwards the checked-out local origin", async () => {
     const { manager, job, origin } = await setup(); const tree = await manager.prepare(job);
@@ -80,12 +69,6 @@ describe("worktree lifecycle", () => {
     const trees = await Promise.all([manager.prepare(job), manager.prepare({ ...job, buildId: "build-2" })]);
     expect(trees[0]!.repo).toBe(trees[1]!.repo); expect(trees[0]!.cwd).not.toBe(trees[1]!.cwd);
   });
-});
-
-it("pushes the checkpointed task branch without changing the base branch", async () => {
-  const { manager, job, origin } = await setup(); const original = await git(origin, "rev-parse", "main"); const tree = await manager.prepare(job);
-  await writeFile(join(tree.cwd, "pushed.txt"), "task branch only\n"); const checkpoint = await manager.checkpoint(tree); await manager.push(tree);
-  expect(await git(origin, "rev-parse", tree.branch)).toBe(checkpoint.headCommit); expect(await git(origin, "rev-parse", "main")).toBe(original);
 });
 
 it("writes task messages safely and preserves history across revisions and repeated merges", async () => {

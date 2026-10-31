@@ -12,7 +12,7 @@ export class MockRuntime implements Runtime {
     const queued: string[] = [];
     let finished = false;
     const result = (async () => {
-      const text = job.kind === "chief" && job.prompt.startsWith("/split") ? await splitChief(job, ctx) : job.readOnly ? `# Plan\n\n1. Inspect the project.\n2. Implement: ${job.prompt}\n3. Verify the changes.\n` : job.project ? `Implemented: ${job.prompt}\n` : `Chief: ${job.prompt}\n`;
+      const text = job.kind === "chief" && job.prompt.startsWith("/split") ? await splitChief(job, ctx) : job.project ? `Implemented: ${job.prompt}\n` : `Chief: ${job.prompt}\n`;
       ctx.emit({ type: "status", status: "running" });
       let output = "";
       for (const chunk of text.match(/.{1,16}|\n/g) ?? []) {
@@ -21,7 +21,7 @@ export class MockRuntime implements Runtime {
         output += chunk;
         ctx.emit({ type: "message.delta", content: chunk });
       }
-      if (!abort.signal.aborted && !job.readOnly && job.project) {
+      if (!abort.signal.aborted && job.project) {
         ctx.emit({ type: "tool.started", tool: "write_file", input: "MUSTER_MOCK.md" });
         await appendFile(join(ctx.cwd, "MUSTER_MOCK.md"), `# Muster mock turn\n\n${job.prompt}\n`);
         ctx.emit({ type: "tool.completed", tool: "write_file", output: "MUSTER_MOCK.md" });
@@ -30,7 +30,6 @@ export class MockRuntime implements Runtime {
         output += `\nSteer: ${content}\n`;
         ctx.emit({ type: "message.delta", content: `\nSteer: ${content}\n` });
       }
-      if (job.readOnly && !abort.signal.aborted) ctx.emit({ type: "plan.updated", content: output });
       ctx.emit({ type: "message.completed", content: output });
       const usage = { tokensIn: job.prompt.length, tokensOut: output.length };
       ctx.emit({ type: "usage", ...usage });

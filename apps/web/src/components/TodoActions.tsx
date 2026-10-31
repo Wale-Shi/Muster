@@ -4,7 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   ChevronDown,
-  FileText,
   Pause,
   Play,
   RotateCcw,
@@ -22,7 +21,7 @@ export function TodoActions({
   onDone: () => void;
 }) {
   const { t } = useI18n();
-  const [menu, setMenu] = useState<"start" | "rerun" | null>(null);
+  const [menu, setMenu] = useState<"rerun" | null>(null);
   const client = useQueryClient();
   const mutation = useMutation({
     mutationFn: ({
@@ -48,20 +47,10 @@ export function TodoActions({
           <button
             className="button primary"
             disabled={pending}
-            onClick={() => setMenu("start")}
+            onClick={() => run("start")}
           >
             <Play size={13} />
-            {t("ui.start")}<ChevronDown size={12} />
-          </button>
-        )}
-        {todo.phase === "confirm" && (
-          <button
-            className="button primary"
-            disabled={pending}
-            onClick={() => run("confirm")}
-          >
-            <Check size={14} />
-            {t("ui.confirmPlan")}
+            {t("ui.start")}
           </button>
         )}
         {todo.phase === "review" && (
@@ -124,43 +113,15 @@ export function TodoActions({
       <ErrorNotice error={menu ? null : mutation.error} />
       {menu && (
         <Dialog
-          title={menu === "start" ? t("ui.startTask") : t("ui.rerunTask")}
+          title={t("ui.rerunTask")}
           onClose={() => setMenu(null)}
         >
           <div className="dialog-body form-stack">
             <p className="muted">
-              {menu === "start"
-                ? t("ui.chooseHowYourAgentShouldApproachThisTask")
-                : t("ui.continueTheExistingBuildOrBeginAFreshBuild")}
+              {t("ui.continueTheExistingBuildOrBeginAFreshBuild")}
             </p>
             <ErrorNotice error={mutation.error} />
-            {menu === "start" ? (
-              <>
-                <button
-                  className="choice-button"
-                  disabled={pending}
-                  onClick={() => run("start", { mode: "plan" })}
-                >
-                  <FileText size={18} />
-                  <span>
-                    <strong>{t("ui.planFirst")}</strong>
-                    <small>{t("ui.reviewAPlanBeforeTheAgentWritesCode")}</small>
-                  </span>
-                </button>
-                <button
-                  className="choice-button"
-                  disabled={pending}
-                  onClick={() => run("start", { mode: "run" })}
-                >
-                  <Play size={18} />
-                  <span>
-                    <strong>{t("ui.runNow")}</strong>
-                    <small>{t("ui.startBuildingRightAway")}</small>
-                  </span>
-                </button>
-              </>
-            ) : (
-              <>
+            <>
                 <button
                   className="choice-button"
                   disabled={pending}
@@ -183,8 +144,7 @@ export function TodoActions({
                     <small>{t("ui.createANewBuildWithAFreshSession")}</small>
                   </span>
                 </button>
-              </>
-            )}
+            </>
           </div>
         </Dialog>
       )}

@@ -13,13 +13,13 @@ async function fixture(concurrency = 3) {
   const api = (path: string, value?: unknown, method = value === undefined ? "GET" : "POST") => requestJson(app, path, method, value);
   const claim = (token = machine.token, requestId?: string) => services.scheduler.claim(token, requestId)!;
   const finish = (turnId: string, payload: Parameters<typeof services.scheduler.complete>[2] = { status: "done" }) => services.scheduler.complete(machine.token, turnId, payload);
-  const start = (mode: "run" | "plan" = "run") => services.orchestrator.start(todoId, mode);
+  const start = () => services.orchestrator.start(todoId);
   return { app, services, projectId, agentId, todoId, machine, api, claim, finish, start };
 }
 
 describe("M4 state regression checks", () => {
-  it.each(["run", "plan"] as const)("promotes late %s feedback into exactly one gate revision, including unacknowledged inbox delivery", async (mode) => {
-    const f = await fixture(); f.start(mode); const job = f.claim();
+  it("promotes late feedback into exactly one review revision, including unacknowledged inbox delivery", async () => {
+    const f = await fixture(); f.start(); const job = f.claim();
     const queue = `/api/conversations/${job.buildId}/queued-messages`;
     const history = `/api/conversations/${job.buildId}/messages`;
     // Successfully accepted feedback must not be repeated in the next prompt.
@@ -33,11 +33,11 @@ describe("M4 state regression checks", () => {
     expect((await f.api(queue)).json.data).toHaveLength(2);
     const completion = { status: "done" as const, sessionState: { thread: "continue" } };
     f.finish(job.turnId, completion); f.finish(job.turnId, completion); // lost completion response
-    expect(f.services.orchestrator.getTodo(f.todoId)).toMatchObject({ phase: "queued", previousGate: mode === "plan" ? "confirm" : "review" });
+    expect(f.services.orchestrator.getTodo(f.todoId)).toMatchObject({ phase: "queued", previousGate: "review" });
     expect((await f.api(queue)).json.data).toEqual([]);
     expect(() => f.services.scheduler.ackInbox(f.machine.token, job.turnId, [reserved!.id])).toThrow("Turn is done");
     const revision = f.claim();
-    expect(revision).toMatchObject({ buildId: job.buildId, kind: "revise", readOnly: mode === "plan", sessionState: { thread: "continue" } });
+    expect(revision).toMatchObject({ buildId: job.buildId, kind: "revise", sessionState: { thread: "continue" } });
     expect(revision.prompt).toContain("Reserved but not acknowledged\n\nArrived after the final inbox poll");
     expect(revision.prompt).not.toContain("Already delivered");
     const messages = (await f.api(history)).json.data;
@@ -49,7 +49,7 @@ describe("M4 state regression checks", () => {
     f.finish(revision.turnId);
     const next = f.claim(); expect(next.kind).toBe("revise"); expect(next.prompt).toContain("Late revision feedback");
     f.finish(next.turnId);
-    expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe(mode === "plan" ? "confirm" : "review");
+    expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe("review");
     expect(f.services.scheduler.claim(f.machine.token)).toBeNull();
     expect(f.services.events.replay("0")).toContainEqual(expect.objectContaining({ type: "message.queue_changed", conversationId: job.buildId }));
   });
@@ -74,26 +74,15 @@ describe("M4 state regression checks", () => {
     expect(f.services.db.rows("SELECT * FROM messages")).toHaveLength(0);
   });
 
-  it("revises at both gates and sends the accepted plan to the build agent", async () => {
-    const f = await fixture(); f.start("plan"); const plan = f.claim();
-    f.finish(plan.turnId, { status: "done", plan: "Initial plan", sessionState: { step: 1 } });
-    f.services.orchestrator.message(f.todoId, "Add edge cases");
-    const revised = f.claim();
-    expect(revised).toMatchObject({ kind: "revise", readOnly: true, sessionState: { step: 1 } });
-    expect(revised.prompt).toContain("Do not modify");
-    expect(revised.systemInstructions).not.toContain("Do not modify");
-    f.finish(revised.turnId, { status: "done", plan: "Accepted plan with edge cases" });
-    expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe("confirm");
-    f.services.orchestrator.confirm(f.todoId);
-    const build = f.claim(); expect(build.prompt).toContain("Accepted plan with edge cases");
-    f.finish(build.turnId, { status: "done", diff: "v1" });
+  it("revises at review and versions every diff", async () => {
+    const f = await fixture(); f.start();
+    const build = f.claim(); f.finish(build.turnId, { status: "done", diff: "v1" });
     f.services.orchestrator.message(f.todoId, "Fix implementation");
-    const revise = f.claim(); expect(revise).toMatchObject({ kind: "revise", readOnly: false });
+    const revise = f.claim(); expect(revise).toMatchObject({ kind: "revise" });
+    expect(revise.prompt).toContain("Fix implementation");
     f.finish(revise.turnId, { status: "done", diff: "v2" });
     expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe("review");
-    expect(f.services.db.rows("SELECT kind,version FROM documents ORDER BY rowid")).toEqual([
-      { kind: "plan", version: 1 }, { kind: "plan", version: 2 }, { kind: "changes", version: 1 }, { kind: "changes", version: 2 },
-    ]);
+    expect(f.services.db.rows("SELECT kind,version FROM documents ORDER BY rowid")).toEqual([{ kind: "changes", version: 1 }, { kind: "changes", version: 2 }]);
   });
 
   it("continues a failed build but restarts on a fresh branch and session", async () => {
@@ -131,23 +120,23 @@ describe("M4 state regression checks", () => {
     expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe("review"); // No publication confirmation.
   });
 
-  it("stops queued and running work and does not reopen a closed plan on completion", async () => {
-    const f = await fixture(); f.start("plan"); f.services.orchestrator.stop(f.todoId);
+  it("stops queued and running work and does not reopen a closed task on completion", async () => {
+    const f = await fixture(); f.start(); f.services.orchestrator.stop(f.todoId);
     expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe("failed");
-    f.services.orchestrator.rerun(f.todoId, "continue"); const plan = f.claim();
+    f.services.orchestrator.rerun(f.todoId, "continue"); const build = f.claim();
     f.services.orchestrator.stop(f.todoId);
-    expect(f.services.scheduler.heartbeat(f.machine.token, [plan.turnId]).stop).toContain(plan.turnId);
-    f.services.orchestrator.close(f.todoId); f.finish(plan.turnId, { status: "stopped" });
+    expect(f.services.scheduler.heartbeat(f.machine.token, [build.turnId]).stop).toContain(build.turnId);
+    f.services.orchestrator.close(f.todoId); f.finish(build.turnId, { status: "stopped" });
     expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe("closed");
   });
 });
 
 describe("M4 machine reliability", () => {
-  it("serializes Chief turns across machines and resolves resume state at claim time", async () => {
+  it("serializes master-agent turns across machines and resolves resume state at claim time", async () => {
     const f = await fixture(); const other = await enroll(f.app, 3);
     const chief = f.services.db.row("SELECT id FROM agents WHERE is_chief=1")!;
     await f.api(`/api/agents/${chief.id}`, { runtime: "mock", model: "mock" }, "PATCH");
-    const topicId = String(f.services.db.row("SELECT id FROM topics")!.id);
+    const topicId = f.services.orchestrator.topicFor(f.projectId);
     f.services.orchestrator.enqueueChief(topicId, "first"); f.services.orchestrator.enqueueChief(topicId, "second");
     expect((await f.api(`/api/topics/${topicId}`)).json.data.activity).toBe("queued");
     const first = f.claim(); expect(first.topicId).toBe(topicId);
@@ -192,11 +181,7 @@ describe("M4 machine reliability", () => {
     const payload = { status: "done" as const, usage: { tokensIn: 3, tokensOut: 4, durationMs: 5 } };
     f.finish(job.turnId, payload); f.finish(job.turnId, payload);
     f.services.scheduler.ingestEvents(f.machine.token, job.turnId, events, "batch-1");
-    const usage = (await f.api("/api/usage")).json.data;
-    expect(usage).toMatchObject({ tokensIn: 3, tokensOut: 4, durationMs: 5 });
-    await f.api(`/api/agents/${f.agentId}`, { name: "Renamed", model: "new-model" }, "PATCH");
-    const afterEdit = (await f.api("/api/usage")).json.data;
-    expect(afterEdit.entries[0]).toMatchObject({ agentName: "Mock", model: "mock-1", tokensIn: 3 });
+    expect((await f.api(`/api/todos/${f.todoId}`)).json.data.builds[0]).toMatchObject({ tokensIn: 3, tokensOut: 4, durationMs: 5 });
     const cutoff = deltas[0]!.id!;
     expect(f.services.events.replay(cutoff).every((event) => Number(event.id) > Number(cutoff))).toBe(true);
   });
@@ -221,12 +206,12 @@ describe("M4 machine reliability", () => {
 });
 
 it("retries a failed revision with its feedback even when restarting the runtime", async () => {
-  const f = await fixture(); f.start("plan"); f.finish(f.claim().turnId, { status: "done", plan: "Original plan" });
+  const f = await fixture(); f.start(); f.finish(f.claim().turnId, { status: "done", diff: "v1" });
   f.services.orchestrator.message(f.todoId, "Keep the required audit trail");
   f.finish(f.claim().turnId, { status: "failed" });
   f.services.orchestrator.rerun(f.todoId, "restart");
   const retry = f.claim();
-  expect(retry.readOnly).toBe(true); expect(retry.prompt).toContain("Keep the required audit trail"); expect(retry.sessionState).toBeNull();
-  f.finish(retry.turnId, { status: "done", plan: "Revised plan" });
-  expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe("confirm");
+  expect(retry.kind).toBe("revise"); expect(retry.prompt).toContain("Keep the required audit trail"); expect(retry.sessionState).toBeNull();
+  f.finish(retry.turnId, { status: "done", diff: "v2" });
+  expect(f.services.orchestrator.getTodo(f.todoId).phase).toBe("review");
 });

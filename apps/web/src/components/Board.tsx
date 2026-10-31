@@ -3,10 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Link } from "react-router";
-import { CircleCheck, CircleHelp, Hand, ListTodo, Plus, SlidersHorizontal, Sparkles, type LucideIcon } from "lucide-react";
-import type { Agent, Project, Todo } from "@muster/shared";
-import { boardTodos, type ColumnId } from "../lib/board";
-import { Avatar, PhaseDot } from "./ui";
+import { CircleCheck, CircleHelp, Hand, ListTodo, Plus, Sparkles, Wrench, type LucideIcon } from "lucide-react";
+import type { Agent, Todo } from "@muster/shared";
+import { useRealtime } from "../api/realtime";
+import { boardTodos, isRunning, type ColumnId } from "../lib/board";
+import { PhaseDot } from "./ui";
 
 const columns: { id: ColumnId; title: MessageKey; empty: MessageKey }[] = [
   { id: "backlog", title: "ui.backlog", empty: "ui.nothingWaitingToStart" },
@@ -16,17 +17,16 @@ const columns: { id: ColumnId; title: MessageKey; empty: MessageKey }[] = [
 ];
 export function TaskCard({
   todo,
-  project,
   agent,
   overlay = false,
 }: {
   todo: Todo;
-  project?: Project | undefined;
   agent?: Agent | undefined;
   overlay?: boolean;
 }) {
   const { t, label, formatAge, formatDate } = useI18n();
   const drag = useDraggable({ id: todo.id, data: { todo }, disabled: overlay });
+  const live = useRealtime().live[todo.id];
   return (
     <article
       ref={drag.setNodeRef}
@@ -40,7 +40,7 @@ export function TaskCard({
       <div className="card-top">
         <PhaseDot phase={todo.phase} />
         <span className="mono dim">#{todo.number}</span>
-        {["confirm", "review", "failed"].includes(todo.phase) && (
+        {["review", "failed"].includes(todo.phase) && (
           <span title={label("phase", todo.phase)} className={`card-gate ${todo.phase}`}>{label("phase", todo.phase)}</span>
         )}
         <span className="card-time" title={`${t("ui.timeSinceLastUpdate")}: ${formatDate(todo.updatedAt)}`}>
@@ -56,13 +56,15 @@ export function TaskCard({
       >
         {todo.title}
       </Link>
+      {isRunning(todo.phase) && live && (
+        <p className={`card-live ${live.tool ? "tool" : ""}`} title={live.text}>
+          {live.tool && <Wrench size={11} />}
+          <span>{live.text}</span>
+        </p>
+      )}
       <div className="card-footer">
-        <span className="project-tag" title={project?.name}>
-          <span className="project-square" />
-          {project?.name ?? t("ui.project")}
-        </span>
         {agent ? (
-          <Avatar name={agent.name} small />
+          <span className="muted card-agent" title={agent.name}>{agent.name}</span>
         ) : (
           <span className="unassigned" title={t("ui.unassigned")}>
             —
@@ -78,7 +80,6 @@ function Column({
   title,
   empty,
   todos,
-  projects,
   agents,
   onNew,
 }: {
@@ -86,7 +87,6 @@ function Column({
   title: string;
   empty: string;
   todos: Todo[];
-  projects: Project[];
   agents: Agent[];
   onNew: () => void;
 }) {
@@ -118,14 +118,7 @@ function Column({
           <TaskCard
             key={todo.id}
             todo={todo}
-            project={projects.find((project) => project.id === todo.projectId)}
-            agent={agents.find(
-              (agent) =>
-                agent.id ===
-                (todo.phase === "planning"
-                  ? (todo.planAgentId ?? todo.agentId)
-                  : todo.agentId),
-            )}
+            agent={agents.find((agent) => agent.id === todo.agentId)}
           />
         ))}
         {!todos.length && (() => {
@@ -143,20 +136,15 @@ function Column({
 }
 export function Board({
   todos,
-  projects,
   agents,
   onNew,
 }: {
   todos: Todo[];
-  projects: Project[];
   agents: Agent[];
   onNew: () => void;
 }) {
   const { t, formatNumber } = useI18n();
-  const [filter, setFilter] = useState("");
-  const grouped = columns.map((column) => boardTodos(
-    todos.filter((todo) => !filter || todo.projectId === filter), column.id,
-  ));
+  const grouped = columns.map((column) => boardTodos(todos, column.id));
   const preferred = grouped[2]!.length ? 2 : grouped[1]!.length ? 1 : grouped[0]!.length ? 0 : grouped[3]!.length ? 3 : 0;
   const [activeColumn, setActiveColumn] = useState(preferred);
   const track = useRef<HTMLDivElement>(null);
@@ -175,7 +163,7 @@ export function Board({
     currentColumn.current = preferred;
     setActiveColumn(preferred);
     scrollToColumn(preferred);
-  }, [preferred, filter]);
+  }, [preferred]);
   useEffect(() => {
     const element = track.current;
     if (!element || typeof ResizeObserver === "undefined") return;
@@ -204,24 +192,6 @@ export function Board({
           <button className="icon-button sm" aria-label={t("phaseC.help")} title={t("phaseC.help")} popoverTarget="board-help"><CircleHelp size={13} /></button>
           <div id="board-help" popover="auto" className="board-help">{t("phaseC.boardHelp")}</div>
         </span>
-        <label className="board-filter">
-          <SlidersHorizontal size={12} />
-          <select
-            aria-label={t("ui.filterBoardByProject")}
-            value={filter}
-            onChange={(event) => {
-              navigated.current = false;
-              setFilter(event.target.value);
-            }}
-          >
-            <option value="">{t("ui.allProjects")}</option>
-            {projects.map((project) => (
-              <option value={project.id} key={project.id}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
       <nav className="board-paging" aria-label={t("ui.boardColumns")}>
         {columns.map((column, index) => (
@@ -263,7 +233,6 @@ export function Board({
             {...column}
             title={t(column.title)} empty={t(column.empty)}
             todos={grouped[index]!}
-            projects={projects}
             agents={agents}
             onNew={onNew}
           />

@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, rename, rm, mkdtemp } from "node:fs/promises";
-import { join, dirname, resolve } from "node:path";
+import { join, dirname } from "node:path";
 import type { AgentEvent, SkillFile, TurnJob } from "@muster/shared";
 import type { MachineClient } from "./client.js";
 
 export function jobCredentials(job: TurnJob): Record<string, string> {
-  const values = { ...job.env };
+  const values: Record<string, string> = {};
   for (const c of job.connections ?? []) for (const [key, value] of Object.entries(c.headers ?? c.env ?? {})) {
     values[`${c.identifier}.${key}`] = value;
     if (/^Bearer /i.test(value)) values[`${c.identifier}.${key}.token`] = value.slice(7);
@@ -80,27 +80,6 @@ export async function prepareSkills(job: TurnJob, client: MachineClient): Promis
       } finally { await rm(temp, { recursive: true, force: true }); }
     }
     index.push(`- ${skill.name}: ${skill.description}\n  ${join(path, "SKILL.md")}`);
-    if (job.readOnly) index.push(`\n### ${skill.name}\n${Buffer.from(files.find((f) => f.path === "SKILL.md")!.content, "base64").toString("utf8")}`);
   }
   return { ...job, systemInstructions: `${job.systemInstructions}\n\n## Available skills\nRead a skill's SKILL.md before doing work it covers.\n${index.join("\n")}` };
-}
-
-export async function prepareAttachments(job: TurnJob, client: MachineClient): Promise<TurnJob> {
-  if (!job.attachments?.length) return job;
-  const cache = resolve(client.options.home, "attachments-cache"); await mkdir(cache, { recursive: true, mode: 0o700 });
-  const paths: string[] = [];
-  for (const file of job.attachments) {
-    if (!/^[a-f0-9-]{36}$/.test(file.id) || !/^[a-f0-9]{64}$/.test(file.hash) || file.size > 20 * 1024 * 1024) throw new Error("Invalid attachment");
-    const path = join(cache, `${file.id}-${file.hash}`);
-    let bytes: Buffer | undefined;
-    try { bytes = await readFile(path); } catch { /* first download */ }
-    if (!bytes || createHash("sha256").update(bytes).digest("hex") !== file.hash) {
-      const downloaded = await client.request<{ content: string }>(`/api/machine/attachments/${file.id}`);
-      bytes = Buffer.from(downloaded.content, "base64");
-      if (bytes.length !== file.size || createHash("sha256").update(bytes).digest("hex") !== file.hash) throw new Error("Attachment hash mismatch");
-      const temporary = `${path}.${crypto.randomUUID()}.tmp`; await writeFile(temporary, bytes, { mode: 0o600 }); await rename(temporary, path);
-    }
-    paths.push(`${JSON.stringify(file.name)}: ${path}`);
-  }
-  return { ...job, prompt: `${job.prompt}\n\n## Attachments (local files outside the worktree)\n${paths.join("\n")}` };
 }

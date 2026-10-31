@@ -20,7 +20,7 @@ The home directory contains a private `machine.json` registration, a
 The same structured logs are written to stdout. Restarting with the same
 configuration reuses the token; journaled abandoned turns are reported stopped.
 SIGINT/SIGTERM stops accepting work, interrupts model processes, checkpoints
-writable work, restores plan work, flushes events, and reports stopped turns.
+writable work, flushes events, and reports stopped turns.
 The pending claim is drained rather than aborted, so shutdown can take one
 25-second long-poll interval. Heartbeats continue while work drains. Completion
 reporting waits for network recovery rather than abandoning a claimed turn.
@@ -35,8 +35,7 @@ Checkpoint commits use `muster: turn <n>`, where the daemon obtains the actual
 turn ordinal from the shared todo detail endpoint. Diffs include all build changes
 relative to the merge base with the fetched base branch.
 
-Plan turns restore their initial HEAD with `reset --hard` and `clean -fd`,
-including when the runtime fails or stops. Merge turns fetch the latest base,
+Merge turns fetch the latest base,
 checkout the base branch in the daemon's clone, merge with `--no-ff`, then push.
 Conflicts abort the merge and report `{status:"failed", merge:{ok:false,error}}`,
 which the server returns to Review.
@@ -53,7 +52,7 @@ relative repository paths are interpreted relative to the daemon's launch cwd.
 
 All adapters implement `start(job, {cwd, emit})`, returning a result promise,
 `steer(content)`, and `interrupt()`. Results include text, usage, and resumable
-session state. Chief runs in `<home>/chief/<topicId>` without a Git worktree.
+session state. A workspace's master agent runs in `<home>/chief/<topicId>` without a Git worktree.
 
 Codex's wire contract was inspected using **codex-cli 0.162.1**:
 
@@ -71,8 +70,7 @@ Relevant generated types: `InitializeParams`, `ThreadStartParams`,
 - `thread/start` and `thread/resume` accept cwd, an optional model, developer
   instructions, approval policy, sandbox, and per-thread JSON `config`. Resume
   uses `threadId`; the model is omitted when the agent uses `default`.
-  Muster passes `approvalPolicy:"never"`, `read-only` for plan turns and
-  `danger-full-access` for writable turns. The MCP URL and bearer header are
+  Muster passes `approvalPolicy:"never"` and `danger-full-access` on every turn. The MCP URL and bearer header are
   passed in `config.mcp_servers.muster.{url,required:true,http_headers}` on both start/resume,
   refreshing the per-turn token. No global config is written.
 - `turn/start` uses `input:[{type:"text",text,text_elements:[]}]`; reasoning is
@@ -97,11 +95,11 @@ to stdin; queued steering waits for subsequent results before the adapter
 finishes. `session_id` resumes through `--resume`. MCP is configured through
 `--mcp-config` with an HTTP server and bearer header. Runtime processes are
 terminated on completion/cancellation, with a bounded force-kill fallback.
-Claude refreshes instructions on resume with `--system-prompt-snapshot off`, uses plan permission mode for read-only turns, and forwards reasoning via `--effort`. Mock streams a deterministic plan or appends the prompt to `MUSTER_MOCK.md`. A mock Chief `/split <goal>` calls authenticated MCP to create and start two todos.
+Claude refreshes instructions on resume with `--system-prompt-snapshot off`, runs with `bypassPermissions`, and forwards reasoning via `--effort`. Mock streams a deterministic reply and, for task turns, appends the prompt to `MUSTER_MOCK.md`. A mock master agent's `/split <goal>` calls authenticated MCP to create two tasks in its workspace, which start immediately.
 
-## Integrated protocol (M4)
+## Integrated protocol
 
-Chief jobs provide `topicId` directly. The server serializes each build/topic across machines and selects fresh resume state only at claim time, using immutable agent/model snapshots. Builds remain pinned to their worktree machine; restarting a failed build creates a fresh branch that another machine can claim.
+Master-agent jobs provide `topicId` directly and carry no project. The server serializes each build/workspace conversation across machines and selects fresh resume state only at claim time, using immutable agent/model snapshots. Builds remain pinned to their worktree machine; restarting a failed build creates a fresh branch that another machine can claim.
 
 Claims use `requestId`, event batches use `batchId`, and completion retries are idempotent. Inbox GET reserves messages without consuming them; the daemon ACKs after runtime acceptance and retains accepted IDs while retrying an ACK. A machine/turn heartbeat lease recovers lost assignments within 30 seconds. Final event uploads drain before completion reporting, including after transient network outages.
 
@@ -115,9 +113,9 @@ npm test --workspace @muster/daemon
 ```
 
 Tests cover temp Git repository lifecycles, origin merge publication and
-conflicts, read-only cleanup, mock streaming/steer/interrupt, local protocol
+conflicts, mock streaming/steer/interrupt, local protocol
 peers for both CLI adapters, retries/batching, registration and restart recovery,
 and the real Muster server on a temporary SQLite database over HTTP. Integration
-covers plan → confirm → build → merge → done, conflict → Review, concurrent
-work, heartbeat stopping, Chief resume, and the compiled CLI's MUSTER_HOME,
+covers build with steer → review → revise → merge → done, conflict → Review, concurrent
+work, heartbeat stopping, master-agent resume, and the compiled CLI's MUSTER_HOME,
 logs, and SIGTERM handling. Tests never call a model API.

@@ -4,9 +4,7 @@ export type ColumnId = "backlog" | "in_progress" | "needs_you" | "done";
 const columns: Record<TodoPhase, ColumnId | null> = {
   todo: "backlog",
   queued: "in_progress",
-  planning: "in_progress",
   building: "in_progress",
-  confirm: "needs_you",
   review: "needs_you",
   failed: "needs_you",
   done: "done",
@@ -24,5 +22,4 @@ export function boardTodos(todos: Todo[], column: ColumnId, now = Date.now()) {
           Date.parse(todo.doneAt) >= now - 7 * 86_400_000)),
   );
 }
-export const isRunning = (phase: TodoPhase) =>
-  ["queued", "planning", "building"].includes(phase);
+export const isRunning = (phase: TodoPhase) => ["queued", "building"].includes(phase);

@@ -1,231 +1,129 @@
 # Muster
 
-Muster is an open-source, self-hostable [todos.dev](https://todos.dev)-style workspace for working with coding agents. Talk to a **Chief** that breaks goals into todos and orchestrates agents, then follow their progress on a live Kanban board.
+Muster 是一个开源、可自托管的多 Agent 编码工作台，只做一件事：
 
-- Run agents in parallel, each in an isolated Git worktree and branch.
-- Choose **Plan first** with a Confirm gate, or **Run now**; review versioned plans and diffs before accepting and merging changes.
-- Drive 16 coding-agent CLIs already installed on your machine — **Codex**, **Claude Code**, **pi**, **omp**, **Gemini CLI**, **OpenCode**, **Qwen Code**, **Devin**, **Cline**, **dsh**, **Hermes Agent**, **OpenClaw**, **Kiro CLI**, **Auggie**, **Qoder CLI** and **Droid** — send feedback during a run, and track basic token usage and duration.
-- Connect Chief and external agents through the same authenticated **MCP** endpoint.
+1. **设置工作空间**：一个工作空间对应一个 Git 仓库。可以建很多个工作空间。
+2. **每个工作空间有自己的 master agent**：在工作空间的主对话里把目标交给它，它把目标拆成可并行的任务，分派给编码 Agent，并一路跟进到验收合并。不同工作空间可以用不同的 master agent。
+3. **每个任务的执行过程都可观测**：任务在独立的 Git worktree 和分支里运行，Agent 的输出、推理、工具调用、插话和每个版本的 diff 都实时可见；看板卡片直接显示运行中任务的最新动作。
+4. **开放 master agent 的 MCP**：其他 AI（Claude Code、Codex、Cursor……）用 API 密钥接入工作空间的 MCP 地址，就能给 master agent 派活，并观察任务进展。
 
-![Muster workspace: Chief on the left, Kanban on the right](docs/screenshot.png)
+此外保留 **Skills**（技能库）和 **Connections**（MCP 连接）。界面为中文。
 
+## 快速开始
 
-## Agent resources
-
-- Agent profiles with editable duties, run defaults, default skills, permissions, and per-agent memory.
-- A skills library with folder/bulk uploads and public GitHub imports; review metadata before importing. Skills are cached per content hash on each daemon, outside task worktrees.
-- Encrypted, write-only team/project secrets, permission-gated delivery to runtime shells, output redaction, and Chief secure-input cards. Project values override matching team values; authorized plan turns also receive secrets.
-- Agent and skill mentions in Chief, task conversations, and new-task descriptions. English and Simplified Chinese UI.
-
-See [architecture and limits](docs/ARCHITECTURE.md#phase-a-agent-resources) for the local trust model, runtime verification, and import limits.
-
-## Schedules and connections
-
-- Repeat an existing task hourly, daily, weekly, or once from **Schedules** or the
-  task's **Repeat…** button. Each run starts a fresh build/branch from its title and
-  spec, with the usual Confirm/Review gates. Time zones and DST are respected; busy
-  tasks skip that occurrence and missed runs collapse into one.
-- **Connections** includes Linear, GitHub, Notion (OAuth unavailable), Playwright,
-  and custom HTTP/stdio MCP servers. Connect a service, then grant it on an agent's
-  profile. Header/env values are encrypted and write-only; decrypted values never
-  enter claim journals and are redacted from daemon uploads.
-- Local stdio connections are pinned to a selected machine in the UI. They are
-  omitted on other machines. HTTP tests initialize MCP and list tools; stdio starts
-  on the next agent run. OAuth sign-in is not supported yet.
-- Codex marks user-granted MCP tools `approve`; plan turns retain their read-only
-  filesystem sandbox. MCP services can still expose write actions, so scope provider
-  tokens appropriately. CLI and provider credentials remain under the daemon user's
-  trust boundary.
-
-See [Phase B architecture](docs/ARCHITECTURE.md#phase-b-schedules-and-connections) for
-API contracts, catalog source URLs, verified CLI versions and limits.
-
-## Settings and external assistants
-
-Open **Settings** from the sidebar or **⌘,**. General stores the workspace name on
-the server; language and appearance are per-device preferences kept in the
-browser's `localStorage`. Notifications (confirmation, review, failure and
-completion alerts plus the Dock badge) are stored on the server, so they apply to
-the desktop app. The API keys tab creates revocable keys: copy the full key
-immediately, because it is shown only once. `read` grants read-only board tools;
-`chief` also grants task control, topic messages (queueing Chief) and schedule
-creation. Both scopes can use MCP.
-
-The MCP tab provides setup and copyable client snippets using the current origin.
-Replace `http://localhost:7420` below with your workspace URL, and `<key>` with your
-key. API keys authenticate `/api/mcp`; other REST routes retain the trusted-local
-hosting model described below.
-
-Claude Code (**2.1.310**, verified with local `mcp add --help`):
-
-```sh
-claude mcp add --transport http muster http://localhost:7420/api/mcp --header "Authorization: Bearer <key>"
-```
-
-Codex (**codex-cli 0.162.1**, local help and configuration parser verified), in
-`~/.codex/config.toml`:
-
-```toml
-[mcp_servers.muster]
-url = "http://localhost:7420/api/mcp"
-http_headers = { Authorization = "Bearer <key>" }
-```
-
-Cursor / generic MCP JSON (the Cursor client itself was not exercised):
-
-```json
-{
-  "mcpServers": {
-    "muster": {
-      "url": "http://localhost:7420/api/mcp",
-      "headers": { "Authorization": "Bearer <key>" }
-    }
-  }
-}
-```
-
-## Projects and task input
-
-Open a project from its card or the sidebar. Files browses committed files on the
-base branch with lazy folders, markdown/text previews and the last 100 commits;
-select a commit to view its diff. Only absolute local repository paths accessible
-to the server are supported. No fetch or checkout occurs. File previews are capped
-at 1 MB; binary files show a notice. Git reads time out after eight seconds and
-commit diffs are capped at 4 MB. Tasks supports search, phase/agent filters,
-sorting and list/grid views. Project Settings edits name, description and base
-branch; projects referenced by tasks cannot be deleted.
-
-New task supports project selection, a structured description, tags, mentions and
-up to 10 attachments / 20 MB total. Save keeps the task in Backlog; Save & start
-uses the remembered Plan first / Run now choice (⌘Enter). The daemon downloads
-attachments into its external `attachments-cache` and supplies absolute paths in
-the prompt; files are not copied into the worktree. Server attachments are removed
-on task deletion; daemon cache pruning is manual. CLI sandbox access to external
-paths depends on the installed runtime. Chief's starter tiles help import a project
-or skill and fill example prompts.
-
-## Keyboard shortcuts
-
-Use Command on macOS or Ctrl elsewhere. **⌘/** opens this list anywhere.
-
-| Keys | Action |
-| --- | --- |
-| ⌘K / ⌘P / ⌘J | Search all / tasks / topics |
-| ⌘N / N | New task (plain N only outside inputs) |
-| ⌘[ | Back |
-| ⌘B | Toggle sidebar |
-| ⌘⌥B | Toggle board/right panel |
-| ⌘⇧Enter | Maximize/restore right panel |
-| ⌘⌥Enter | Done/merge at Review, outside inputs |
-| ⌘, / ⌘/ | Settings / keyboard shortcuts |
-| Esc | Close dialog |
-| ⌘Enter | Save & start in the new-task dialog |
-
-## Quick start
-
-Install Node.js 22 or newer (a current Node 22 release is recommended; see [.nvmrc](.nvmrc)), npm, and Git. Run these commands from the repository root:
+需要 Node.js 22+（见 [.nvmrc](.nvmrc)）、npm 和 Git。在仓库根目录运行：
 
 ```sh
 npm install
 npm run dev
 ```
 
-In a second terminal:
+另开一个终端：
 
 ```sh
 npm run daemon
 ```
 
-Open <http://localhost:5173>. The API listens on port 7420; Vite proxies API, SSE, and MCP requests to it.
+打开 <http://localhost:5173>（API 在 7420 端口，Vite 会代理 API、SSE 和 MCP）。
 
-1. Add a project using a local Git repository path or Git URL and its base branch. The repository must have an initial commit and be accessible from the daemon machine.
-2. Create an agent with a runtime and model. Make sure the corresponding CLI is available to the daemon (see below).
-3. Create a todo with **Plan first**, confirm the plan, review the resulting changes, then mark it Done to merge back to the base branch. **Run now** skips the plan gate.
-4. Ask Chief to split a goal into tasks and start them in parallel.
+1. **新建工作空间**：填写本地 Git 仓库路径（或 Git URL）和基准分支，选择它的 master agent（不选则用默认的 `Chief`）。仓库需要至少有一次提交，并且 daemon 所在机器能访问。
+2. **在「Agent」里创建编码 Agent**：选择运行时和模型。对应 CLI 需要安装在 daemon 机器上（见下文）。
+3. **在工作空间对话里告诉 master agent 目标**，例如“把登录页拆成可并行的任务”。它会创建并启动任务，在任务待验收或失败时自动跟进，检查 diff 后合并或打回修改。
+4. 也可以直接 **新建任务**（⌘Enter 保存并启动），点开任务查看实时执行过程；在待验收时写下修改意见，或点「完成」合并回基准分支。
 
-For a model-free trial, select the `mock` runtime and model for a coding agent and Chief in Agents. Send Chief `/split Try Muster` after adding a project and a non-Chief mock agent. Mock creates deterministic changes in `MUSTER_MOCK.md`; it does not call a model API.
+不想调用模型的话，可以把 master agent 和编码 Agent 都设为 `mock` 运行时，然后对 master agent 发送 `/split 试试 Muster`。Mock 会在 `MUSTER_MOCK.md` 里写入确定性的改动，不会调用任何模型 API。
 
-## Production
+## 让其他 AI 给工作空间派活
+
+1. 在 **设置 → API 密钥** 创建一个密钥：`chief` 权限可以派活和管理任务，`read` 只能查看。完整密钥只显示一次。
+2. 在 **工作空间设置** 复制这个工作空间的 MCP 地址 `http://localhost:7420/api/mcp/workspaces/<id>`（它只能访问本工作空间，工具默认作用于它）。全局地址 `/api/mcp` 可访问所有工作空间，调用时传 `workspaceId`。
+3. 在另一个 AI 里添加 MCP 服务器，例如 Claude Code：
+
+```sh
+claude mcp add --transport http muster-shop http://localhost:7420/api/mcp/workspaces/<id> --header "Authorization: Bearer <key>"
+```
+
+Codex（`~/.codex/config.toml`）：
+
+```toml
+[mcp_servers.muster_shop]
+url = "http://localhost:7420/api/mcp/workspaces/<id>"
+http_headers = { Authorization = "Bearer <key>" }
+```
+
+通用 MCP JSON（Cursor 等）：
+
+```json
+{ "mcpServers": { "muster-shop": { "url": "http://localhost:7420/api/mcp/workspaces/<id>", "headers": { "Authorization": "Bearer <key>" } } } }
+```
+
+主要工具：
+
+| 工具 | 作用 |
+| --- | --- |
+| `assign_work` | 把目标交给 master agent，由它拆分、执行、验收 |
+| `get_workspace` / `list_tasks` | 查看 master agent、全部任务及其阶段 |
+| `get_task` / `get_task_log` | 查看任务的执行轮次、最新 diff 和执行日志 |
+| `read_master_conversation` | 读取 master agent 的最新回复 |
+| `create_task` / `send_task_message` / `complete_task` / `rerun_task` / `close_task` | 直接管理任务 |
+
+完整列表和权限见 [架构文档](docs/ARCHITECTURE.md#mcp)。
+
+## 生产模式
 
 ```sh
 npm install
 npm run build && npm start
 ```
 
-Open <http://localhost:7420>. The server serves the built web app and API together. Run `npm run daemon` in a separate terminal or process supervisor to execute tasks. Persist the server data and daemon home directories across restarts.
+打开 <http://localhost:7420>，server 同时提供界面和 API。另外用 `npm run daemon`（或进程管理器）运行 daemon。请持久化 server 数据目录和 daemon 的 home 目录。
 
-Muster currently targets a single user on a trusted local machine. Keep the service on loopback or behind your own authenticated access layer when hosting remotely; see the security model below.
+## 安全模型
 
-## Security model
+REST API 没有登录：能访问端口的人就能使用整个 Muster。它面向可信机器上的单个用户。为了挡住其他网站，server 只接受 `Host` 为回环地址、`MUSTER_PUBLIC_URL` 的主机名或 `MUSTER_ALLOWED_HOSTS` 中主机名的请求，并拒绝带外部 `Origin` 或 `Sec-Fetch-Site: cross-site` 的写请求——这能防住恶意网页和 DNS 重绑定，但不是身份认证。机器请求使用每台机器的 token，`/api/mcp` 需要 API 密钥，可选的 enrollment key 只保护机器注册。Agent 在 Git worktree 里以完全访问/跳过审批模式运行，所以只把 Muster 指向你信任的仓库、CLI 和凭据。漏洞请按 [SECURITY.md](SECURITY.md) 私下报告。远程部署请放在带认证的反向代理和 TLS 后面。
 
-Muster has no login on its REST API: anyone who can reach the port can use the
-workspace. It is built for one user on a trusted machine. To keep other websites
-away, the server only accepts requests whose `Host` header is a loopback name, the
-hostname of `MUSTER_PUBLIC_URL`, or one listed in `MUSTER_ALLOWED_HOSTS`, and it
-rejects writes carrying a foreign `Origin` or `Sec-Fetch-Site: cross-site`. That
-stops malicious pages, including DNS rebinding, from driving the API; it is not
-authentication. Machine requests carry a per-machine token, `/api/mcp` requires a
-personal API key, and the optional enrollment key protects enrollment only. Agents
-run with elevated permissions inside their Git worktrees — writable turns use
-full-access or bypass modes — so point Muster only at repositories, CLIs and
-credentials you trust. Report vulnerabilities privately as described in
-[SECURITY.md](SECURITY.md).
+## 桌面 App
 
-## Desktop app
-
-On macOS, run the whole local workspace in one app:
+在 macOS 上可以把整个本地工作台打包成一个 App：
 
 ```sh
 npm install
 npm run desktop:dev
-# Build an ad-hoc signed Muster.app and DMG for this Mac's architecture:
+# 为本机架构构建 ad-hoc 签名的 Muster.app 和 DMG：
 npm run desktop:dist
-# Optional hidden-window check of the packaged app, using only mock turns:
+# 可选：用 mock 回合在隐藏窗口中检查打包后的 App：
 npm run desktop:smoke
 ```
 
-Builds are written to `apps/desktop/release/` (`mac-arm64/Muster.app` on Apple Silicon, `mac/Muster.app` on Intel). The app bundles Electron's Node, server, daemon and web UI; users do not need a system Node installation to run it. Install/authenticate Git and any desired agent CLIs (`codex`, `claude`, `pi`, `gemini`, …) separately. Windows NSIS and Linux AppImage targets are configured for native builds on those platforms.
+产物在 `apps/desktop/release/`。App 内置 Electron 的 Node、server、daemon 和界面，不需要系统 Node；Git 和各 Agent CLI 需要另行安装并登录。请把 App 安装在 `/Applications` 或 `~/Applications`。数据在 `~/.muster`，日志在 `~/.muster/logs`。App 会在任务待验收、失败、完成时发送通知（可在设置里开关），并在程序坞显示需要你处理的任务数。
 
-On macOS, install the app in `/Applications` or `~/Applications` before running it. Launching a packaged app elsewhere (including the DMG, Downloads or `release`) offers **Move to Applications** or **Quit** before starting services. Moving never replaces an existing installation: quit that installation and update it manually. Custom installation directories are not supported; `desktop:dev` is exempt.
+## 配置
 
-Before packaging, Muster refuses to proceed if a production-identity app is running from this checkout's `release` directory. Quit the reported PID yourself and retry; packaging never kills it. Do not launch release copies during packaging: this preflight is a snapshot, not an atomic lock. After successful packaging, the release app is unregistered with `lsregister -u`; an unregistered bundle (`-10814`) is already in the desired state, and other unregister failures emit a warning without failing the completed package. This is only supplemental protection: registration can recur, and `open /Applications/Muster.app` can activate an already-running copy. Check the executable/resources paths in `desktop.log` to identify the actual instance. Smoke tests use a re-signed temporary copy with bundle id `dev.muster.desktop.smoke`, isolated data and ports; the release identity remains `dev.muster.desktop`.
+环境变量需要在进程环境中设置，Muster 不会自动读取 `.env`。
 
-Launching starts a loopback server on 7420 (or the next free port), automatically enrolls this machine, and opens the workspace. An existing Muster server is reused. Data lives in `~/.muster`, with desktop worker logs in `~/.muster/logs`. Quit waits for owned daemon turns to report stopped before stopping its server. Attached services remain running. Native folder selection, clickable absolute conversation paths, gate notifications, a Needs-you dock badge, and a status menubar icon are included. The File menu provides New task (⌘N), Open in browser and Show logs.
-
-See [desktop architecture and runtime verification](docs/ARCHITECTURE.md#desktop-m6) for the bundled `node:sqlite` check, PATH discovery and shutdown behavior.
-
-## Configuration
-
-Set environment variables in the process environment; Muster does not automatically load `.env` files.
-
-| Variable | Default | Purpose |
+| 变量 | 默认值 | 作用 |
 | --- | --- | --- |
-| `HOST` | `127.0.0.1` | Server bind address. |
-| `PORT` | `7420` | Server port. Vite's development proxy targets 7420. |
-| `MUSTER_DATA_DIR` | `~/.muster` | Server directory containing `muster.db`. |
-| `MUSTER_PUBLIC_URL` | `http://127.0.0.1:<port>` | Server origin used to construct MCP URLs; must be reachable from the daemon. Its hostname is also accepted in the `Host` header. |
-| `MUSTER_ALLOWED_HOSTS` | Unset | Comma-separated extra hostnames accepted in the `Host` header, for requests that reach the server under another name or IP. |
-| `MUSTER_ENROLL_KEY` | Unset | Optional enrollment secret; set the same value on server and daemon. |
-| `MUSTER_CLAIM_WAIT_MS` | `25000` | Server long-poll timeout in milliseconds. |
-| `MUSTER_CHIEF_AUTO_FOLLOW_UP` | `true` | Set to `false` to disable automatic Chief follow-up turns. |
-| `MUSTER_HOME` | `~/.muster` | Daemon registration, journal, logs, Chief sessions, and workspaces. |
-| `CHOKIDAR_USEPOLLING` | `true` in root dev script | Set to `false` to use native development file watching. |
+| `HOST` | `127.0.0.1` | server 绑定地址 |
+| `PORT` | `7420` | server 端口（Vite 开发代理指向 7420） |
+| `MUSTER_DATA_DIR` | `~/.muster` | server 数据目录（`muster.db`、技能、加密密钥） |
+| `MUSTER_PUBLIC_URL` | `http://127.0.0.1:<port>` | 用于生成 MCP 地址，daemon 必须能访问；其主机名会被允许 |
+| `MUSTER_ALLOWED_HOSTS` | 未设置 | 额外允许的 `Host` 主机名（逗号分隔） |
+| `MUSTER_ENROLL_KEY` | 未设置 | 可选的机器注册密钥，server 与 daemon 设置相同值 |
+| `MUSTER_CLAIM_WAIT_MS` | `25000` | 认领任务的长轮询时长 |
+| `MUSTER_CHIEF_AUTO_FOLLOW_UP` | `true` | 设为 `false` 后 master agent 不再自动跟进任务通知 |
+| `MUSTER_HOME` | `~/.muster` | daemon 的注册信息、日志、master agent 会话和 worktree |
 
-Daemon options include `--server`, `--name`, `--concurrency` (default 6, range 1–64), and `--workspaces-dir`. For example:
+daemon 选项包括 `--server`、`--name`、`--concurrency`（默认 6，范围 1–64）和 `--workspaces-dir`：
 
 ```sh
 npm run daemon -- --concurrency 2 --name laptop
-# After building, connect directly to another server:
-npm exec -- muster-daemon start --server http://server-host:7420
 ```
 
-For remote daemons, set `HOST` and a reachable `MUSTER_PUBLIC_URL` on the server. The public URL's hostname is allowed automatically; any other hostname or bare IP that reaches the server needs `MUSTER_ALLOWED_HOSTS`. Requests carrying a foreign `Host`, a cross-site `Origin`, or a non-JSON body on a JSON route are refused, so keep those values accurate. Each machine needs its own daemon home and access to the project repositories. Continued builds stay on their assigned machine; restarting a failed build permits another machine to claim a new worktree.
+## 运行时
 
-## Runtime setup
+在 **daemon 所在机器**上、以运行 daemon 的用户身份安装并登录需要的 CLI，然后启动或重启 daemon。它会在 `PATH` 和常见安装目录（`~/.local/bin`、`~/.npm-global/bin`、`~/.bun/bin`、`~/.opencode/bin`、`~/.kiro/bin`、`/opt/homebrew/bin`、`/usr/local/bin`）中查找；找不到时用 `MUSTER_<ID>_BIN`（如 `MUSTER_PI_BIN`）指定。`mock` 始终可用。Muster 复用各 CLI 自己的登录，不管理模型服务商的凭据。
 
-Install and authenticate the CLIs you want to use on the **daemon machine**, under the user running the daemon, then start or restart the daemon. It looks for each CLI on `PATH` and in common install directories (`~/.local/bin`, `~/.npm-global/bin`, `~/.bun/bin`, `~/.opencode/bin`, `~/.kiro/bin`, `/opt/homebrew/bin`, `/usr/local/bin`), re-enrolls when the set changes, and advertises what it found; `mock` is always available. Point `MUSTER_<ID>_BIN` (for example `MUSTER_PI_BIN`, `MUSTER_KIRO_BIN`) at an executable it cannot find. The agent editor lists runtimes an enrolled machine reported first. Muster reuses each CLI's own sign-in and does not manage provider credentials.
-
-| Runtime (id) | Install | Driven through |
+| 运行时 (id) | 安装 | 驱动方式 |
 | --- | --- | --- |
 | Codex (`codex`) | `npm i -g @openai/codex` | `codex app-server` |
 | Claude Code (`claude`) | [claude.com/claude-code](https://claude.com/claude-code) | `claude -p` stream-json |
@@ -238,74 +136,39 @@ Install and authenticate the CLIs you want to use on the **daemon machine**, und
 | Cline (`cline`) | `npm i -g cline` | `cline --acp` |
 | dsh (`dsh`) | `npm i -g @deepseek-ai/dsh` | `dsh --profile acp` |
 | Hermes Agent (`hermes`) | `curl -fsSL https://hermes-agent.nousresearch.com/install.sh \| bash` | `hermes acp` |
-| OpenClaw (`openclaw`) | `npm i -g openclaw`, keep its Gateway running | `openclaw acp` |
+| OpenClaw (`openclaw`) | `npm i -g openclaw`，并保持其 Gateway 运行 | `openclaw acp` |
 | Kiro CLI (`kiro`) | `curl -fsSL https://cli.kiro.dev/install \| bash` | `kiro-cli acp` |
 | Auggie (`auggie`) | `npm i -g @augmentcode/auggie` | `auggie --acp` |
-| Qoder CLI (`qoder`) | `npm i -g @qoder-ai/qodercli` (China build `qoderclicn` also found) | `qodercli --acp` |
+| Qoder CLI (`qoder`) | `npm i -g @qoder-ai/qodercli`（也识别国内版 `qoderclicn`） | `qodercli --acp` |
 | Droid (`droid`) | `curl -fsSL https://app.factory.ai/cli \| sh` | `droid exec --output-format acp` |
 
-- **Codex:** the adapter launches `codex app-server` over stdio, resumes threads, and injects the Muster MCP configuration per turn. The integration was checked against codex-cli 0.162.1. Plan turns use a read-only sandbox; writable turns use `danger-full-access` with approvals disabled.
-- **Claude Code:** the adapter launches `claude` with stream-json input/output, partial messages, and per-process MCP configuration. The integration was checked against Claude Code 2.1.310. Plan turns use permission mode `plan`; writable turns use `bypassPermissions`.
-- **pi / omp:** the adapter speaks pi's JSONL RPC protocol (checked against pi-coding-agent 0.73 `docs/rpc.md`): instructions go to `--append-system-prompt`, sessions resume with `--session <file>`, and messages sent mid-run use pi's `steer`. pi has no MCP client, so each turn loads a generated extension (`-e`) that registers Muster's MCP tools and the agent's granted connections as `mcp__<server>__<tool>`. Plan turns restrict tools to `read`, `grep`, `find`, `ls` plus those MCP tools. Verified with the real pi 0.73.1 CLI against a scripted local model: bridged MCP calls, file writes, the plan-turn tool restriction and session resume after Confirm. omp is assumed to share pi's RPC protocol.
-- **ACP runtimes** (Gemini CLI, OpenCode, Qwen Code, Devin, Cline, dsh, Hermes, OpenClaw, Kiro, Auggie, Qoder, Droid): one adapter speaks the [Agent Client Protocol](https://agentclientprotocol.com). Sessions resume with `session/resume` or `session/load` when the agent supports it. ACP has no system prompt, so Muster's instructions lead the first prompt of a session (and again when they change). Permission requests are approved automatically; plan turns reject `edit`/`delete`/`move`/`execute` tool calls and switch to the agent's plan/read-only mode when it has one (Droid's `spec`); builds pick the most permissive mode offered (for example Droid's `auto-high`). Agents that cannot take HTTP MCP servers get them through a small stdio proxy. Messages sent mid-run are queued as the next prompt in the same turn. Usage is counted only when the agent reports it. A real task ran end to end on Hermes Agent 0.22.5. Qoder CLI 1.1.78 and Droid 0.249.0 ACP support (methods, HTTP MCP, modes) was read from their published packages; the other CLIs follow their documented ACP commands but were not installed here.
-- Choose a model available to your CLI account in the Agents editor. `default` — the initial value for the seeded Chief and for new agents on every CLI runtime — passes no model, so the CLI uses its own configured one; an ACP agent that lists its models rejects an unknown id with the list. The seeded Chief uses Codex; change its runtime/model there if you prefer another.
-- Not yet supported (todos.dev drives them too): Cursor and Grok Build (installer-only CLIs whose flags could not be checked here), GitHub Copilot (its CLI ships as a packed binary), Amp (MCP only through a settings file, no plan mode or system prompt in execute mode) and Antigravity (`agy` registers MCP servers only in the user's global config).
+所有回合都以可写模式运行（Codex `danger-full-access`、Claude `bypassPermissions`、ACP 选择最宽松的模式），Muster 的 MCP 工具与授权的 Connections 会注入每个回合。模型选 `default` 时由 CLI 使用自己配置的模型。各运行时的协议细节和已验证版本见 [架构文档](docs/ARCHITECTURE.md#runtime-integration-and-remaining-limits) 与 [daemon 说明](apps/daemon/README.md)。
 
-Live provider calls are outside automated validation. Adapter tests use local protocol peers and mock runs. See the [daemon guide](apps/daemon/README.md) for protocol details and Git merge behavior.
-
-## Architecture
+## 架构
 
 ```mermaid
 flowchart LR
-  User[User] --> Web[React web / Kanban]
+  User[用户] --> Web[Web / 桌面 App]
   Web <-->|REST + SSE| Server[Hono server]
   Server --> DB[(SQLite)]
-  Daemon[Machine daemon] <-->|Claim / heartbeat / events| Server
-  Daemon --> Chief[Chief session]
-  Daemon --> Agents[Parallel coding agents]
-  Agents --> Trees[Isolated Git worktrees]
-  Chief --> Runtimes[Codex / Claude Code / pi / ACP CLIs / Mock]
+  Daemon[机器 daemon] <-->|认领 / 心跳 / 事件| Server
+  Daemon --> Master[各工作空间的 master agent]
+  Daemon --> Agents[并行的编码 Agent]
+  Agents --> Trees[独立 Git worktree]
+  Master --> Runtimes[Codex / Claude Code / pi / ACP CLI / Mock]
   Agents --> Runtimes
-  Runtimes <-->|MCP tools| MCP[MCP /mcp]
-  External[External agent with active turn token] <-->|MCP| MCP
+  Runtimes <-->|MCP 回合令牌| MCP[/mcp]
+  Partner[其他 AI] <-->|MCP + API 密钥| ExtMCP[/api/mcp/workspaces/:id]
   MCP --> Server
+  ExtMCP --> Server
 ```
 
-`packages/shared` holds domain types and schemas; `apps/server` owns persistence and orchestration; `apps/daemon` manages worktrees and runtimes; `apps/web` provides the workspace. Production serves the web bundle from the server. MCP uses Streamable HTTP and requires a per-turn bearer token valid during an active turn; a machine token cannot authenticate MCP.
+`packages/shared` 定义领域类型和协议；`apps/server` 负责持久化与编排；`apps/daemon` 管理 worktree 和运行时；`apps/web` 是界面；`apps/desktop` 是 Electron 外壳。产品规格见 [docs/PLAN.md](docs/PLAN.md)，接口契约见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
-Read [the spec](docs/PLAN.md), [architecture and API contracts](docs/ARCHITECTURE.md), and [web guide](apps/web/README.md) for details.
+## 参与贡献
 
-## Roadmap
+见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-Muster already ships orchestration, Kanban, plan/review gates, worktrees, 16
-coding-agent CLI runtimes (including pi and the ACP CLIs), machine daemons, MCP,
-basic usage reporting, desktop app, agent memory, skills, permission-gated
-secrets, schedules, connections, and the Settings/API-key surface. Features
-deferred in [PLAN §1](docs/PLAN.md#1-调研结论todosdev-关键机制) include:
+## 许可
 
-- Teams, multiple users, and login.
-- AI review.
-- OAuth sign-in for connections; stored credentials are used today.
-- Mobile clients, cloud machines, and GitHub pull request integration.
-- CLIs not supported yet: Cursor, Grok Build, GitHub Copilot, Amp, and
-  Antigravity (see [Runtime setup](#runtime-setup)).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, project conventions, and checks. Bug reports and focused pull requests are welcome.
-
-## License
-
-[MIT](LICENSE), copyright 2026 Wale Shi.
-
-## 中文
-
-Muster 是开源、可自托管的 todos.dev 风格编码协作工作台。你与 Chief 对话，由它拆分任务并调度多个 Agent，在独立 Git worktree 中并行工作；通过看板跟踪进展，在计划确认和变更验收关口决定下一步。支持 16 种编码 Agent CLI 运行时（含 Codex、Claude Code、pi 与多种 ACP CLI）、MCP、Agent 记忆/技能/权限、加密 secrets、定时任务、Connections 与桌面应用。
-
-需要 Node.js 22+、npm 和 Git。运行 `npm install`、`npm run dev`，另开终端运行 `npm run daemon`，访问 <http://localhost:5173>。生产模式运行 `npm run build && npm start`，访问 <http://localhost:7420>。当前面向单用户可信本地环境，REST API 没有登录；界面语言和外观仅保存在当前设备，工作区名称与通知偏好保存在服务端。完整方案见 [docs/PLAN.md](docs/PLAN.md)。
-
-### Languages
-
-Muster supports English and Simplified Chinese. Choose a language in Settings → General; changes apply to the web UI and desktop menus. Language and appearance are saved on this device only, in the browser's `localStorage`; the workspace name and notification preferences are the settings stored on the server. A device without a saved choice selects the first supported language in `navigator.languages` (any Chinese variant selects Simplified Chinese, otherwise English); the browser follows the system appearance and the desktop window starts dark. Desktop menus initially follow system preferences until the web UI reports its language.
-
-To add a web language, add one dictionary file exporting `messages: Messages` (including its native `languageName`) alongside `apps/web/src/i18n/en.ts` and one entry in the locale list in `packages/shared/src/locale.ts`; discovery and the language picker are automatic. Add matching native menu copy in the separate desktop dictionary in `apps/desktop/src/i18n.ts`, and extend automatic language detection if needed. English is the source of truth. Keep named placeholders unchanged, use complete sentences and `{one, other}` plural forms, and format values through `useI18n()`. Run the dictionary, switching and desktop locale tests as well as the normal project checks. User/Agent messages, product names, model IDs, code and Git branches are not translated; unknown external errors remain available verbatim.
+[MIT](LICENSE)，copyright 2026 Wale Shi.

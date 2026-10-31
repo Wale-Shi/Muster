@@ -1,6 +1,6 @@
 {
   "name": "@muster/server",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -14,7 +14,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.9",
     "@modelcontextprotocol/sdk": "^1.32.0",
-    "@muster/shared": "0.1.0",
+    "@muster/shared": "0.2.0",
     "hono": "^4.13.0",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",

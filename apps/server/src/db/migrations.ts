@@ -63,4 +63,22 @@ export const migrations = [
   ALTER TABLE machines ADD COLUMN models_requested INTEGER NOT NULL DEFAULT 0;`,
   `ALTER TABLE server_events ADD COLUMN created_at TEXT NOT NULL DEFAULT '';
   CREATE INDEX server_events_created_idx ON server_events(created_at);`,
+  // Workspaces: each project gets its own master agent and main conversation.
+  // Plan/confirm gates, schedules, secrets, memories and attachments are removed.
+  `ALTER TABLE projects ADD COLUMN chief_agent_id TEXT REFERENCES agents(id);
+  ALTER TABLE topics ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE CASCADE;
+  CREATE UNIQUE INDEX topics_project_idx ON topics(project_id) WHERE project_id IS NOT NULL;
+  INSERT INTO topics (id, title, runtime_session_json, created_at, updated_at, project_id)
+    SELECT lower(hex(randomblob(16))), name, NULL, created_at, created_at, id FROM projects;
+  UPDATE turns SET status='stopped', ended_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'), error='Plan turns were removed'
+    WHERE status IN ('queued','running') AND (kind='plan' OR (kind='revise' AND build_id IN (SELECT b.id FROM builds b JOIN todos t ON t.id=b.todo_id WHERE t.previous_gate='confirm')));
+  UPDATE todos SET phase='todo' WHERE phase IN ('planning','confirm') OR (phase='queued' AND previous_gate='confirm');
+  UPDATE todos SET previous_gate=NULL WHERE previous_gate='confirm';
+  UPDATE todos SET topic_id=(SELECT id FROM topics WHERE project_id=todos.project_id);
+  DELETE FROM documents WHERE kind='plan';
+  DROP TABLE schedules;
+  DROP TABLE secrets;
+  DROP TABLE agent_memories;
+  DROP TABLE attachments;
+  DELETE FROM settings WHERE key NOT IN ('workspaceName','notifications');`,
 ] as const;

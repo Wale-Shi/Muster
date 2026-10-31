@@ -7,7 +7,6 @@ import type {
   Runtime,
   Todo,
   Topic,
-  UsageReport,
   QueuedMessage,
   TodoDetail,
 } from "@muster/shared";
@@ -20,18 +19,16 @@ export type AgentInput = {
   model: string;
   reasoning: string | null;
 };
-export type ProjectInput = Pick<Project, "name" | "repoUrl" | "baseBranch">;
+export type ProjectInput = Pick<Project, "name" | "repoUrl" | "baseBranch" | "chiefAgentId"> & { description?: string };
 export type TodoInput = {
-  tags?: string[];
   projectId: string;
   title: string;
   spec: string;
   agentId: string | null;
-  mode: "plan" | "run";
-  topicId?: string;
+  start?: boolean;
 };
 export type TodoAction =
-  "start" | "confirm" | "done" | "rerun" | "stop" | "close" | "reopen";
+  "start" | "done" | "rerun" | "stop" | "close" | "reopen";
 
 export class ApiError extends Error {
   constructor(
@@ -77,8 +74,12 @@ const pathId = (id: string) => encodeURIComponent(id);
 
 export const api = {
   projects: () => request<Project[]>("/projects"),
+  project: (id: string) => request<Project>(`/projects/${pathId(id)}`),
   createProject: (input: ProjectInput) =>
     request<Project>("/projects", "POST", input),
+  updateProject: (id: string, input: Partial<ProjectInput>) =>
+    request<Project>(`/projects/${pathId(id)}`, "PATCH", input),
+  deleteProject: (id: string) => request<void>(`/projects/${pathId(id)}`, "DELETE"),
   agents: () => request<Agent[]>("/agents"),
   saveAgent: (input: AgentInput, id?: string) =>
     request<Agent>(
@@ -88,8 +89,6 @@ export const api = {
     ),
   machines: () => request<Machine[]>("/machines"),
   refreshModels: () => request<{ requested: boolean }>("/machines/refresh-models", "POST", {}),
-  updateMachine: (id: string, concurrency: number) =>
-    request<Machine>(`/machines/${pathId(id)}`, "PATCH", { concurrency }),
   todos: () => request<Todo[]>("/todos"),
   todo: (id: string) => request<TodoDetail>(`/todos/${pathId(id)}`),
   createTodo: (input: TodoInput) => request<Todo>("/todos", "POST", input),
@@ -97,7 +96,6 @@ export const api = {
     id: string,
     action: TodoAction,
     input?: {
-      mode?: "plan" | "run";
       strategy?: "continue" | "restart";
       merge?: boolean;
       agentId?: string;
@@ -118,8 +116,7 @@ export const api = {
     ),
   documents: (id: string) =>
     request<Document[]>(`/todos/${pathId(id)}/documents`),
-  topics: () => request<Topic[]>("/topics"),
-  createTopic: (title: string) => request<Topic>("/topics", "POST", { title }),
+  topic: (id: string) => request<Topic>(`/topics/${pathId(id)}`),
   sendTopic: (id: string, content: string) =>
     request<{ turnId: string }>(`/topics/${pathId(id)}/messages`, "POST", {
       content,
@@ -127,5 +124,4 @@ export const api = {
   queuedMessages: (id: string) => request<QueuedMessage[]>(`/conversations/${pathId(id)}/queued-messages`),
   editQueued: (id: string, messageId: string, content: string) => request(`/conversations/${pathId(id)}/queued-messages/${pathId(messageId)}`, "PATCH", { content }),
   retractQueued: (id: string, messageId: string) => request(`/conversations/${pathId(id)}/queued-messages/${pathId(messageId)}`, "DELETE"),
-  usage: () => request<UsageReport>("/usage"),
 };

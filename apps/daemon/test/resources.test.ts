@@ -7,8 +7,6 @@ import type { AgentEvent } from "@muster/shared";
 import { prepareSkills, redactor, secretEvents, jobCredentials } from "../src/resources.js";
 import { MachineClient } from "../src/client.js";
 import { makeJob } from "./helpers.js";
-import { CodexRuntime } from "../src/runtimes/codex.js";
-import { ClaudeRuntime } from "../src/runtimes/claude.js";
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((p) => rm(p, { recursive: true, force: true }))); });
 async function home() { const root = await mkdtemp(join(tmpdir(), "muster-cache-test-")); roots.push(root); return root; }
@@ -32,33 +30,16 @@ it("keeps streaming while secrets are configured and never leaks a secret prefix
   stream.emit({ type: "message.completed" });
   expect(streamed.join("") + (events.at(-2) as { content: string }).content).toBe(input.split(secret).join("[secret:API_KEY]"));
 });
-it("downloads once per hash outside the workspace and provides the index and plan fallback", async () => {
+it("downloads once per hash outside the workspace and provides the index", async () => {
   const root = await home(); const files = [{ path: "SKILL.md", content: Buffer.from("Skill instructions").toString("base64") }, { path: "scripts/tool.sh", content: Buffer.from("echo test").toString("base64") }];
   const version = createHash("sha256").update(JSON.stringify([...files].sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)))).digest("hex"); let requests = 0;
   const client = new MachineClient({ home: root, server: "http://fixture", name: "test", concurrency: 1, runtimes: ["mock"], fetch: async (_url, init) => { expect(new Headers(init?.headers).get("authorization")).toBe("Bearer machine-token"); requests++; return Response.json({ files }); } });
   client.registration = { machineId: "test", token: "machine-token", server: "http://fixture", name: "test", concurrency: 1, runtimes: ["mock"] };
-  const job = makeJob({ skills: [{ slug: "testing", name: "Testing", description: "Run tests", version }], readOnly: true });
-  const ready = await prepareSkills(job, client); await prepareSkills(job, client); expect(requests).toBe(1); expect(ready.systemInstructions).toContain("## Available skills"); expect(ready.systemInstructions).toContain("Skill instructions"); expect(ready.systemInstructions).toContain(join(root, "skills-cache", `testing@${version}`, "SKILL.md"));
+  const job = makeJob({ skills: [{ slug: "testing", name: "Testing", description: "Run tests", version }] });
+  const ready = await prepareSkills(job, client); await prepareSkills(job, client); expect(requests).toBe(1); expect(ready.systemInstructions).toContain("## Available skills"); expect(ready.systemInstructions).not.toContain("Skill instructions"); expect(ready.systemInstructions).toContain(join(root, "skills-cache", `testing@${version}`, "SKILL.md"));
   expect(await readFile(join(root, "skills-cache", `testing@${version}`, "scripts/tool.sh"), "utf8")).toBe("echo test");
   await expect(prepareSkills(makeJob({ skills: [{ slug: "../escape", name: "Bad", description: "Bad", version }] }), client)).rejects.toThrow("identity");
 });
-it.each([false, true])("passes explicit secret shell policy on Codex start/resume (%s)", async (resume) => {
-  const cwd = await home();
-  const peer = `const rl=require('node:readline'); const send=m=>process.stdout.write(JSON.stringify(m)+'\\n');
-  rl.createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line); const p=m.params;
-  if(m.method==='initialize') send({id:m.id,result:{}});
-  if(m.method==='thread/start'||m.method==='thread/resume') { if(process.env.SERVICE_TOKEN!=='fixture-secret'||p.config.shell_environment_policy.set.SERVICE_TOKEN!=='fixture-secret') throw Error('missing secret'); send({id:m.id,result:{thread:{id:'thread'}}}); }
-  if(m.method==='turn/start') {send({id:m.id,result:{turn:{id:'turn'}}}); send({method:'turn/completed',params:{threadId:'thread',turn:{id:'turn',status:'completed'}}});}
-  });`;
-  const result = await new CodexRuntime(process.execPath, ["-e", peer, "--"]).start(makeJob({ env: { SERVICE_TOKEN: "fixture-secret" }, sessionState: resume ? { threadId: "thread" } : null }), { cwd, emit: () => {} }).result;
-  expect(result.status).toBe("done");
-});
-it("Claude child shell inherits granted secrets", async () => {
-  const cwd = await home();
-  const peer = `const rl=require('node:readline'); rl.createInterface({input:process.stdin}).on('line',()=>{ const value=require('node:child_process').execFileSync('/bin/sh',['-c','printf %s "$SERVICE_TOKEN"'],{encoding:'utf8'}); if(value!=='fixture-secret') throw Error('missing shell secret'); process.stdout.write(JSON.stringify({type:'result',subtype:'success',result:'ok',usage:{}})+'\\n'); });`;
-  const result = await new ClaudeRuntime(process.execPath, ["-e", peer, "--"]).start(makeJob({ env: { SERVICE_TOKEN: "fixture-secret" } }), { cwd, emit: () => {} }).result; expect(result.status).toBe("done");
-});
-
 it("redacts connection header values, bearer tokens and short stdio env across chunks", () => {
   const credentials = jobCredentials(makeJob({ connections: [{ identifier: "remote", transport: "http", headers: { Authorization: "Bearer fixture-credential" } }, { identifier: "local", transport: "stdio", env: { PIN: "xyz" } }] }));
   const events: AgentEvent[] = []; const stream = secretEvents(credentials, (e) => events.push(e), 1);
@@ -67,15 +48,3 @@ it("redacts connection header values, bearer tokens and short stdio env across c
   expect(JSON.stringify(events)).not.toMatch(/fixture-credential|xyz/); expect(redactor(credentials, 1)({ diff: "+xyz", error: "fixture-credential" })).toEqual({ diff: "+[secret:local.PIN]", error: "[secret:remote.Authorization.token]" });
 });
 
-it("downloads attachments once outside worktrees, verifies hashes and rejects unsafe identities", async () => {
-  const { prepareAttachments } = await import("../src/resources.js");
-  const root = await home(); let downloads = 0; const bytes = Buffer.from("Attachment fixture");
-  const client = new MachineClient({ home: root, server: "http://localhost:1", name: "test", concurrency: 1, runtimes: ["mock"], fetch: async () => { downloads++; return Response.json({ content: bytes.toString("base64") }); } });
-  const job = makeJob(); job.attachments = [{ id: crypto.randomUUID(), todoId: job.todoId!, name: "../../notes.txt", size: bytes.length, hash: createHash("sha256").update(bytes).digest("hex") }];
-  const prepared = await prepareAttachments(job, client);
-  expect(prepared.prompt).toContain(join(root, "attachments-cache"));
-  expect(await readFile(join(root, "attachments-cache", `${job.attachments[0]!.id}-${job.attachments[0]!.hash}`), "utf8")).toBe(bytes.toString());
-  await prepareAttachments(job, client); expect(downloads).toBe(1);
-  await expect(prepareAttachments({ ...job, attachments: [{ ...job.attachments[0]!, id: "../escape" }] }, client)).rejects.toThrow("Invalid attachment");
-  await expect(prepareAttachments({ ...job, attachments: [{ ...job.attachments[0]!, hash: "a".repeat(64) }] }, client)).rejects.toThrow("Attachment hash mismatch");
-});

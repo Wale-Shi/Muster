@@ -24,7 +24,7 @@ describe("machine protocol", () => {
     const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
     const { projectId, agentId } = await seedProjectAndAgent(app);
     const todoId = await createTodo(app, projectId, agentId); const machine = await enroll(app);
-    services.orchestrator.start(todoId, "plan");
+    services.orchestrator.start(todoId);
     const job = services.scheduler.claim(machine.token)!;
     const warning = { type: "warning", detail: "Selected model is at capacity." };
     const body = { batchId: "warning-batch", events: [warning] };
@@ -44,9 +44,9 @@ describe("machine protocol", () => {
   it("enrolls, claims, persists events, completes and advances phase", async () => {
     const { app, services } = createApp({ claimWaitMs: 0 }); databases.push(services.db);
     const { projectId, agentId } = await seedProjectAndAgent(app); const todoId = await createTodo(app, projectId, agentId); const machine = await enroll(app);
-    await requestJson(app, `/api/todos/${todoId}/start`, "POST", { mode: "plan" });
+    await requestJson(app, `/api/todos/${todoId}/start`, "POST", {});
     const job = (await requestJson(app, "/api/machine/claim", "POST", {}, machine.token)).json;
-    expect(job).toMatchObject({ todoId, kind: "plan", readOnly: true, branch: expect.stringMatching(/^muster\/conv-/), agent: { runtime: "mock" } });
+    expect(job).toMatchObject({ todoId, kind: "build", branch: expect.stringMatching(/^muster\/conv-/), agent: { runtime: "mock" } });
     await requestJson(app, `/api/todos/${todoId}/message`, "POST", { content: "Include edge cases" });
     expect((await requestJson(app, `/api/machine/turns/${job.turnId}/inbox`, "GET", undefined, machine.token)).json).toEqual([expect.objectContaining({ content: "Include edge cases" })]);
     const pending = (await requestJson(app, `/api/machine/turns/${job.turnId}/inbox`, "GET", undefined, machine.token)).json;
@@ -55,10 +55,10 @@ describe("machine protocol", () => {
     expect((await requestJson(app, `/api/machine/turns/${job.turnId}/inbox`, "GET", undefined, machine.token)).json).toEqual([]);
     const events = await requestJson(app, `/api/machine/turns/${job.turnId}/events`, "POST", { batchId: "events-1", events: [{ type: "message.delta", content: "Plan " }, { type: "message.delta", content: "it" }, { type: "message.completed" }, { type: "tool.started", tool: "read" }, { type: "tool.completed", tool: "read", output: "ok" }] }, machine.token);
     expect(events.json.accepted).toBe(5);
-    await requestJson(app, `/api/machine/turns/${job.turnId}/complete`, "POST", { status: "done", plan: "1. Implement\n2. Test", usage: { tokensIn: 10, tokensOut: 20, durationMs: 30 }, sessionState: { sessionId: "s1" } }, machine.token);
+    await requestJson(app, `/api/machine/turns/${job.turnId}/complete`, "POST", { status: "done", diff: "diff --git a/x b/x", usage: { tokensIn: 10, tokensOut: 20, durationMs: 30 }, sessionState: { sessionId: "s1" } }, machine.token);
     const todo = (await requestJson(app, `/api/todos/${todoId}`)).json.data;
-    expect(todo.phase).toBe("confirm");
-    expect(todo.builds[0].documents).toEqual([expect.objectContaining({ kind: "plan", version: 1, content: "1. Implement\n2. Test" })]);
+    expect(todo.phase).toBe("review");
+    expect(todo.builds[0].documents).toEqual([expect.objectContaining({ kind: "changes", version: 1, content: "diff --git a/x b/x" })]);
     const messages = (await requestJson(app, `/api/conversations/${job.buildId}/messages`)).json.data;
     expect(messages).toEqual(expect.arrayContaining([expect.objectContaining({ role: "agent", content: "Plan it" }), expect.objectContaining({ role: "tool" })]));
   });
@@ -90,7 +90,7 @@ it("releases an assigned claim when the socket closes before the response is sen
   try {
     // Start with an idle long poll, then assign a turn on its next scheduler pass.
     await new Promise((resolve) => setTimeout(resolve, 50));
-    await requestJson(app, `/api/todos/${todoId}/start`, "POST", { mode: "plan" });
+    await requestJson(app, `/api/todos/${todoId}/start`, "POST", {});
     await ready;
     expect(services.db.row("SELECT status FROM turns")?.status).toBe("running");
     abort.abort(); await pending;
@@ -119,7 +119,7 @@ it("does not assign work after a pending long poll is aborted", async () => {
   });
   await new Promise((resolve) => setTimeout(resolve, 10));
   abort.abort();
-  await requestJson(app, `/api/todos/${todoId}/start`, "POST", { mode: "plan" });
+  await requestJson(app, `/api/todos/${todoId}/start`, "POST", {});
   expect(await (await pending).json()).toBeNull();
   expect(services.db.row("SELECT status, machine_id FROM turns")).toMatchObject({ status: "queued", machine_id: null });
 });

@@ -15,16 +15,30 @@ type Activity = {
   detail?: string;
   warning?: { detail: string; turnId: string | undefined } | undefined;
 };
+/** The latest thing a task's agent did, for watching work from the board. */
+export type TaskLive = { text: string; tool: boolean; at: number };
 const idle: Activity = { status: "idle", unread: false };
 const RealtimeContext = createContext<{
   connected: boolean;
   activity: Record<string, Activity>;
+  live: Record<string, TaskLive>;
   markRead: (id: string) => void;
   dismissWarning: (id: string) => void;
-}>({ connected: false, activity: {}, markRead: () => {}, dismissWarning: () => {} });
+}>({ connected: false, activity: {}, live: {}, markRead: () => {}, dismissWarning: () => {} });
 export const useRealtime = () => useContext(RealtimeContext);
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+// One line of the latest agent output or tool call, or null for other events.
+export function liveLine(event: ServerEvent): Pick<TaskLive, "text" | "tool"> | null {
+  const payload = record(event.payload);
+  if (event.type === "tool.started" && typeof payload.tool === "string") return { text: payload.tool, tool: true };
+  if ((event.type === "message.delta" || event.type === "message.completed") && event.message?.content) {
+    const line = event.message.content.trim().split("\n").filter(Boolean).at(-1)?.trim();
+    return line ? { text: line.slice(-160), tool: false } : null;
+  }
+  return null;
+}
 
 // Each update carries an authoritative message with an increasing revision.
 // Replayed deltas cannot duplicate text or overwrite a newer REST snapshot.
@@ -60,6 +74,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const client = useQueryClient();
   const [connected, setConnected] = useState(false);
   const [activity, setActivity] = useState<Record<string, Activity>>({});
+  const [live, setLive] = useState<Record<string, TaskLive>>({});
   const dismissWarning = useCallback((id: string) => {
     setActivity((prior) => prior[id]?.warning ? { ...prior, [id]: { ...prior[id], warning: undefined } } : prior);
   }, []);
@@ -94,8 +109,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       const payload = record(event.payload);
       // The server pruned past the client's cursor; every cached snapshot may be stale.
       if (type === SYNC_RESET_EVENT) { void client.invalidateQueries(); return; }
-      if (type.startsWith("schedule.")) void client.invalidateQueries({ queryKey: ["schedules"] });
       if (type.startsWith("connection.")) void client.invalidateQueries({ queryKey: ["connections"] });
+      const line = todoId ? liveLine(event) : null;
+      if (todoId && line) setLive((prior) => ({ ...prior, [todoId]: { ...line, at: Date.now() } }));
       if (conversationId) {
         client.setQueryData<Message[]>(
           ["stream-buffer", conversationId],
@@ -160,7 +176,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
               : type.startsWith("topic.")
                 ? "topics"
                 : null;
-      if (/^(agent|memory|skill|secret)\./.test(type)) for (const key of ["agent", "agents", "memories", "skill", "skills", "secrets"]) void client.invalidateQueries({ queryKey: [key] });
+      if (/^(agent|skill)\./.test(type)) for (const key of ["agent", "agents", "skill", "skills"]) void client.invalidateQueries({ queryKey: [key] });
       if (entityKey) void client.invalidateQueries({ queryKey: [entityKey] });
       if (todoId && (type.startsWith("todo.") || type.startsWith("turn."))) {
         void client.invalidateQueries({ queryKey: ["todo", todoId] });
@@ -175,16 +191,12 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         void client.invalidateQueries({ queryKey: ["queued-messages", conversationId] });
       }
       if (type.startsWith("turn.")) void client.invalidateQueries({ queryKey: ["topics"] });
-      if (type === "turn.completed") {
-        void client.invalidateQueries({ queryKey: ["usage"] });
-        void client.invalidateQueries({ queryKey: ["usage-details"] });
-        void client.invalidateQueries({ queryKey: ["machines"] });
-      }
+      if (type === "turn.completed") void client.invalidateQueries({ queryKey: ["machines"] });
     };
     return () => source.close();
   }, [client]);
   return (
-    <RealtimeContext value={{ connected, activity, markRead, dismissWarning }}>
+    <RealtimeContext value={{ connected, activity, live, markRead, dismissWarning }}>
       {children}
     </RealtimeContext>
   );

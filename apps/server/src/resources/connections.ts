@@ -4,13 +4,13 @@ import { connectionSchema, type Connection, type TurnConnection } from "@muster/
 import { id, now, type MusterDb } from "../db/index.js";
 import type { EventBus } from "../events.js";
 import { StateError } from "../orchestrator/state.js";
-import type { Secrets } from "./secrets.js";
+import type { Vault } from "./vault.js";
 
 export class Connections {
-  constructor(readonly db: MusterDb, readonly secrets: Secrets, readonly events: EventBus) {}
+  constructor(readonly db: MusterDb, readonly vault: Vault, readonly events: EventBus) {}
   private values(key: string): Record<string, string> {
     const r = this.db.row("SELECT * FROM connections WHERE id=?", key); if (!r) throw new StateError("Connection not found", 404);
-    return JSON.parse(this.secrets.decrypt({ ciphertext: String(r.secret_json_ciphertext), iv: String(r.iv), tag: String(r.tag) }, `connection:${key}:${r.identifier}`));
+    return JSON.parse(this.vault.decrypt({ ciphertext: String(r.secret_json_ciphertext), iv: String(r.iv), tag: String(r.tag) }, `connection:${key}:${r.identifier}`));
   }
   list(): Connection[] {
     return this.db.rows("SELECT * FROM connections ORDER BY name").map((r) => ({ id: String(r.id), identifier: String(r.identifier), name: String(r.name), catalogId: r.catalog_id as string | null, transport: r.transport as Connection["transport"], url: r.url as string | null, command: r.command as string | null, args: JSON.parse(String(r.args_json)), machineId: r.machine_id as string | null, secretKeys: Object.keys(this.values(String(r.id))), createdAt: String(r.created_at), updatedAt: String(r.updated_at) }));
@@ -21,7 +21,7 @@ export class Connections {
     if (old && old.identifier !== input.identifier) throw new StateError("Connection identifier is immutable", 400);
     if (this.db.row("SELECT id FROM connections WHERE identifier=? AND id<>?", input.identifier, key ?? "")) throw new StateError("Connection identifier already exists", 409);
     if (input.machineId && !this.db.row("SELECT id FROM machines WHERE id=?", input.machineId)) throw new StateError("Machine not found", 400);
-    const connectionId = key ?? id(); const encrypted = this.secrets.encrypt(JSON.stringify(input.secrets ?? (key ? this.values(key) : {})), `connection:${connectionId}:${input.identifier}`);
+    const connectionId = key ?? id(); const encrypted = this.vault.encrypt(JSON.stringify(input.secrets ?? (key ? this.values(key) : {})), `connection:${connectionId}:${input.identifier}`);
     this.db.run(`INSERT INTO connections VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,catalog_id=excluded.catalog_id,transport=excluded.transport,url=excluded.url,command=excluded.command,args_json=excluded.args_json,machine_id=excluded.machine_id,secret_json_ciphertext=excluded.secret_json_ciphertext,iv=excluded.iv,tag=excluded.tag,updated_at=excluded.updated_at`, connectionId, input.identifier, input.name, input.catalogId ?? null, input.transport, input.transport === "http" ? input.url : null, input.transport === "stdio" ? input.command : null, JSON.stringify(input.args), input.machineId ?? null, encrypted.ciphertext, encrypted.iv, encrypted.tag, now(), now());
     this.changed(); return this.get(connectionId);
   }

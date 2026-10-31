@@ -10,7 +10,7 @@ export class Settings {
     return workspaceSettingsSchema.parse(Object.fromEntries(this.db.rows("SELECT * FROM settings").map((r) => [r.key, JSON.parse(String(r.value))])));
   }
   update(input: unknown): WorkspaceSettings {
-    const patch = workspaceSettingsSchema.partial().parse(input);
+    const patch = workspaceSettingsSchema.partial().strict().parse(input);
     this.db.transaction(() => { for (const [key, value] of Object.entries(patch)) this.db.run("INSERT INTO settings VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, JSON.stringify(value)); });
     return this.get();
   }

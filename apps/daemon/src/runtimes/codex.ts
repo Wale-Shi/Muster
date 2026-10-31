@@ -7,7 +7,7 @@ import { errorText } from "../util.js";
 export class CodexRuntime implements Runtime {
   constructor(private command = "codex", private prefix: string[] = []) {}
   start(job: TurnJob, ctx: RuntimeContext): RunningTurn {
-    const process = new JsonProcess(this.command, [...this.prefix, "app-server"], ctx.cwd, job.env);
+    const process = new JsonProcess(this.command, [...this.prefix, "app-server"], ctx.cwd);
     let sequence = 0;
     const pending = new Map<number, { resolve(value: Wire): void; reject(error: Error): void; timer: NodeJS.Timeout }>();
     let threadId = typeof job.sessionState?.threadId === "string" ? job.sessionState.threadId : "";
@@ -91,18 +91,17 @@ export class CodexRuntime implements Runtime {
       process.send({ method: "initialized" });
       if (stopped) { settle("stopped"); return; }
       const config: Wire = {
-        shell_environment_policy: { set: job.env ?? {} },
         // User-granted MCP tools are approved independently of the filesystem
         // sandbox. `never` rejects MCP calls that would otherwise need approval.
         mcp_servers: { ...Object.fromEntries((job.connections ?? []).map((c) => [c.identifier, { default_tools_approval_mode: "approve", ...(c.transport === "http" ? { url: c.url, http_headers: c.headers ?? {} } : { command: c.command, args: c.args ?? [], env: c.env ?? {} }) }])), muster: { url: job.mcp.url, required: true, default_tools_approval_mode: "approve", http_headers: { Authorization: `Bearer ${job.mcp.token}` } } },
       };
-      const params = { cwd: ctx.cwd, ...(job.agent.model && job.agent.model !== CLI_DEFAULT_MODEL ? { model: job.agent.model } : {}), developerInstructions: job.systemInstructions, approvalPolicy: "never", sandbox: job.readOnly ? "read-only" : "danger-full-access", config };
+      const params = { cwd: ctx.cwd, ...(job.agent.model && job.agent.model !== CLI_DEFAULT_MODEL ? { model: job.agent.model } : {}), developerInstructions: job.systemInstructions, approvalPolicy: "never", sandbox: "danger-full-access", config };
       const response = await rpc(threadId ? "thread/resume" : "thread/start", { ...params, ...(threadId ? { threadId } : {}) });
       threadId = String(response.thread.id);
       if (stopped) { settle("stopped"); return; }
       // TurnStartParams accepts sandboxPolicy, not developerInstructions. Set it
       // on every turn: resumed threads must not inherit the planning sandbox.
-      const sandboxPolicy = job.readOnly ? { type: "readOnly", networkAccess: false } : { type: "dangerFullAccess" };
+      const sandboxPolicy = { type: "dangerFullAccess" };
       const started = await rpc("turn/start", { threadId, approvalPolicy: "never", sandboxPolicy, input: [{ type: "text", text: job.prompt, text_elements: [] }], ...(job.agent.reasoning ? { effort: job.agent.reasoning } : {}) });
       turnId = String(started.turn.id);
       if (stopped && !finished) await rpc("turn/interrupt", { threadId, turnId });

@@ -1,8 +1,6 @@
 import { LocalImage, type ImageContext } from "./LocalImage";
 import { useNavigate } from "react-router";
-import { ProjectDialog } from "../pages/Projects";
 import { MentionInput } from "./MentionInput";
-import { SecretCard } from "../pages/Secrets";
 import { systemMessage } from "../i18n/system";
 import { useI18n } from "../i18n";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -14,10 +12,10 @@ import {
   AlertTriangle,
   BookOpen,
   ChevronRight,
+  ClipboardCheck,
   Command,
-  FileText,
-  FolderOpen,
-  Gamepad2,
+  ListChecks,
+  Split,
   Terminal,
   X,
 } from "lucide-react";
@@ -139,7 +137,7 @@ function MessageStream({
       {groups.map((item) =>
         Array.isArray(item) ? (
           <ToolGroup key={item[0]?.id} messages={item} />
-        ) : item.meta.secretRequest ? <SecretCard key={item.id} message={item} /> : item.role === "system" ? (
+        ) : item.role === "system" ? (
           <div className="system-message" key={item.id}>
             <span className="system-line" />
             <Markdown>{systemMessage(item, t, label)}</Markdown>
@@ -173,7 +171,7 @@ function MessageStream({
 export function Conversation({
   conversationId,
   todoId,
-  agentName = "Chief",
+  agentName = "Master agent",
   status,
   runtime,
   disabled,
@@ -210,7 +208,6 @@ export function Conversation({
       : runtime && !online.some((machine) => machine.runtimes.some((item) => item === runtime))
         ? t("ui.noOnlineMachineSupportsTheRuntimeRuntime", { runtime })
         : t("ui.waitingForAMachine");
-  const [newProject, setNewProject] = useState(false);
   const navigate = useNavigate();
   const [text, setText] = useState("");
   const [references, setReferences] = useState<Todo[]>([]);
@@ -325,17 +322,15 @@ export function Conversation({
             </article>
           ) : (
             <div className="chief-empty">
-              {newProject && <ProjectDialog onClose={() => setNewProject(false)} />}
               <span className="chief-mark">
                 <Command size={24} />
               </span>
-              <h1>{t("ui.howCanIHelp")}</h1>
-              <p>{t("ui.shareAGoalIllHelpTurnItIntoProgress")}</p>
+              <h1>{t("ws.greeting", { name: agentName })}</h1>
+              <p>{t("ws.greetingHelp")}</p>
               <div className="suggestions">
                 {[
-                  { icon: FolderOpen, label: t("phaseC.importProject"), run: () => setNewProject(true) },
+                  ...[{ icon: Split, label: t("ws.suggestSplit") }, { icon: ListChecks, label: t("ws.suggestProgress") }, { icon: ClipboardCheck, label: t("ws.suggestReview") }].map((item) => ({ ...item, run: () => { setText(item.label); textarea.current?.focus(); } })),
                   { icon: BookOpen, label: t("phaseC.importSkill"), run: () => navigate("/skills/new") },
-                  ...[{ icon: Gamepad2, label: t("phaseC.game") }, { icon: FileText, label: t("phaseC.digest") }].map((item) => ({ ...item, run: () => { setText(item.label); textarea.current?.focus(); } })),
                 ].map(({ icon: Icon, label, run }) => (
                   <button key={label} onClick={run}>
                     <span className="suggestion-icon"><Icon size={14} /></span>
@@ -417,7 +412,7 @@ export function Conversation({
             value={text}
             rows={3}
             placeholder={
-              disabled ?? placeholder ?? t("ui.askChiefOrDropATaskHere")
+              disabled ?? placeholder ?? t("ws.askMaster", { name: agentName })
             }
             disabled={!!disabled || !conversationId}
             onValue={setText}
@@ -425,7 +420,7 @@ export function Conversation({
           />
           <div className="composer-footer">
             <span className="hint">
-              {todoId ? agentName : "Chief"}
+              {agentName}
               <span className="composer-shortcut"> {t("ui.sendNewLine")}
               </span>
             </span>

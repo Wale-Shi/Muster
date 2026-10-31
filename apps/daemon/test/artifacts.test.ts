@@ -23,12 +23,10 @@ it("prepares a private build directory, preserves existing files, and isolates b
   expect((await prepareArtifacts({ ...job, buildId: "another" }, root)).systemInstructions).toContain("artifacts/another");
   expect((await prepareArtifacts(job, other)).systemInstructions).toContain(other);
 });
-it("does not relax planning permissions or prepare a directory for Chief/merge", async () => {
+it("keeps session state and prepares no directory for master-agent or merge turns", async () => {
   const root = await home();
-  const prepared = await prepareArtifacts(makeJob({ project, readOnly: true, kind: "plan", sessionState: { threadId: "existing" } }), root);
-  expect(prepared.readOnly).toBe(true);
+  const prepared = await prepareArtifacts(makeJob({ project, sessionState: { threadId: "existing" } }), root);
   expect(prepared.sessionState).toEqual({ threadId: "existing" });
-  expect(prepared.systemInstructions).toContain("do not create or copy artifacts");
   for (const job of [makeJob(), makeJob({ project, kind: "merge" })]) expect(await prepareArtifacts(job, root)).toBe(job);
 });
 it.each(["../escape", "a/b", "", ".."])("rejects unsafe build id %j", async (buildId) => {
@@ -44,7 +42,7 @@ it("reports directory creation failure rather than falling back to a temporary p
   const root = await home(); await writeFile(join(root, "artifacts"), "not a directory");
   await expect(prepareArtifacts(makeJob({ project }), root)).rejects.toThrow();
 });
-it("keeps artifacts out of checkpoint and read-only worktree cleanup", async () => {
+it("keeps artifacts out of checkpoints", async () => {
   const f = await fixture(); roots.push(f.root);
   const trees = new Worktrees(f.ws), workspace = await trees.prepare(f.job);
   await prepareArtifacts(f.job, f.root);
@@ -52,7 +50,6 @@ it("keeps artifacts out of checkpoint and read-only worktree cleanup", async () 
   await writeFile(join(workspace.cwd, "change.txt"), "tracked change");
   await trees.checkpoint(workspace, 1);
   expect(await git(workspace.cwd, "ls-files")).not.toContain("artifacts");
-  await trees.reset(workspace);
   expect(await readFile(image, "utf8")).toBe("keep");
 });
 it.each([false, true])("delivers the artifact path to new/resumed Codex sessions (resume=%s)", async (resume) => {

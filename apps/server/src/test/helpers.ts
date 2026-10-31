@@ -16,8 +16,8 @@ export async function seedProjectAndAgent(app: Hono): Promise<{ projectId: strin
   return { projectId: project.json.data.id, agentId: agent.json.data.id };
 }
 
-export async function createTodo(app: Hono, projectId: string, agentId: string, mode: "plan" | "run" = "plan", title = "Test todo"): Promise<string> {
-  const todo = await requestJson(app, "/api/todos", "POST", { projectId, title, spec: "Implement the test", agentId, mode });
+export async function createTodo(app: Hono, projectId: string, agentId: string, title = "Test todo"): Promise<string> {
+  const todo = await requestJson(app, "/api/todos", "POST", { projectId, title, spec: "Implement the test", agentId });
   return todo.json.data.id;
 }
 
