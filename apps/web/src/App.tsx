@@ -9,6 +9,7 @@ import { Command, PanelLeft } from "lucide-react";
 import { DesktopIntegration } from "./components/DesktopIntegration";
 import { Sidebar } from "./components/Sidebar";
 import { NewTaskDialog } from "./components/NewTaskDialog";
+import { useCurrentWorkspaceId } from "./hooks/useCurrentWorkspace";
 import { useStored } from "./hooks/usePreferences";
 import { Home, Workspace } from "./pages/Workspace";
 import { WorkspaceSettingsPage } from "./pages/Workspaces";
@@ -25,6 +26,7 @@ export function App() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [newTask, setNewTask] = useState(false);
   const location = useLocation();
+  const workspaceId = useCurrentWorkspaceId();
   const toggleSidebar = () => {
     if (window.innerWidth < 768) setMobileOpen((prior) => !prior);
     else setCollapsed((prior) => !prior);
@@ -89,7 +91,7 @@ export function App() {
       </main>
       {newTask && (
         <NewTaskDialog
-          initialProjectId={location.pathname.match(/^\/w\/([^/]+)/)?.[1]}
+          initialProjectId={workspaceId}
           onClose={() => setNewTask(false)}
         />
       )}

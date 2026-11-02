@@ -2354,6 +2354,8 @@ input, textarea, select, .button { border-radius: var(--control-radius); }
 .tabs button:hover:not(:disabled) { color: var(--text-primary); }
 .task-footer .row { flex-wrap: wrap; justify-content: flex-end; }
 .muster-desktop.muster-mac .page-header select { -webkit-app-region: no-drag; }
+/* The restore button floats over the draggable page header; without no-drag Electron swallows its clicks. */
+.muster-desktop .sidebar-restore { -webkit-app-region: no-drag; }
 :root.muster-fullscreen .muster-desktop.muster-mac .sidebar { padding-top: 11px; }
 @media (min-width: 768px) and (max-width: 1050px) {
   .workspace .mobile-panel-tabs { display: flex; gap: 4px; }
@@ -2387,11 +2389,6 @@ input.lg, select.lg { min-height: var(--control-lg); height: var(--control-lg); 
 /* Shared quiet surfaces and embedded settings pages. */
 body { font-family: Inter, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; font-variant-numeric: tabular-nums; }
 svg { stroke-width: 1.75; }
-.sidebar-footer { display: flex; align-items: center; border-top: 1px solid var(--border-default); gap: 4px; }
-.sidebar-footer .connection-label { flex: 1; min-width: 0; }
-.sidebar-footer .connection-label > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-footer .nav-item { width: auto; flex: none; }
-.sidebar-footer .nav-item span, .sidebar-footer .nav-item kbd { display: none; }
 .profile-hero { border: 0; border-radius: 0; background: transparent; }
 .profile-identity { display: grid; grid-template-columns: 48px 1fr; align-items: center; justify-items: start; gap: 4px 12px; padding: 0 0 24px; margin: 0; text-align: left; }
 .profile-identity .avatar { grid-row: 1 / 4; width: 48px; height: 48px; border: 1px solid var(--border-default); font-size: 16px; }
@@ -2444,13 +2441,47 @@ svg { stroke-width: 1.75; }
 .link-button:disabled { cursor: default; opacity: 0.7; }
 .agent-configuration .setting-control .model-field select { width: 100%; }
 
-/* Workspaces are the primary navigation. */
-.sidebar-heading { padding: 8px 10px 4px; font-size: 11px; color: var(--text-dim); }
-.topic-list.workspace-list { margin: 0 0 6px; padding-left: 0; border-left: 0; }
-.workspace-item { height: 31px; }
-.workspace-item > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-item .project-monogram { width: 18px; height: 18px; font-size: 10px; }
-.sidebar.collapsed .workspace-item > span:nth-child(2), .sidebar.collapsed .sidebar-heading { display: none; }
+/* Sidebar: the current workspace (switcher, main conversation, tasks) on top; configuration above settings at the bottom. */
+.sidebar-heading { padding: 12px 9px 4px; font-size: 11px; color: var(--text-dim); }
+.sidebar .sidebar-brand { gap: 4px; }
+.workspace-switcher { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 34px; padding: 0 8px 0 5px; border: 1px solid var(--border-default); border-radius: 7px; background: var(--surface-secondary); color: var(--text-primary); text-align: left; }
+.workspace-switcher:hover { border-color: var(--border-strong); }
+.workspace-switcher strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.workspace-switcher > svg { color: var(--text-tertiary); flex-shrink: 0; }
+.workspace-switcher .project-monogram, .workspace-switcher .brand-icon { width: 22px; height: 22px; font-size: 10px; }
+.workspace-menu { position: fixed; z-index: 40; width: 228px; max-height: 60vh; overflow-y: auto; padding: 4px; background: var(--surface-secondary); border: 1px solid var(--border-strong); border-radius: 8px; box-shadow: 0 8px 24px #0003; -webkit-app-region: no-drag; }
+.workspace-menu-item { display: flex; align-items: center; gap: 8px; width: 100%; height: 32px; padding: 0 8px; border-radius: 5px; color: var(--text-secondary); font-size: 12px; text-align: left; }
+.workspace-menu-item:hover, .workspace-menu-item:focus-visible { background: var(--surface-tertiary); color: var(--text-primary); }
+.workspace-menu-item > span:not(.topic-status) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-menu-item .project-monogram { width: 18px; height: 18px; font-size: 10px; }
+.workspace-menu-separator { height: 1px; margin: 4px 2px; background: var(--border-default); }
+.conversation-item { height: auto; padding-top: 6px; padding-bottom: 6px; }
+.nav-item .nav-text { display: flex; flex-direction: column; flex: 1; min-width: 0; line-height: 1.35; }
+.nav-item .nav-text > span { color: inherit; }
+.nav-item .nav-text small { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-item .spin { color: var(--accent); }
+.new-task-item { width: 100%; text-align: left; }
+.task-list { margin: 2px 0 0 17px; padding-left: 8px; border-left: 1px solid var(--border-default); }
+.task-item > span:last-child { flex: 1; min-width: 0; }
+.task-item.active { background: var(--surface-tertiary); color: var(--text-primary); }
+.task-list-empty { padding: 6px 8px; font-size: 11px; color: var(--text-dim); }
+.task-list-more { display: block; padding: 5px 8px; font-size: 11px; color: var(--text-tertiary); }
+.task-list-more:hover { color: var(--text-secondary); }
+.sidebar-footer { display: flex; flex-direction: column; border-top: 1px solid var(--border-default); padding-top: 6px; }
+.sidebar-footer .nav-item { margin-bottom: 1px; }
+.sidebar-footer .nav-item > span:nth-child(2) { flex: 1; }
+.settings-status { width: 6px; height: 6px; }
+.settings-status.warning { background: var(--warning); }
+.sidebar.collapsed .sidebar-heading, .sidebar.collapsed .task-list, .sidebar.collapsed .nav-text, .sidebar.collapsed .workspace-switcher strong, .sidebar.collapsed .workspace-switcher > svg { display: none; }
+.sidebar.collapsed .workspace-switcher { flex: none; justify-content: center; width: 38px; padding: 0; margin: 0 auto; }
+.sidebar.collapsed .conversation-item { position: relative; }
+.sidebar.collapsed .conversation-item > .topic-status, .sidebar.collapsed .conversation-item > .spin { position: absolute; top: 5px; right: 8px; }
+@media (max-width: 767px) {
+  .sidebar.collapsed .sidebar-heading, .sidebar.collapsed .task-list, .sidebar.collapsed .nav-text { display: revert; }
+  .sidebar.collapsed .nav-text { display: flex; }
+  .sidebar.collapsed .workspace-switcher strong, .sidebar.collapsed .workspace-switcher > svg { display: revert; }
+  .sidebar.collapsed .workspace-switcher { flex: 1; justify-content: flex-start; width: auto; padding: 0 8px 0 5px; margin: 0; }
+}
 .panel-heading-action { font-size: 12px; }
 
 /* The latest agent output or tool call on a running task card. */

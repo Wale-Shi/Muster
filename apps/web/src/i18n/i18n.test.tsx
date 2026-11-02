@@ -18,7 +18,7 @@ describe("dictionary", () => {
     const { t, formatNumber, formatRelative, formatDuration, formatDate } = createI18n();
     expect(t("count.active", { count: 2 })).toBe("2 个活跃任务");
     expect(t("text.editMessage", { content: "Atlas {test}" })).toBe("编辑：Atlas {test}");
-    expect(t("ws.masterOf", { name: "Shop" })).toBe("Shop 的 master agent");
+    expect(t("ws.conversationWith", { name: "Shop" })).toBe("与 Shop 对话");
     expect(formatNumber(12345)).toBe(new Intl.NumberFormat("zh-CN").format(12345));
     expect(formatRelative(0, 120000)).toBe(new Intl.RelativeTimeFormat("zh-CN", { numeric: "auto", style: "short" }).format(-2, "minute"));
     expect(formatDuration(120000)).toBe(new Intl.NumberFormat("zh-CN", { style: "unit", unit: "minute", unitDisplay: "narrow" }).format(2));

@@ -29,13 +29,14 @@ import { DoneDialog } from "../components/DoneDialog";
 import { Resizable } from "../components/Resizable";
 import { Avatar, ErrorNotice, Loading } from "../components/ui";
 import { WorkspaceEmpty } from "./Workspaces";
+import { useCurrentWorkspaceId } from "../hooks/useCurrentWorkspace";
 
-/** `/` opens the first workspace, or offers to create one. */
+/** `/` opens the last workspace used (or the first), or offers to create one. */
 export function Home() {
   const projects = useProjects();
+  const current = useCurrentWorkspaceId();
   if (projects.isPending) return <Loading />;
-  const first = projects.data?.[0];
-  return first ? <Navigate replace to={`/w/${first.id}`} /> : <WorkspaceEmpty error={projects.error} />;
+  return current ? <Navigate replace to={`/w/${current}`} /> : <WorkspaceEmpty error={projects.error} />;
 }
 
 /** One workspace: its master agent's conversation beside the workspace's task board. */
@@ -163,10 +164,11 @@ export function Workspace({ onNewTask }: { onNewTask: () => void }) {
           onSwipe={setMobileSide}
           left={
             <div className="conversation-panel">
-              <div className="panel-heading">
+              <div className="panel-heading" title={t("ws.conversationHelp")}>
+                <MessageSquare size={14} />
+                <strong>{t("ws.mainConversation")}</strong>
                 <Avatar name={master?.name ?? "Chief"} small />
-                <strong>{master?.name ?? "Chief"}</strong>
-                <span className="muted">{t("ws.masterOf", { name: workspace.name })}</span>
+                <span className="muted">{t("ws.conversationWith", { name: master?.name ?? "Chief" })}</span>
                 {master && <Link className="link panel-heading-action" to={`/agents/${master.id}`}>{t("ws.masterSettings")}</Link>}
               </div>
               <Conversation

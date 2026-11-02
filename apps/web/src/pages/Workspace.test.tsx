@@ -27,8 +27,8 @@ it("starts with the board at the desktop minimum and lets the user switch to the
 it("talks to the workspace's own master agent and links its settings", () => {
   vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
   render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><Workspace onNewTask={() => {}} /></MemoryRouter></QueryClientProvider>);
-  expect(screen.getByText("Shop 的 master agent")).toBeInTheDocument();
-  expect(screen.getAllByText("Lead").length).toBeGreaterThan(0);
+  expect(screen.getByText("主会话")).toBeInTheDocument();
+  expect(screen.getByText("与 Lead 对话")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Agent 设置" })).toHaveAttribute("href", "/agents/lead");
   expect(screen.getByRole("link", { name: "工作空间设置" })).toHaveAttribute("href", "/w/shop/settings");
 });

@@ -185,7 +185,7 @@ export function Board({
     <div className="board">
       <div className="board-toolbar">
         <span className="muted board-title">
-          {t("ui.allTasks")}{" "}
+          {t("ws.tasks")}{" "}
           <span className="dim">
             {formatNumber(todos.filter((todo) => todo.phase !== "closed").length)}
           </span>

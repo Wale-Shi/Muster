@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Todo } from "@muster/shared";
-import { Sidebar, connectionStatus, workspaceStatus } from "./Sidebar";
+import { Sidebar, activeTasks, connectionStatus, workspaceStatus } from "./Sidebar";
 
 beforeEach(() => {
   Object.defineProperty(HTMLDialogElement.prototype, "showModal", { configurable: true, value: function (this: HTMLDialogElement) { this.open = true; } });
@@ -29,7 +29,10 @@ vi.mock("../api/queries", () => ({
     { id: "shop", name: "Shop", topicId: "shop-topic" },
     { id: "docs", name: "Docs", topicId: "docs-topic" },
   ] }),
-  useTodos: () => ({ data: [{ id: "task", projectId: "docs", phase: "review" }] }),
+  useTodos: () => ({ data: [
+    { id: "task", number: 3, title: "Fix links", projectId: "docs", phase: "review" },
+    { id: "old", number: 1, title: "Old", projectId: "docs", phase: "done" },
+  ] }),
   useMachines: () => ({ data: [] }),
   useAgents: () => ({ data: [] }),
 }));
@@ -51,15 +54,26 @@ describe("workspace navigation", () => {
     expect(workspaceStatus(project, [task("building", "other")], false, true)).toBe("unread");
     expect(workspaceStatus(project, [task("done")], false, false)).toBe("idle");
   });
-  it("lists workspaces with their status and only the kept sections", async () => {
-    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter><Sidebar collapsed={false} mobileOpen={false} onToggle={vi.fn()} onCloseMobile={vi.fn()} onNewTask={vi.fn()} /></MemoryRouter></QueryClientProvider>);
-    expect(screen.getByRole("link", { name: /Shop/ })).toHaveAttribute("href", "/w/shop");
-    expect(screen.getByRole("link", { name: /Docs/ })).toHaveAttribute("href", "/w/docs");
+  it("orders active tasks by what needs you first", () => {
+    const todo = (id: string, phase: Todo["phase"], number: number) => ({ id, phase, number, projectId: "p" }) as Todo;
+    const list = activeTasks([todo("a", "building", 1), todo("b", "review", 2), todo("c", "done", 3), todo("d", "failed", 4), todo("e", "review", 5)], "p");
+    expect(list.map((item) => item.id)).toEqual(["d", "e", "b", "a"]);
+  });
+  it("shows the current workspace's conversation and tasks, with configuration at the bottom", async () => {
+    const onNewTask = vi.fn();
+    render(<QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={["/w/docs"]}><Sidebar collapsed={false} mobileOpen={false} onToggle={vi.fn()} onCloseMobile={vi.fn()} onNewTask={onNewTask} /></MemoryRouter></QueryClientProvider>);
+    const user = userEvent.setup();
+    expect(screen.getByRole("button", { name: /Docs/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /主会话/ })).toHaveAttribute("href", "/w/docs");
+    expect(screen.getByRole("link", { name: /#3 Fix links/ })).toHaveAttribute("href", "/todos/task");
+    expect(screen.queryByRole("link", { name: /#1 Old/ })).not.toBeInTheDocument();
+    for (const name of ["Agent", "技能", "连接", "设置"]) expect(screen.getByRole("link", { name: new RegExp(`^${name}`) })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "新建任务" }));
+    expect(onNewTask).toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: /Docs/ }));
+    expect(screen.getByRole("menuitem", { name: /Shop/ })).toHaveAttribute("href", "/w/shop");
     expect(screen.getByLabelText("运行中")).toBeInTheDocument();
-    expect(screen.getByLabelText("待你处理")).toBeInTheDocument();
-    for (const name of ["Agent", "技能", "连接", "设置"]) expect(screen.getByRole("link", { name })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /定时|Schedules/ })).not.toBeInTheDocument();
-    await userEvent.setup().click(screen.getByRole("button", { name: "新建工作空间" }));
+    await user.click(screen.getByRole("menuitem", { name: "新建工作空间" }));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 });
