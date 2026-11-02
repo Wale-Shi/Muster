@@ -15,7 +15,7 @@
     "prepare": "npm run build"
   },
   "dependencies": {
-    "@muster/shared": "0.2.1",
+    "@muster/shared": "0.2.2",
     "@modelcontextprotocol/sdk": "^1.32.0"
   },
   "devDependencies": {
