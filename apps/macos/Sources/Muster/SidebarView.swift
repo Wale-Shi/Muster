@@ -7,10 +7,12 @@ struct SidebarView: View {
   var newWorkspace: () -> Void
   var newTask: () -> Void
   @State private var showDone = false
+  @State private var query = ""
 
   var body: some View {
     let project = store.workspace
-    let tasks = store.tasks(in: project?.id)
+    let needle = query.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: "#", with: "")
+    let tasks = store.tasks(in: project?.id).filter { needle.isEmpty || $0.title.localizedCaseInsensitiveContains(needle) || "\($0.number)".hasPrefix(needle) }
     let needsYou = tasks.filter { $0.phase.needsYou }.sorted { ($0.phase == .failed ? 0 : 1, -$0.number) < ($1.phase == .failed ? 0 : 1, -$1.number) }
     let running = tasks.filter { $0.phase.running }.sorted { $0.number > $1.number }
     let backlog = tasks.filter { $0.phase == .todo }.sorted { $0.number > $1.number }
@@ -64,6 +66,7 @@ struct SidebarView: View {
       }
     }
     .listStyle(.sidebar)
+    .searchable(text: $query, placement: .sidebar, prompt: "搜索任务")
     .safeAreaInset(edge: .top, spacing: 0) { WorkspacePicker(newWorkspace: newWorkspace).padding(.horizontal, 10).padding(.top, 2).padding(.bottom, 8) }
     .safeAreaInset(edge: .bottom, spacing: 0) { ConnectionFooter() }
     .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 380)
@@ -110,6 +113,7 @@ struct TaskRow: View {
             }
             .font(.system(size: 10.5, design: .monospaced))
             .foregroundStyle(Color.muster)
+            .dimsWhenInactive()
             .contentTransition(.opacity)
             .animation(.easeOut(duration: 0.2), value: live.text)
           } else {
@@ -173,7 +177,6 @@ private struct WorkspacePicker: View {
       }
       .padding(.horizontal, 8).padding(.vertical, 7)
       .contentShape(RoundedRectangle(cornerRadius: 10))
-      .glassSurface(cornerRadius: 12, interactive: true)
     }
     .menuStyle(.button)
     .buttonStyle(.plain)
@@ -196,9 +199,7 @@ private struct ConnectionFooter: View {
       Text(text).font(.caption).foregroundStyle(.secondary)
       Spacer()
     }
-    .padding(.horizontal, 12).padding(.vertical, 8)
-    .glassSurface(cornerRadius: 10)
-    .padding(.horizontal, 10).padding(.bottom, 10)
+    .padding(.horizontal, 16).padding(.vertical, 12)
     .help(store.machines.map { "\($0.name)：\($0.online == true ? "在线" : "离线")" }.joined(separator: "\n"))
   }
 }

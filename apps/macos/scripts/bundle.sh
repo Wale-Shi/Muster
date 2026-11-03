@@ -48,7 +48,9 @@ rm -f "$stage/package-lock.json"
 
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp "$binary" "$app/Contents/MacOS/Muster"
+# SwiftPM records the deployment target as the SDK version, which makes macOS run the app in its
+# compatibility appearance (no Liquid Glass). Record the SDK it was really built with, like Xcode does.
+vtool -set-build-version macos 15.0 "$(xcrun --sdk macosx --show-sdk-version)" -replace -output "$app/Contents/MacOS/Muster" "$binary"
 cp "$here/Resources/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 # Package resources (Textual's syntax highlighter, math fonts) are found through Bundle.main.resourceURL.
 for bundle in "$bin"/*.bundle; do [ -e "$bundle" ] && cp -R "$bundle" "$app/Contents/Resources/"; done

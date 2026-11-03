@@ -35,19 +35,20 @@ struct TaskView: View {
       initialSpec: todo.spec
     )
     .id(build?.id ?? todo.id)
-    .safeAreaInset(edge: .top, spacing: 0) {
+    // No background of our own: content scrolls under the header and the system draws the scroll-edge effect.
+    .edgeBar(.top) {
       VStack(alignment: .leading, spacing: 14) {
         Header(todo: todo, detail: detail, agent: agent)
-        DecisionCard(todo: todo, detail: detail, agent: agent, inspector: $inspector, complete: { completing = true }, rerun: { rerunning = true })
+        DecisionCard(todo: todo, detail: detail, agent: agent, inspector: $inspector)
       }
-      .padding(.horizontal, 28).padding(.top, 18).padding(.bottom, 14)
+      .padding(.horizontal, 28).padding(.top, 14).padding(.bottom, 12)
       .frame(maxWidth: 836)
       .frame(maxWidth: .infinity)
-      .background(.bar)
     }
     .navigationTitle("#\(todo.number) \(todo.title)")
     .navigationSubtitle(store.project(todo.projectId)?.name ?? "")
-    .inspector(isPresented: $inspector) {
+    // A task without a diff yet has nothing to inspect; the inspector stays out of the way until it does.
+    .inspector(isPresented: Binding(get: { inspector && Self.hasChanges(detail) }, set: { inspector = $0 })) {
       ChangesInspector(detail: detail).inspectorColumnWidth(min: 340, ideal: 540, max: 960)
     }
     .toolbar { actions(todo, detail) }
@@ -65,6 +66,8 @@ struct TaskView: View {
     ))
   }
 
+  static func hasChanges(_ detail: TodoDetail) -> Bool { detail.builds.contains { $0.documents.contains { $0.kind == "changes" } } }
+
   static func disabledReason(_ phase: Phase) -> String? {
     switch phase {
     case .queued, .building, .review: nil
@@ -74,22 +77,46 @@ struct TaskView: View {
   }
 
   @ToolbarContentBuilder private func actions(_ todo: Todo, _ detail: TodoDetail) -> some ToolbarContent {
-    ToolbarItemGroup(placement: .primaryAction) {
-      if todo.phase.running {
+    // The one thing to do next, as the toolbar's prominent glass button.
+    ToolbarItem(placement: .primaryAction) {
+      switch todo.phase {
+      case .review:
+        Button { completing = true } label: { Label("完成并合并", systemImage: "arrow.triangle.merge").labelStyle(.titleAndIcon) }
+          .glassProminentButton(tint: .orange).keyboardShortcut(.return, modifiers: .command).help("完成并把分支合并到基准分支（⌘↩）")
+      case .failed:
+        Button { rerunning = true } label: { Label("重新运行", systemImage: "arrow.clockwise").labelStyle(.titleAndIcon) }
+          .glassProminentButton(tint: .red).keyboardShortcut("r").help("重新运行（⌘R）")
+      case .todo:
+        Button { Task { await store.act(todo, .start) } } label: { Label("开始", systemImage: "play.fill").labelStyle(.titleAndIcon) }
+          .glassProminentButton(tint: .muster).keyboardShortcut(.return, modifiers: .command).help("开始执行（⌘↩）")
+      case .queued, .building:
         let active = ["queued", "running"].contains(detail.builds.last?.turns.last?.status ?? "")
-        Button { Task { await store.act(todo, .stop) } } label: { Label("停止", systemImage: "stop.fill") }.disabled(!active).help("请求 Agent 停下（⌘.）")
+        Button { Task { await store.act(todo, .stop) } } label: { Label("停止", systemImage: "stop.fill").labelStyle(.titleAndIcon) }
+          .disabled(!active).help("请求 Agent 停下（⌘.）")
+      case .done, .closed:
+        Button { Task { await store.act(todo, .reopen) } } label: { Label("重新打开", systemImage: "arrow.uturn.backward").labelStyle(.titleAndIcon) }
       }
+    }
+    ToolbarGap()
+    ToolbarItemGroup(placement: .primaryAction) {
       Menu {
-        if [.done, .closed].contains(todo.phase) { Button("重新打开") { Task { await store.act(todo, .reopen) } } }
-        else { Button("关闭任务") { Task { await store.act(todo, .close) } }.keyboardShortcut(.delete) }
+        if ![.done, .closed].contains(todo.phase) { Button("关闭任务") { Task { await store.act(todo, .close) } } }
         if todo.phase == .failed { Button("重新运行…") { rerunning = true } }
         Divider()
         if let branch = detail.builds.last?.branch { Button("复制分支名") { Clipboard.copy(branch) } }
         Button("复制任务编号") { Clipboard.copy("#\(todo.number)") }
       } label: { Label("更多", systemImage: "ellipsis") }
       .help("更多操作")
-      Button { withAnimation(.snappy) { inspector.toggle() } } label: { Label("变更", systemImage: "sidebar.right") }.help("显示或隐藏变更（⌘⌥I）")
+      Button { withAnimation(.snappy) { inspector.toggle() } } label: { Label("变更", systemImage: "sidebar.trailing") }
+        .disabled(!Self.hasChanges(detail)).help(Self.hasChanges(detail) ? "显示或隐藏变更（⌘⌥I）" : "还没有变更")
     }
+  }
+}
+
+/// Splits toolbar glass groups on macOS 26+; nothing before that.
+struct ToolbarGap: ToolbarContent {
+  var body: some ToolbarContent {
+    if #available(macOS 26, *) { ToolbarSpacer(.fixed, placement: .primaryAction) }
   }
 }
 
@@ -125,15 +152,12 @@ private struct Header: View {
   }
 }
 
-/// The moment the task needs you: what happened, and the one action to take.
+/// The moment the task needs you, as content: what happened. The action itself is the toolbar's prominent button.
 private struct DecisionCard: View {
-  @Environment(Store.self) private var store
   var todo: Todo
   var detail: TodoDetail
   var agent: Agent?
   @Binding var inspector: Bool
-  var complete: () -> Void
-  var rerun: () -> Void
 
   var body: some View {
     let build = detail.builds.last
@@ -142,41 +166,39 @@ private struct DecisionCard: View {
     let name = agent?.name ?? "Agent"
     switch todo.phase {
     case .review:
-      card(tint: .orange, symbol: "checkmark.seal.fill",
-           title: "\(name) 完成了，等你验收",
-           detail: Text(files.isEmpty ? "这次构建没有记录 diff" : "\(files.count) 个文件 · ") + Text(files.isEmpty ? "" : "+\(added)").foregroundColor(.green) + Text(files.isEmpty ? "" : " −\(removed)").foregroundColor(.red) + Text(build.map { " · 用时 \(Format.duration($0.durationMs))" } ?? "")) {
-        if !inspector { Button { withAnimation(.snappy) { inspector = true } } label: { Text("查看变更") }.secondaryAction().fixedSize() }
-        Button(action: complete) { Label("完成并合并", systemImage: "arrow.triangle.merge") }.primaryAction(tint: .orange).fixedSize().keyboardShortcut(.return, modifiers: .command).help("完成并把分支合并到基准分支（⌘↩）")
+      card(tint: .orange, symbol: "checkmark.seal.fill", title: "\(name) 完成了，等你验收",
+           detail: Text(files.isEmpty ? "这次构建没有记录 diff" : "\(files.count) 个文件  ") + Text(files.isEmpty ? "" : "+\(added)").foregroundColor(.green) + Text(files.isEmpty ? "" : " −\(removed)").foregroundColor(.red) + Text(build.map { "  ·  用时 \(Format.duration($0.durationMs))" } ?? ""),
+           hint: "⌘↩ 完成并合并") {
+        if !files.isEmpty && !inspector { Button("查看变更") { withAnimation(.snappy) { inspector = true } }.buttonStyle(.link) }
       }
     case .failed:
-      let error = build?.turns.last?.error
       card(tint: .red, symbol: "xmark.octagon.fill", title: "\(name) 没能完成这个任务",
-           detail: Text(error.map { String($0.prefix(240)) } ?? "查看下方对话了解失败原因")) {
-        Button(action: rerun) { Label("重新运行…", systemImage: "arrow.clockwise") }.primaryAction(tint: .red).fixedSize().keyboardShortcut("r")
-      }
+           detail: Text(build?.turns.last?.error.map { String($0.prefix(240)) } ?? "查看下方对话了解失败原因"), hint: "⌘R 重新运行") { EmptyView() }
     case .todo:
-      card(tint: .muster, symbol: "play.circle.fill", title: "这个任务还没开始", detail: Text("开始后 \(name) 会在独立的 worktree 和分支里执行。")) {
-        Button { Task { await store.act(todo, .start) } } label: { Label("开始", systemImage: "play.fill") }.primaryAction().fixedSize().keyboardShortcut(.return, modifiers: .command)
-      }
+      card(tint: .muster, symbol: "play.circle.fill", title: "这个任务还没开始", detail: Text("开始后 \(name) 会在独立的 worktree 和分支里执行。"), hint: "⌘↩ 开始") { EmptyView() }
     default:
       EmptyView()
     }
   }
 
-  private func card<Actions: View>(tint: Color, symbol: String, title: String, detail: Text, @ViewBuilder actions: () -> Actions) -> some View {
+  private func card<Actions: View>(tint: Color, symbol: String, title: String, detail: Text, hint: String, @ViewBuilder actions: () -> Actions) -> some View {
     HStack(spacing: 14) {
       Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(tint).symbolRenderingMode(.hierarchical)
       VStack(alignment: .leading, spacing: 3) {
-        Text(title).font(.headline).lineLimit(1).layoutPriority(1)
+        Text(title).font(.headline).lineLimit(1)
         detail.font(.callout).foregroundStyle(.secondary).lineLimit(2)
       }
       Spacer(minLength: 12)
-      HStack(spacing: 8) { actions() }
+      VStack(alignment: .trailing, spacing: 4) {
+        actions()
+        Text(hint).font(.caption).foregroundStyle(.tertiary)
+      }
+      .fixedSize()
     }
-    .padding(.horizontal, 16).padding(.vertical, 14)
-    .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(tint.opacity(0.28)))
-    .transition(.move(edge: .top).combined(with: .opacity))
+    .padding(.horizontal, 16).padding(.vertical, 13)
+    .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(tint.opacity(0.25)))
+    .dimsWhenInactive()
   }
 }
 

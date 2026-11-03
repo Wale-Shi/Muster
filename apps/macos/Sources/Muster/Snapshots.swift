@@ -6,6 +6,8 @@ import AppKit
 @MainActor
 enum Snapshots {
   static let requested = CommandLine.arguments.contains("--snapshot")
+  /// `--offscreen` renders without the window server, so glass falls back to materials.
+  static let offscreen = requested && CommandLine.arguments.contains("--offscreen")
   private static var windows: [NSWindow] = []
 
   static func run() {
@@ -26,27 +28,48 @@ enum Snapshots {
       ("failed-dark", .task("t4"), .darkAqua),
     ]
     Task {
+      let previous = NSWorkspace.shared.frontmostApplication
       for (name, route, appearance) in shots {
         store.route = route
-        let window = NSWindow(contentRect: NSRect(x: -4000, y: 200, width: 1360, height: 860), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-        window.appearance = NSAppearance(named: appearance)
-        window.titlebarAppearsTransparent = true
-        window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(rootView: RootView().environment(store).environment(model))
-        window.setFrameOrigin(NSPoint(x: -4000, y: 200))
-        window.orderFront(nil)
-        windows.append(window)
-        try? await Task.sleep(for: .seconds(1.5))
-        guard let frame = window.contentView?.superview else { continue }
-        if let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) {
-          frame.cacheDisplay(in: frame.bounds, to: rep)
-          try? rep.representation(using: .png, properties: [:])?.write(to: dir.appending(path: "\(name).png"))
+        let file = dir.appending(path: "\(name).png")
+        if offscreen {
+          let window = NSWindow(contentRect: NSRect(x: -4000, y: 200, width: 1360, height: 860), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+          window.appearance = NSAppearance(named: appearance)
+          window.isReleasedWhenClosed = false
+          window.contentView = NSHostingView(rootView: RootView().environment(store).environment(model))
+          window.orderFront(nil)
+          windows.append(window)
+          try? await Task.sleep(for: .seconds(1.5))
+          if let frame = window.contentView?.superview, let rep = frame.bitmapImageRepForCachingDisplay(in: frame.bounds) {
+            frame.cacheDisplay(in: frame.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?.write(to: file)
+          }
+          window.orderOut(nil)
+        } else {
+          // The real scene window, active, as the window server composites it: glass, floating sidebar and all.
+          NSApp.appearance = NSAppearance(named: appearance)
+          NSApp.activate(ignoringOtherApps: true)
+          guard let window = NSApp.windows.first(where: { $0.isVisible && $0.frame.width > 700 }) else { print("no main window"); continue }
+          if window.frame.size != NSSize(width: 1360, height: 860) { window.setContentSize(NSSize(width: 1360, height: 860)); window.center() }
+          window.makeKeyAndOrderFront(nil)
+          try? await Task.sleep(for: .seconds(2.5))
+          if let image = capture(window), let data = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) { try? data.write(to: file) }
+          print("\(name): key=\(window.isKeyWindow) active=\(NSApp.isActive)")
         }
-        window.orderOut(nil)
       }
+      if !offscreen, let previous, previous != NSRunningApplication.current { previous.activate() }
       print("Snapshots written to \(dir.path)")
       exit(0)
     }
+  }
+
+  /// The window as the window server composites it, glass included. A process may always capture its own windows.
+  private static func capture(_ window: NSWindow) -> CGImage? {
+    typealias Fn = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+    guard let handle = dlopen(nil, RTLD_NOW), let symbol = dlsym(handle, "CGWindowListCreateImage") else { return nil }
+    let create = unsafeBitCast(symbol, to: Fn.self)
+    // Including the given window only; ignore framing (shadow); best resolution.
+    return create(.null, 1 << 3, UInt32(window.windowNumber), (1 << 0) | (1 << 3))?.takeRetainedValue()
   }
 
   private static func iso(_ minutesAgo: Double) -> String {

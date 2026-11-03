@@ -135,6 +135,7 @@ struct ChangesInspector: View {
               }
             }
           }
+          .hardTopScrollEdge()
         }
       }
     }

@@ -50,6 +50,7 @@ struct PhaseGlyph: View {
   var body: some View {
     Image(systemName: phase.symbol)
       .foregroundStyle(phase.color)
+      .dimsWhenInactive()
       .symbolEffect(.pulse, options: .repeating, isActive: phase == .building)
       .help(phase.label)
       .accessibilityLabel(phase.label)
@@ -135,33 +136,79 @@ struct ErrorBanner: View {
   }
 }
 
-// MARK: Surfaces
+// MARK: Liquid Glass
+//
+// Glass is the control layer that floats above content: the toolbar, the composer, floating buttons.
+// Content (messages, cards, the board) never sits on glass, and nothing glass goes inside the sidebar,
+// which is already glass. Before macOS 26 the same places use materials.
 
 extension View {
-  /// Liquid Glass on macOS 26+, a material card with a hairline edge before that.
+  /// A floating control surface: Liquid Glass on macOS 26+, a material with a hairline edge before that.
   @ViewBuilder func glassSurface(cornerRadius: CGFloat = 16, tint: Color? = nil, interactive: Bool = false) -> some View {
     // Offscreen snapshots cannot draw glass, so they show the fallback.
-    if #available(macOS 26, *), !Snapshots.requested {
+    if #available(macOS 26, *), !Snapshots.offscreen {
       glassEffect(interactive ? Glass.regular.tint(tint).interactive() : Glass.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
     } else {
-      background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
-        .background((tint ?? .clear).opacity(0.12), in: RoundedRectangle(cornerRadius: cornerRadius))
-        .overlay(RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(.separator.opacity(0.6)))
-        .shadow(color: .black.opacity(0.08), radius: 10, y: 3)
+      background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).strokeBorder(.separator.opacity(0.6)))
+        .shadow(color: .black.opacity(0.12), radius: 14, y: 4)
     }
   }
 
-  /// The prominent action of a screen: glass prominent on macOS 26+, bordered prominent before that.
-  @ViewBuilder func primaryAction(tint: Color = .muster) -> some View {
-    if #available(macOS 26, *), !Snapshots.requested { buttonStyle(.glassProminent).tint(tint).controlSize(.large) }
-    else { buttonStyle(.borderedProminent).tint(tint).controlSize(.large) }
+  /// A floating circular control.
+  @ViewBuilder func glassCircle(interactive: Bool = true) -> some View {
+    if #available(macOS 26, *), !Snapshots.offscreen {
+      glassEffect(interactive ? .regular.interactive() : .regular, in: .circle)
+    } else {
+      background(.regularMaterial, in: Circle()).overlay(Circle().strokeBorder(.separator.opacity(0.6))).shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+    }
   }
 
-  @ViewBuilder func secondaryAction() -> some View {
-    if #available(macOS 26, *), !Snapshots.requested { buttonStyle(.glass).controlSize(.large) }
-    else { buttonStyle(.bordered).controlSize(.large) }
+  /// Morph identity inside a `GlassContainer`.
+  @ViewBuilder func glassID(_ id: String, in namespace: Namespace.ID) -> some View {
+    if #available(macOS 26, *) { glassEffectID(id, in: namespace) } else { self }
+  }
+
+  /// The prominent toolbar action: glass prominent on macOS 26+.
+  @ViewBuilder func glassProminentButton(tint: Color) -> some View {
+    if #available(macOS 26, *), !Snapshots.offscreen { buttonStyle(.glassProminent).tint(tint) }
+    else { buttonStyle(.borderedProminent).tint(tint) }
+  }
+
+  @ViewBuilder func glassButton() -> some View {
+    if #available(macOS 26, *), !Snapshots.offscreen { buttonStyle(.glass) } else { buttonStyle(.bordered) }
+  }
+
+  /// A bar pinned to an edge that content scrolls under, with the system scroll-edge effect (macOS 26+).
+  @ViewBuilder func edgeBar<Bar: View>(_ edge: VerticalEdge, @ViewBuilder _ bar: () -> Bar) -> some View {
+    if #available(macOS 26, *) { safeAreaBar(edge: edge, spacing: 0, content: bar) }
+    else { safeAreaInset(edge: edge, spacing: 0, content: bar) }
+  }
+
+  @ViewBuilder func softScrollEdges() -> some View {
+    if #available(macOS 26, *) { scrollEdgeEffectStyle(.soft, for: .all) } else { self }
+  }
+
+  @ViewBuilder func hardTopScrollEdge() -> some View {
+    if #available(macOS 26, *) { scrollEdgeEffectStyle(.hard, for: .top) } else { self }
   }
 }
+
+/// Groups glass shapes so they blend and morph together (macOS 26+).
+struct GlassContainer<Content: View>: View {
+  var spacing: CGFloat = 12
+  @ViewBuilder var content: Content
+  var body: some View {
+    if #available(macOS 26, *) { GlassEffectContainer(spacing: spacing) { content } } else { content }
+  }
+}
+
+/// Custom colours dim with the window when it is inactive, like system controls do.
+struct ActiveDimming: ViewModifier {
+  @Environment(\.appearsActive) private var active
+  func body(content: Content) -> some View { content.saturation(active ? 1 : 0.4).opacity(active ? 1 : 0.85) }
+}
+extension View { func dimsWhenInactive() -> some View { modifier(ActiveDimming()) } }
 
 /// An agent's face: a rounded square in a colour derived from its name, so each agent is recognisable at a glance.
 struct AgentAvatar: View {

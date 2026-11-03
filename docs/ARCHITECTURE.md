@@ -317,10 +317,14 @@ server/daemon/shared dist files with production dependencies (workspace links ma
 `Resources/runtime`, writes `Info.plist` (`dev.muster.desktop`) and signs ad hoc. `npm run mac:test` runs the Swift
 tests (diff parsing, response decoding, live lines). Agent Markdown is rendered by
 [Textual](https://github.com/gonzalezreal/textual) (code blocks highlighted with its Prism-based highlighter); the script
-copies SwiftPM resource bundles into `Contents/Resources`, where the generated accessors look first. On macOS 26+ the
-composer, workspace switcher, status pill and decision-card buttons use Liquid Glass (`glassEffect`, `.glassProminent`),
-with material fallbacks on macOS 15. `Muster --snapshot <dir>` renders the main screens with sample data to PNGs and
-quits, without a server; offscreen rendering cannot draw glass, so snapshots show the fallback surfaces. Skill import and connection editing are not native
+copies SwiftPM resource bundles into `Contents/Resources`, where the generated accessors look first. The script also restamps the
+binary's build version with `vtool` to the SDK it was built with: SwiftPM records the deployment target as the SDK, which
+makes macOS run the app in its pre-Liquid-Glass compatibility appearance. On macOS 26+ glass is used only for the control
+layer (toolbar, the composer and queued messages in one `GlassEffectContainer`, the jump-to-latest button); the primary
+task action is a `glassProminent` toolbar button; the task header and composer are `safeAreaBar`s so the system draws
+scroll-edge effects. macOS 15 gets material fallbacks. `Muster --snapshot <dir>` renders the main screens with sample
+data and no server, capturing the active scene window as composited (glass included); add `--offscreen` to render
+without the window server. Skill import and connection editing are not native
 yet; those views list items and open the web UI.
 
 ## Skills

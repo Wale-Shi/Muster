@@ -18,6 +18,8 @@ struct ConversationView: View {
   @State private var sending = false
   @State private var error: String?
   @State private var focus = 0
+  @State private var atBottom = true
+  @Namespace private var glass
 
   private var messages: [Message] { store.messages[conversationId] ?? [] }
   private var activity: Activity { store.activity[conversationId] ?? Activity() }
@@ -50,10 +52,15 @@ struct ConversationView: View {
       .defaultScrollAnchor(.bottom, for: .initialOffset)
       .defaultScrollAnchor(.bottom, for: .sizeChanges)
       .scrollContentBackground(.hidden)
-      .onChange(of: messages.last?.content) { proxy.scrollTo("bottom", anchor: .bottom) }
-      .onChange(of: messages.count) { withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) } }
+      .softScrollEdges()
+      .onScrollGeometryChange(for: Bool.self) { geo in
+        geo.visibleRect.maxY >= geo.contentSize.height - 80
+      } action: { _, bottom in withAnimation(.snappy) { atBottom = bottom } }
+      .onChange(of: messages.last?.content) { if atBottom { proxy.scrollTo("bottom", anchor: .bottom) } }
+      .onChange(of: messages.count) { if atBottom { withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) } } }
+      // The composer floats over the conversation as glass; content scrolls beneath it.
+      .edgeBar(.bottom) { composer { withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) } } }
     }
-    .safeAreaInset(edge: .bottom, spacing: 0) { composer }
     .task(id: conversationId) {
       if store.messages[conversationId] == nil { store.messages[conversationId] = [] }
       await store.loadMessages(conversationId)
@@ -61,36 +68,45 @@ struct ConversationView: View {
     }
   }
 
-  private var composer: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      QueuedList(conversationId: conversationId)
-      if let warning = activity.warning {
-        Label(warning, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange)
-      }
-      ErrorBanner(message: $error)
-      VStack(alignment: .leading, spacing: 6) {
-        Composer(text: $draft, placeholder: disabledReason ?? placeholder, disabled: disabledReason != nil, focusToken: focus, onSubmit: send)
-          .frame(minHeight: 40, maxHeight: 180)
-          .fixedSize(horizontal: false, vertical: true)
-        HStack(spacing: 8) {
-          AgentAvatar(name: agentName, size: 16)
-          Text(agentName).font(.caption.weight(.medium)).foregroundStyle(.secondary)
-          if let runtime { Text(Runtimes.label(runtime)).font(.caption).foregroundStyle(.tertiary) }
-          Spacer()
-          Text("↩ 发送  ⇧↩ 换行").font(.caption2).foregroundStyle(.tertiary)
-          Button(action: send) {
-            Image(systemName: sending ? "ellipsis" : "arrow.up")
-              .font(.system(size: 13, weight: .bold))
-              .frame(width: 28, height: 28)
-              .foregroundStyle(canSend ? .white : .secondary)
-              .background(canSend ? AnyShapeStyle(Color.muster) : AnyShapeStyle(.quaternary), in: Circle())
+  /// One glass container, so the queued messages, the jump button and the composer blend and morph together.
+  private func composer(jump: @escaping () -> Void) -> some View {
+    GlassContainer(spacing: 10) {
+      VStack(alignment: .trailing, spacing: 10) {
+        if !atBottom {
+          Button(action: jump) { Image(systemName: "arrow.down").font(.system(size: 13, weight: .semibold)).frame(width: 34, height: 34) }
+            .buttonStyle(.plain).glassCircle().glassID("jump", in: glass)
+            .help("回到最新消息").transition(.scale.combined(with: .opacity))
+        }
+        VStack(alignment: .leading, spacing: 8) {
+          QueuedList(conversationId: conversationId, namespace: glass)
+          if let warning = activity.warning {
+            Label(warning, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange)
+              .padding(.horizontal, 14).padding(.vertical, 8).glassSurface(cornerRadius: 14, tint: .orange)
           }
-          .buttonStyle(.plain).disabled(!canSend).help("发送（↩）")
-          .animation(.snappy(duration: 0.2), value: canSend)
+          ErrorBanner(message: $error)
+          VStack(alignment: .leading, spacing: 6) {
+            Composer(text: $draft, placeholder: disabledReason ?? placeholder, disabled: disabledReason != nil, focusToken: focus, onSubmit: send)
+              .frame(minHeight: 40, maxHeight: 180)
+              .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+              AgentAvatar(name: agentName, size: 16)
+              Text(agentName).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+              if let runtime { Text(Runtimes.label(runtime)).font(.caption).foregroundStyle(.tertiary) }
+              Spacer()
+              Text("↩ 发送  ⇧↩ 换行").font(.caption2).foregroundStyle(.tertiary)
+              Button(action: send) {
+                Image(systemName: sending ? "ellipsis" : "arrow.up").font(.system(size: 13, weight: .bold)).frame(width: 18, height: 18)
+              }
+              .glassProminentButton(tint: .muster)
+              .buttonBorderShape(.circle)
+              .disabled(!canSend).help("发送（↩）")
+            }
+          }
+          .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
+          .glassSurface(cornerRadius: 22)
+          .glassID("composer", in: glass)
         }
       }
-      .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 10)
-      .glassSurface(cornerRadius: 20)
     }
     .padding(.horizontal, 28).padding(.bottom, 16).padding(.top, 6)
     .frame(maxWidth: 780)
@@ -168,7 +184,7 @@ private struct Greeting: View {
             .contentShape(Rectangle())
           }
           .buttonStyle(.plain)
-          .glassSurface(cornerRadius: 12, interactive: true)
+          .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
       }
       .frame(maxWidth: 520)
@@ -220,6 +236,7 @@ private struct MessageRow: View {
         MarkdownView(text: message.content)
           .padding(.horizontal, 14).padding(.vertical, 10)
           .background(Color.muster.opacity(0.16), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+          .dimsWhenInactive()
         Text(Format.time(message.createdAt)).font(.caption2).foregroundStyle(.tertiary).padding(.trailing, 6)
       }
     }
@@ -402,6 +419,7 @@ private struct LiveStatus: View {
 private struct QueuedList: View {
   @Environment(Store.self) private var store
   var conversationId: String
+  var namespace: Namespace.ID
   var body: some View {
     let items = store.queued[conversationId] ?? []
     if !items.isEmpty {
@@ -421,8 +439,9 @@ private struct QueuedList: View {
             }
           }
           .font(.callout)
-          .padding(.horizontal, 12).padding(.vertical, 8)
-          .glassSurface(cornerRadius: 12)
+          .padding(.horizontal, 14).padding(.vertical, 8)
+          .glassSurface(cornerRadius: 14)
+          .glassID("queued-\(item.id)", in: namespace)
         }
       }
     }

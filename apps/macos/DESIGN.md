@@ -80,3 +80,23 @@ workspace switcher, a faint icon as the main action, flat chat, a flat composer,
 - **Diff**: full-width rows, a gutter with +/− markers, directory dimmed and file name bold, new/deleted tags and a
   five-block change bar per file.
 - **Agents** became a card grid with runtime, model and reasoning pills and what each agent is doing now.
+
+## Revision 3 (0.3.2): built to the Liquid Glass rules
+
+- **The binary must declare the real SDK.** SwiftPM stamps the deployment target (15.0) as the SDK version, and macOS
+  then runs the app in its compatibility appearance: no floating glass toolbar, no glass search. `bundle.sh` restamps the
+  build version with `vtool` to the SDK actually used, as Xcode does. 0.3.0 and 0.3.1 shipped without it.
+- **Glass is the control layer only.** Toolbar, floating composer, jump-to-latest button, queued messages. Content
+  (messages, cards, the board, the decision card) never sits on glass, and nothing glass goes inside the sidebar,
+  which is itself glass. Suggestion buttons and the sidebar header lost their glass.
+- **The primary action lives in the toolbar** as a `glassProminent` button tinted by meaning (orange: complete and merge,
+  red: rerun, indigo: start), split from the secondary group (more, changes) by `ToolbarSpacer(.fixed)`. The decision
+  card is content: it says what happened and shows the shortcut.
+- **No custom backgrounds under bars.** The task header and the composer are `safeAreaBar`s; content scrolls beneath and
+  the system draws the scroll-edge effect (soft in the conversation, hard at the top of the dense diff).
+- **One glass container** holds the composer, queued messages and the jump button, so they blend and morph
+  (`glassEffectID`) as they appear.
+- Sidebar search is the system `searchable(placement: .sidebar)`; custom colours desaturate when the window is
+  inactive, as system controls do on macOS 27; the inspector hides itself until a task has a diff.
+- Snapshots now capture the real, active scene window as the window server composites it (`Muster --snapshot <dir>`),
+  so glass is reviewable; `--offscreen` keeps the old server-less rendering with material fallbacks.
