@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// A conversation with an agent: the message stream, live status and the composer.
+/// A conversation with an agent: the message stream, live status and a floating composer.
 struct ConversationView: View {
   @Environment(Store.self) private var store
   var conversationId: String
@@ -27,59 +27,74 @@ struct ConversationView: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      ScrollViewReader { proxy in
-        ScrollView {
-          LazyVStack(alignment: .leading, spacing: 18) {
-            if messages.isEmpty {
-              if let initialSpec, !initialSpec.isEmpty { SpecCard(spec: initialSpec) }
-              else if todoId == nil { Greeting(name: agentName, suggestions: suggestions) { draft = $0; focus += 1 } }
+    ScrollViewReader { proxy in
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 22) {
+          if let initialSpec, !initialSpec.isEmpty { SpecCard(spec: initialSpec) }
+          if messages.isEmpty, todoId == nil { Greeting(name: agentName, suggestions: suggestions) { draft = $0; focus += 1 } }
+          ForEach(Self.groups(messages), id: \.id) { group in
+            switch group {
+            case .tools(let items): ToolStrip(messages: items)
+            case .message(let message): MessageRow(message: message, agentName: agentName)
             }
-            ForEach(Self.groups(messages), id: \.id) { group in
-              switch group {
-              case .tools(let items): ToolGroup(messages: items)
-              case .message(let message): MessageRow(message: message, agentName: agentName)
-              }
-            }
-            if status != "idle" { LiveStatus(status: status, detail: activity.detail, queuedHint: queuedHint) }
-            Color.clear.frame(height: 1).id("bottom")
           }
-          .padding(.horizontal, 24).padding(.vertical, 20)
-          .frame(maxWidth: 820)
-          .frame(maxWidth: .infinity)
+          if status != "idle" { LiveStatus(status: status, detail: activity.detail, queuedHint: queuedHint, agentName: agentName) }
+          Color.clear.frame(height: 1).id("bottom")
         }
-        .defaultScrollAnchor(.bottom)
-        .onChange(of: messages.last?.content) { proxy.scrollTo("bottom", anchor: .bottom) }
-        .onChange(of: messages.count) { proxy.scrollTo("bottom", anchor: .bottom) }
+        .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 16)
+        .frame(maxWidth: 780)
+        .frame(maxWidth: .infinity)
       }
-      Divider()
-      VStack(alignment: .leading, spacing: 8) {
-        QueuedList(conversationId: conversationId)
-        if let warning = activity.warning {
-          Label(warning, systemImage: "exclamationmark.triangle").font(.callout).foregroundStyle(.orange)
-        }
-        ErrorBanner(message: $error)
-        Composer(text: $draft, placeholder: disabledReason ?? placeholder, disabled: disabledReason != nil, focusToken: focus, onSubmit: send)
-          .frame(minHeight: 44, maxHeight: 160)
-          .fixedSize(horizontal: false, vertical: true)
-          .padding(8)
-          .background(.background, in: RoundedRectangle(cornerRadius: 10))
-          .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
-          .overlay(alignment: .bottomTrailing) {
-            Button(action: send) { Image(systemName: sending ? "ellipsis" : "arrow.up.circle.fill").font(.title2) }
-              .buttonStyle(.borderless).foregroundStyle(canSend ? Color.muster : .secondary)
-              .disabled(!canSend).padding(6).help("发送（↩）")
-          }
-        Text("↩ 发送 · ⇧↩ 换行").font(.caption2).foregroundStyle(.tertiary)
-      }
-      .padding(.horizontal, 24).padding(.vertical, 12)
-      .frame(maxWidth: 820).frame(maxWidth: .infinity)
+      // Short conversations start at the top; long ones open at the latest message and follow new output.
+      .defaultScrollAnchor(.top, for: .alignment)
+      .defaultScrollAnchor(.bottom, for: .initialOffset)
+      .defaultScrollAnchor(.bottom, for: .sizeChanges)
+      .scrollContentBackground(.hidden)
+      .onChange(of: messages.last?.content) { proxy.scrollTo("bottom", anchor: .bottom) }
+      .onChange(of: messages.count) { withAnimation(.snappy) { proxy.scrollTo("bottom", anchor: .bottom) } }
     }
+    .safeAreaInset(edge: .bottom, spacing: 0) { composer }
     .task(id: conversationId) {
       if store.messages[conversationId] == nil { store.messages[conversationId] = [] }
       await store.loadMessages(conversationId)
       store.activity[conversationId, default: Activity()].unread = false
     }
+  }
+
+  private var composer: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      QueuedList(conversationId: conversationId)
+      if let warning = activity.warning {
+        Label(warning, systemImage: "exclamationmark.triangle.fill").font(.callout).foregroundStyle(.orange)
+      }
+      ErrorBanner(message: $error)
+      VStack(alignment: .leading, spacing: 6) {
+        Composer(text: $draft, placeholder: disabledReason ?? placeholder, disabled: disabledReason != nil, focusToken: focus, onSubmit: send)
+          .frame(minHeight: 40, maxHeight: 180)
+          .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 8) {
+          AgentAvatar(name: agentName, size: 16)
+          Text(agentName).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+          if let runtime { Text(Runtimes.label(runtime)).font(.caption).foregroundStyle(.tertiary) }
+          Spacer()
+          Text("↩ 发送  ⇧↩ 换行").font(.caption2).foregroundStyle(.tertiary)
+          Button(action: send) {
+            Image(systemName: sending ? "ellipsis" : "arrow.up")
+              .font(.system(size: 13, weight: .bold))
+              .frame(width: 28, height: 28)
+              .foregroundStyle(canSend ? .white : .secondary)
+              .background(canSend ? AnyShapeStyle(Color.muster) : AnyShapeStyle(.quaternary), in: Circle())
+          }
+          .buttonStyle(.plain).disabled(!canSend).help("发送（↩）")
+          .animation(.snappy(duration: 0.2), value: canSend)
+        }
+      }
+      .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 10)
+      .glassSurface(cornerRadius: 20)
+    }
+    .padding(.horizontal, 28).padding(.bottom, 16).padding(.top, 6)
+    .frame(maxWidth: 780)
+    .frame(maxWidth: .infinity)
   }
 
   private var canSend: Bool { disabledReason == nil && !sending && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !conversationId.isEmpty }
@@ -89,7 +104,7 @@ struct ConversationView: View {
     if store.machines.isEmpty && !store.connected { return "等待执行机…" }
     if online.isEmpty { return "没有在线的执行机。Muster 会自动启动本机 daemon，稍等片刻或查看日志。" }
     if let runtime, !online.contains(where: { $0.runtimes.contains(runtime) }) { return "没有在线执行机支持 \(Runtimes.label(runtime))，请先在本机安装它。" }
-    return "等待执行机…"
+    return "排队等待执行机…"
   }
 
   private func send() {
@@ -130,57 +145,124 @@ private struct Greeting: View {
   var suggestions: [String]
   var pick: (String) -> Void
   var body: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      MusterMark(size: 36)
-      Text("我是 \(name)，这个工作空间的 master agent").font(.title2.weight(.semibold))
-      Text("告诉我目标，我会拆成可并行的任务、分派给 Agent，并跟进每个任务直到验收合并。")
-        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-      VStack(alignment: .leading, spacing: 6) {
-        ForEach(suggestions, id: \.self) { suggestion in
-          Button { pick(suggestion) } label: { Label(suggestion, systemImage: "text.bubble") }.buttonStyle(.link)
+    VStack(alignment: .leading, spacing: 18) {
+      HStack(spacing: 14) {
+        AgentAvatar(name: name, size: 44)
+        VStack(alignment: .leading, spacing: 3) {
+          Text("我是 \(name)").font(.title.weight(.semibold))
+          Text("这个工作空间的 master agent").foregroundStyle(.secondary)
         }
       }
+      Text("告诉我目标，我会拆成可以并行的任务、分派给 Agent，并跟进每一个任务直到验收合并。")
+        .font(.title3).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(suggestions, id: \.self) { suggestion in
+          Button { pick(suggestion) } label: {
+            HStack {
+              Image(systemName: "sparkle").foregroundStyle(Color.muster)
+              Text(suggestion)
+              Spacer()
+              Image(systemName: "arrow.turn.down.left").foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .contentShape(Rectangle())
+          }
+          .buttonStyle(.plain)
+          .glassSurface(cornerRadius: 12, interactive: true)
+        }
+      }
+      .frame(maxWidth: 520)
     }
-    .padding(.top, 40)
+    .padding(.top, 56)
   }
 }
 
 private struct SpecCard: View {
   var spec: String
+  @State private var open = true
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Label("任务描述", systemImage: "doc.text").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-      MarkdownView(text: spec)
+    VStack(alignment: .leading, spacing: 10) {
+      Button { withAnimation(.snappy) { open.toggle() } } label: {
+        HStack(spacing: 6) {
+          Image(systemName: "doc.text").foregroundStyle(Color.muster)
+          Text("任务描述").font(.subheadline.weight(.semibold))
+          Spacer()
+          Image(systemName: "chevron.down").rotationEffect(.degrees(open ? 0 : -90)).font(.caption).foregroundStyle(.tertiary)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      if open { MarkdownView(text: spec).transition(.opacity) }
     }
-    .padding(14)
+    .padding(16)
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
+    .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
   }
 }
 
 private struct MessageRow: View {
+  @Environment(Store.self) private var store
   var message: Message
   var agentName: String
   var body: some View {
-    if message.role == "system" {
-      HStack(spacing: 8) {
-        Rectangle().fill(.separator).frame(height: 1)
-        Text(Self.systemText(message)).font(.caption).foregroundStyle(.secondary).fixedSize()
-        Rectangle().fill(.separator).frame(height: 1)
+    switch message.role {
+    case "system": systemPill
+    case "user": userBubble
+    default: agentMessage
+    }
+  }
+
+  /// Your messages read like Messages: right-aligned, tinted.
+  private var userBubble: some View {
+    HStack {
+      Spacer(minLength: 120)
+      VStack(alignment: .trailing, spacing: 4) {
+        MarkdownView(text: message.content)
+          .padding(.horizontal, 14).padding(.vertical, 10)
+          .background(Color.muster.opacity(0.16), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        Text(Format.time(message.createdAt)).font(.caption2).foregroundStyle(.tertiary).padding(.trailing, 6)
       }
-    } else {
-      let you = message.role == "user"
+    }
+  }
+
+  private var agentMessage: some View {
+    HStack(alignment: .top, spacing: 12) {
+      AgentAvatar(name: agentName, size: 26)
       VStack(alignment: .leading, spacing: 6) {
-        HStack(spacing: 6) {
-          Monogram(name: you ? "你" : agentName, size: 18)
-          Text(you ? "你" : agentName).font(.subheadline.weight(.semibold))
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+          Text(agentName).font(.headline)
           Text(Format.time(message.createdAt)).font(.caption).foregroundStyle(.tertiary)
         }
-        MarkdownView(text: message.content + (message.streaming ? " ▍" : ""))
-          .padding(.leading, 24)
+        MarkdownView(text: message.content)
+        if message.streaming {
+          Capsule().fill(Color.muster).frame(width: 18, height: 4)
+            .phaseAnimator([0.3, 1]) { $0.opacity($1) } animation: { _ in .easeInOut(duration: 0.6) }
+        }
       }
-      .padding(you ? 12 : 0)
-      .background(you ? AnyShapeStyle(Color.muster.opacity(0.07)) : AnyShapeStyle(.clear), in: RoundedRectangle(cornerRadius: 10))
+      Spacer(minLength: 0)
+    }
+  }
+
+  /// A task changing phase, as a pill you can click to open the task.
+  private var systemPill: some View {
+    let phase = message.meta["phase"]?.string.flatMap(Phase.init)
+    let todoId = message.meta["todoId"]?.string
+    return HStack {
+      Spacer()
+      Button { if let todoId { store.route = .task(todoId) } } label: {
+        HStack(spacing: 6) {
+          Image(systemName: phase?.symbol ?? "info.circle").foregroundStyle(phase?.color ?? .secondary)
+          Text(Self.systemText(message)).foregroundStyle(.primary)
+          if todoId != nil { Image(systemName: "chevron.right").font(.caption2).foregroundStyle(.tertiary) }
+        }
+        .font(.callout)
+        .padding(.horizontal, 12).padding(.vertical, 6)
+        .background((phase?.color ?? .secondary).opacity(0.1), in: Capsule())
+        .overlay(Capsule().strokeBorder((phase?.color ?? .secondary).opacity(0.25)))
+      }
+      .buttonStyle(.plain)
+      .disabled(todoId == nil)
+      Spacer()
     }
   }
 
@@ -190,46 +272,104 @@ private struct MessageRow: View {
       let number = message.meta["todoNumber"]?.number.map { "#\(Int($0))" } ?? ""
       let task = [number, message.meta["todoTitle"]?.string ?? ""].filter { !$0.isEmpty }.joined(separator: " ")
       switch phase {
-      case .review: return "任务 \(task) 已完成，等待验收。"
-      case .failed: return "任务 \(task) 执行失败。"
-      case .done: return "任务 \(task) 已完成。"
-      default: return "任务 \(task) 已进入\(phase.label)阶段。"
+      case .review: return "\(task) 已完成，等待验收"
+      case .failed: return "\(task) 执行失败"
+      case .done: return "\(task) 已完成"
+      default: return "\(task) 进入\(phase.label)"
       }
     }
     return message.content
   }
 }
 
-private struct ToolGroup: View {
+/// Tool calls as a row of pills — what the agent touched, at a glance; click to see inputs and outputs.
+private struct ToolStrip: View {
   var messages: [Message]
   @State private var open = false
+
+  static func symbol(_ tool: String) -> String {
+    let t = tool.lowercased()
+    if t.contains("read") || t.contains("view") || t.contains("cat") { return "doc.text" }
+    if t.contains("edit") || t.contains("write") || t.contains("patch") || t.contains("apply") { return "pencil" }
+    if t.contains("bash") || t.contains("shell") || t.contains("exec") || t.contains("command") { return "terminal" }
+    if t.contains("grep") || t.contains("search") || t.contains("glob") || t.contains("find") { return "magnifyingglass" }
+    if t.contains("create") { return "plus.square" }
+    if t.contains("list") || t.contains("get") { return "list.bullet" }
+    if t.contains("web") || t.contains("fetch") { return "globe" }
+    return "wrench.and.screwdriver"
+  }
+
+  static func summary(_ message: Message) -> String {
+    guard let input = message.meta["input"] else { return message.content }
+    for key in ["file_path", "path", "command", "cmd", "pattern", "query", "title", "url"] {
+      if let value = input[key]?.string { return key == "file_path" || key == "path" ? (value as NSString).lastPathComponent : value }
+    }
+    return input.display
+  }
+
   var body: some View {
     let calls = messages.filter { $0.meta["type"]?.string == "tool.started" }
-    let thinking = calls.isEmpty && messages.allSatisfy { $0.meta["type"]?.string == "reasoning.delta" }
-    let failed = messages.contains { $0.meta["error"] != nil }
-    DisclosureGroup(isExpanded: $open) {
-      VStack(alignment: .leading, spacing: 6) {
-        ForEach(messages) { message in
-          VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-              Text("$").foregroundStyle(.tertiary)
-              Text(message.meta["tool"]?.string ?? (thinking ? "推理" : "工具")).fontWeight(.medium)
-              Text(message.meta["input"]?.display ?? message.content).foregroundStyle(.secondary).lineLimit(3)
+    let thinking = calls.isEmpty
+    VStack(alignment: .leading, spacing: 8) {
+      Button { withAnimation(.snappy) { open.toggle() } } label: {
+        HStack(spacing: 6) {
+          if thinking {
+            Pill(symbol: "brain", title: "思考", detail: nil, failed: false)
+          } else {
+            ForEach(calls.prefix(4)) { call in
+              Pill(symbol: Self.symbol(call.meta["tool"]?.string ?? ""), title: call.meta["tool"]?.string ?? "工具", detail: Self.summary(call), failed: call.meta["error"] != nil)
             }
-            if let output = message.meta["output"]?.display, !output.isEmpty {
-              Text(output.count > 4000 ? String(output.prefix(4000)) + "\n…" : output).foregroundStyle(.secondary).padding(.leading, 12)
+            if calls.count > 4 { Text("+\(calls.count - 4)").font(.caption.weight(.medium)).foregroundStyle(.secondary) }
+          }
+          Image(systemName: "chevron.right").rotationEffect(.degrees(open ? 90 : 0)).font(.caption2).foregroundStyle(.tertiary)
+        }
+        .contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .help(open ? "收起" : "展开工具调用详情")
+      if open {
+        VStack(alignment: .leading, spacing: 8) {
+          ForEach(messages) { message in
+            VStack(alignment: .leading, spacing: 3) {
+              HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: Self.symbol(message.meta["tool"]?.string ?? "")).foregroundStyle(.secondary)
+                Text(message.meta["tool"]?.string ?? (thinking ? "推理" : "工具")).fontWeight(.semibold)
+                Text(message.meta["input"]?.display ?? message.content).foregroundStyle(.secondary).lineLimit(4)
+              }
+              if let output = message.meta["output"]?.display, !output.isEmpty {
+                Text(output.count > 4000 ? String(output.prefix(4000)) + "\n…" : output).foregroundStyle(.secondary).padding(.leading, 20).lineLimit(30)
+              }
+              if let error = message.meta["error"]?.display { Text(error).foregroundStyle(.red).padding(.leading, 20) }
             }
-            if let error = message.meta["error"]?.display { Text(error).foregroundStyle(.red).padding(.leading, 12) }
           }
         }
+        .font(.system(size: 11.5, design: .monospaced))
+        .textSelection(.enabled)
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .transition(.opacity.combined(with: .move(edge: .top)))
       }
-      .font(.system(.caption, design: .monospaced))
-      .textSelection(.enabled)
-      .padding(.top, 4)
-    } label: {
-      Label(thinking ? "思考中" : "\(calls.isEmpty ? messages.count : calls.count) 次工具调用",
-            systemImage: thinking ? "brain" : failed ? "exclamationmark.triangle" : "terminal")
-        .font(.callout).foregroundStyle(failed ? AnyShapeStyle(.orange) : AnyShapeStyle(.secondary))
+    }
+    .padding(.leading, 38)
+  }
+
+  private struct Pill: View {
+    var symbol: String
+    var title: String
+    var detail: String?
+    var failed: Bool
+    var body: some View {
+      HStack(spacing: 5) {
+        Image(systemName: failed ? "exclamationmark.triangle.fill" : symbol).foregroundStyle(failed ? .orange : .secondary)
+        Text(title).fontWeight(.medium)
+        if let detail, !detail.isEmpty { Text(detail).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
+      }
+      .font(.system(size: 11.5))
+      .padding(.horizontal, 9).padding(.vertical, 4)
+      .frame(maxWidth: 240, alignment: .leading)
+      .fixedSize(horizontal: true, vertical: false)
+      .background(.quaternary.opacity(0.55), in: Capsule())
     }
   }
 }
@@ -238,13 +378,24 @@ private struct LiveStatus: View {
   var status: String
   var detail: String
   var queuedHint: String
+  var agentName: String
   var body: some View {
-    HStack(spacing: 8) {
-      ProgressView().controlSize(.small)
-      Text(status == "queued" ? queuedHint : "正在工作…").foregroundStyle(.secondary)
-      if status == "running", !detail.isEmpty { Text(detail).foregroundStyle(.tertiary).lineLimit(1) }
+    HStack(spacing: 10) {
+      AgentAvatar(name: agentName, size: 26)
+        .overlay(alignment: .bottomTrailing) {
+          Circle().fill(status == "queued" ? Color.orange : Color.muster).frame(width: 9, height: 9)
+            .overlay(Circle().strokeBorder(.background, lineWidth: 2))
+            .offset(x: 3, y: 3)
+        }
+      HStack(spacing: 4) {
+        ForEach(0..<3) { i in
+          Circle().fill(.secondary).frame(width: 5, height: 5)
+            .phaseAnimator([0.25, 1]) { $0.opacity($1) } animation: { _ in .easeInOut(duration: 0.5).delay(Double(i) * 0.15) }
+        }
+      }
+      Text(status == "queued" ? queuedHint : detail.isEmpty ? "\(agentName) 正在工作" : detail)
+        .font(.callout).foregroundStyle(.secondary).lineLimit(1)
     }
-    .font(.callout)
   }
 }
 
@@ -254,11 +405,11 @@ private struct QueuedList: View {
   var body: some View {
     let items = store.queued[conversationId] ?? []
     if !items.isEmpty {
-      VStack(alignment: .leading, spacing: 4) {
-        Text("排队中的消息会在当前轮结束后送达").font(.caption).foregroundStyle(.secondary)
+      VStack(alignment: .leading, spacing: 6) {
+        Text("当前一轮结束后送达").font(.caption).foregroundStyle(.secondary)
         ForEach(items) { item in
-          HStack {
-            Image(systemName: "clock").foregroundStyle(.secondary)
+          HStack(spacing: 8) {
+            Image(systemName: "clock").foregroundStyle(.orange)
             Text(item.content).lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
             if !item.delivering {
               Button("撤回") {
@@ -270,6 +421,8 @@ private struct QueuedList: View {
             }
           }
           .font(.callout)
+          .padding(.horizontal, 12).padding(.vertical, 8)
+          .glassSurface(cornerRadius: 12)
         }
       }
     }

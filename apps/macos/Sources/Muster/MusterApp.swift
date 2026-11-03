@@ -21,6 +21,7 @@ final class AppModel {
     backend.onWorkerExit = { [weak self] name, code in
       self?.store.startupError = "\(name == "server" ? "服务" : "执行机 daemon")意外退出（退出码 \(code)）。详见 \(self?.backend.logs.appending(path: "\(name).log").path ?? "日志")。"
     }
+    if Snapshots.requested { return }
     launch()
     badgeTask = Task { [weak self] in
       while !Task.isCancelled {
@@ -84,6 +85,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
       source.resume()
       signals.append(source)
     }
+    if Snapshots.requested { Snapshots.run(); return }
     guard AppModel.canNotify else { return }
     let center = UNUserNotificationCenter.current()
     center.delegate = self

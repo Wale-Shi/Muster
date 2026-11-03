@@ -25,7 +25,8 @@ for dist in packages/shared apps/server apps/daemon apps/web; do
 done
 
 swift build --package-path "$here" -c release
-binary="$(swift build --package-path "$here" -c release --show-bin-path)/Muster"
+bin="$(swift build --package-path "$here" -c release --show-bin-path)"
+binary="$bin/Muster"
 
 # Production dependencies of the server and daemon, resolved from the repository lockfile.
 rm -rf "$stage"; mkdir -p "$stage"
@@ -49,6 +50,8 @@ rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$binary" "$app/Contents/MacOS/Muster"
 cp "$here/Resources/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
+# Package resources (Textual's syntax highlighter, math fonts) are found through Bundle.main.resourceURL.
+for bundle in "$bin"/*.bundle; do [ -e "$bundle" ] && cp -R "$bundle" "$app/Contents/Resources/"; done
 mv "$stage" "$app/Contents/Resources/runtime"
 if [ -n "$embed" ]; then
   "$embed" -e 'if (+process.versions.node.split(".")[0] < 22) process.exit(1)' || { echo "$embed is not Node.js 22+" >&2; exit 1; }
@@ -67,7 +70,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
   <key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
-  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSSupportsAutomaticTermination</key><false/>

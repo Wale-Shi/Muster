@@ -60,10 +60,10 @@ struct PhaseBadge: View {
   var phase: Phase
   var body: some View {
     Label(phase.label, systemImage: phase.symbol)
-      .font(.caption.weight(.medium))
+      .font(.callout.weight(.medium))
       .foregroundStyle(phase.color)
-      .padding(.horizontal, 7).padding(.vertical, 2)
-      .background(phase.color.opacity(0.12), in: Capsule())
+      .padding(.horizontal, 9).padding(.vertical, 4)
+      .background(phase.color.opacity(0.14), in: Capsule())
   }
 }
 
@@ -89,21 +89,6 @@ struct MusterMark: View {
     }
     .frame(width: size, height: size)
     .accessibilityHidden(true)
-  }
-}
-
-/// A round initial for an agent or person.
-struct Monogram: View {
-  var name: String
-  var size: CGFloat = 20
-  var body: some View {
-    let hue = Double(abs(name.unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) }) % 360) / 360
-    Text(String(name.prefix(1)).uppercased())
-      .font(.system(size: size * 0.5, weight: .semibold))
-      .foregroundStyle(.white)
-      .frame(width: size, height: size)
-      .background(Color(hue: hue, saturation: 0.45, brightness: 0.62), in: Circle())
-      .accessibilityHidden(true)
   }
 }
 
@@ -147,5 +132,62 @@ struct ErrorBanner: View {
       .padding(10)
       .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
     }
+  }
+}
+
+// MARK: Surfaces
+
+extension View {
+  /// Liquid Glass on macOS 26+, a material card with a hairline edge before that.
+  @ViewBuilder func glassSurface(cornerRadius: CGFloat = 16, tint: Color? = nil, interactive: Bool = false) -> some View {
+    // Offscreen snapshots cannot draw glass, so they show the fallback.
+    if #available(macOS 26, *), !Snapshots.requested {
+      glassEffect(interactive ? Glass.regular.tint(tint).interactive() : Glass.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
+    } else {
+      background(.regularMaterial, in: RoundedRectangle(cornerRadius: cornerRadius))
+        .background((tint ?? .clear).opacity(0.12), in: RoundedRectangle(cornerRadius: cornerRadius))
+        .overlay(RoundedRectangle(cornerRadius: cornerRadius).strokeBorder(.separator.opacity(0.6)))
+        .shadow(color: .black.opacity(0.08), radius: 10, y: 3)
+    }
+  }
+
+  /// The prominent action of a screen: glass prominent on macOS 26+, bordered prominent before that.
+  @ViewBuilder func primaryAction(tint: Color = .muster) -> some View {
+    if #available(macOS 26, *), !Snapshots.requested { buttonStyle(.glassProminent).tint(tint).controlSize(.large) }
+    else { buttonStyle(.borderedProminent).tint(tint).controlSize(.large) }
+  }
+
+  @ViewBuilder func secondaryAction() -> some View {
+    if #available(macOS 26, *), !Snapshots.requested { buttonStyle(.glass).controlSize(.large) }
+    else { buttonStyle(.bordered).controlSize(.large) }
+  }
+}
+
+/// An agent's face: a rounded square in a colour derived from its name, so each agent is recognisable at a glance.
+struct AgentAvatar: View {
+  var name: String
+  var size: CGFloat = 24
+  var body: some View {
+    let hue = Double(abs(name.unicodeScalars.reduce(7) { ($0 &* 31) &+ Int($1.value) }) % 360) / 360
+    RoundedRectangle(cornerRadius: size * 0.28, style: .continuous)
+      .fill(LinearGradient(colors: [Color(hue: hue, saturation: 0.55, brightness: 0.82), Color(hue: hue, saturation: 0.7, brightness: 0.58)], startPoint: .top, endPoint: .bottom))
+      .overlay(Text(String(name.prefix(1)).uppercased()).font(.system(size: size * 0.48, weight: .bold, design: .rounded)).foregroundStyle(.white))
+      .frame(width: size, height: size)
+      .accessibilityHidden(true)
+  }
+}
+
+/// A small fact about something: an icon and a short value in a capsule.
+struct MetaPill<Content: View>: View {
+  var systemImage: String?
+  @ViewBuilder var content: Content
+  var body: some View {
+    HStack(spacing: 5) {
+      if let systemImage { Image(systemName: systemImage).imageScale(.small).foregroundStyle(.secondary) }
+      content
+    }
+    .font(.callout)
+    .padding(.horizontal, 9).padding(.vertical, 4)
+    .background(.quaternary.opacity(0.6), in: Capsule())
   }
 }

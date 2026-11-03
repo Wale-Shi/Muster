@@ -290,7 +290,7 @@ Steer delivery is at least once across a daemon crash between runtime acceptance
 
 ## macOS app
 
-`apps/macos` is a SwiftUI app (Swift package, macOS 14+). It owns no business logic: everything goes through the public
+`apps/macos` is a SwiftUI app (Swift package, macOS 15+). It owns no business logic: everything goes through the public
 REST API and the `/api/events` SSE stream, exactly like the web UI, which stays the interface for browsers.
 
 On launch it looks for a Muster server from port 7420 upwards (`MUSTER_DESKTOP_PORT` overrides the start) by checking
@@ -315,7 +315,12 @@ Finder when runnable. The composer sends on Return only when no input method is 
 `npm run mac` builds the workspaces and runs `apps/macos/scripts/bundle.sh`, which builds the release binary, stages the
 server/daemon/shared dist files with production dependencies (workspace links materialised) and the web dist into
 `Resources/runtime`, writes `Info.plist` (`dev.muster.desktop`) and signs ad hoc. `npm run mac:test` runs the Swift
-tests (diff and Markdown parsing, response decoding, live lines). Skill import and connection editing are not native
+tests (diff parsing, response decoding, live lines). Agent Markdown is rendered by
+[Textual](https://github.com/gonzalezreal/textual) (code blocks highlighted with its Prism-based highlighter); the script
+copies SwiftPM resource bundles into `Contents/Resources`, where the generated accessors look first. On macOS 26+ the
+composer, workspace switcher, status pill and decision-card buttons use Liquid Glass (`glassEffect`, `.glassProminent`),
+with material fallbacks on macOS 15. `Muster --snapshot <dir>` renders the main screens with sample data to PNGs and
+quits, without a server; offscreen rendering cannot draw glass, so snapshots show the fallback surfaces. Skill import and connection editing are not native
 yet; those views list items and open the web UI.
 
 ## Skills

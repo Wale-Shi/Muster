@@ -22,22 +22,20 @@ struct SidebarView: View {
         let master = store.master(of: project)
         let activity = store.activity[project.topicId] ?? Activity()
         NavigationLink(value: Route.conversation(project.id)) {
-          HStack(spacing: 8) {
-            Label {
-              VStack(alignment: .leading, spacing: 1) {
-                Text("主会话")
-                Text("与 \(master?.name ?? "Chief") 对话").font(.caption).foregroundStyle(.secondary)
-              }
-            } icon: { Image(systemName: "bubble.left.and.text.bubble.right") }
-            Spacer()
-            if activity.status != "idle" { ProgressView().controlSize(.mini) }
-            else if activity.unread { Circle().fill(Color.muster).frame(width: 7, height: 7).accessibilityLabel("有新回复") }
-          }
+          Label {
+            HStack {
+              Text("主会话")
+              Spacer()
+              if activity.status != "idle" { ProgressView().controlSize(.mini) }
+              else if activity.unread { Circle().fill(Color.muster).frame(width: 7, height: 7).accessibilityLabel("有新回复") }
+              else { Text(master?.name ?? "Chief").font(.caption).foregroundStyle(.tertiary) }
+            }
+          } icon: { Image(systemName: "bubble.left.and.text.bubble.right") }
         }
         NavigationLink(value: Route.board(project.id)) {
-          Label { HStack { Text("看板"); Spacer(); Text("\(tasks.filter { $0.phase != .closed }.count)").foregroundStyle(.secondary).monospacedDigit() } }
-            icon: { Image(systemName: "rectangle.split.3x1") }
+          Label("看板", systemImage: "square.grid.3x1.below.line.grid.1x2")
         }
+        .badge(tasks.filter { $0.phase != .closed }.count)
 
         if !needsYou.isEmpty {
           Section { ForEach(needsYou) { TaskRow(todo: $0) } } header: { SectionTitle(title: "需要你", count: needsYou.count, tint: .orange) }
@@ -66,7 +64,7 @@ struct SidebarView: View {
       }
     }
     .listStyle(.sidebar)
-    .safeAreaInset(edge: .top, spacing: 0) { WorkspacePicker(newWorkspace: newWorkspace).padding(.horizontal, 10).padding(.bottom, 6) }
+    .safeAreaInset(edge: .top, spacing: 0) { WorkspacePicker(newWorkspace: newWorkspace).padding(.horizontal, 10).padding(.top, 2).padding(.bottom, 8) }
     .safeAreaInset(edge: .bottom, spacing: 0) { ConnectionFooter() }
     .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 380)
   }
@@ -88,33 +86,38 @@ private struct SectionTitle: View {
 struct TaskRow: View {
   @Environment(Store.self) private var store
   var todo: Todo
+  private var subtitle: String {
+    let agent = store.agent(todo.agentId)?.name
+    let head = ["#\(todo.number)", agent].compactMap { $0 }.joined(separator: " · ")
+    switch todo.phase {
+    case .review: return "\(head) · 等你验收"
+    case .failed: return "\(head) · 失败"
+    case .queued: return "\(head) · 等待执行机"
+    default: return "\(head) · \(Format.age(todo.updatedAt))"
+    }
+  }
   var body: some View {
     let live = todo.phase.running ? store.live[todo.id] : nil
     NavigationLink(value: Route.task(todo.id)) {
-      HStack(alignment: .firstTextBaseline, spacing: 7) {
-        PhaseGlyph(phase: todo.phase).font(.callout)
+      HStack(alignment: .top, spacing: 8) {
+        PhaseGlyph(phase: todo.phase).font(.system(size: 13)).frame(width: 16).padding(.top, 1)
         VStack(alignment: .leading, spacing: 2) {
-          HStack(alignment: .firstTextBaseline, spacing: 4) {
-            Text("#\(todo.number)").foregroundStyle(.secondary).monospacedDigit()
-            Text(todo.title).lineLimit(1)
-          }
+          Text(todo.title).lineLimit(1)
           if let live {
             HStack(spacing: 4) {
-              if live.tool { Image(systemName: "terminal").imageScale(.small) }
+              Image(systemName: live.tool ? "terminal" : "text.bubble").imageScale(.small)
               Text(live.text).lineLimit(1).truncationMode(.tail)
             }
             .font(.system(size: 10.5, design: .monospaced))
-            .foregroundStyle(Color.muster.opacity(0.9))
+            .foregroundStyle(Color.muster)
             .contentTransition(.opacity)
             .animation(.easeOut(duration: 0.2), value: live.text)
-          } else if todo.phase == .queued {
-            Text("等待执行机").font(.caption).foregroundStyle(.tertiary)
-          } else if todo.phase.needsYou {
-            Text(todo.phase == .review ? "等待验收 · \(Format.age(todo.updatedAt))" : "执行失败 · \(Format.age(todo.updatedAt))")
-              .font(.caption).foregroundStyle(todo.phase.color)
+          } else {
+            Text(subtitle).font(.caption).foregroundStyle(todo.phase.needsYou ? AnyShapeStyle(todo.phase.color) : AnyShapeStyle(.tertiary)).lineLimit(1)
           }
         }
       }
+      .padding(.vertical, 2)
     }
     .help("#\(todo.number) \(todo.title) · \(todo.phase.label)")
     .contextMenu { TaskMenu(todo: todo) }
@@ -151,22 +154,29 @@ private struct WorkspacePicker: View {
       if let project = store.workspace { Button("工作空间设置…") { store.route = .workspaceSettings(project.id) } }
       Button("新建工作空间…", action: newWorkspace)
     } label: {
-      HStack(spacing: 8) {
+      HStack(spacing: 10) {
         if let project = store.workspace {
-          Monogram(name: project.name, size: 22)
-          VStack(alignment: .leading, spacing: 0) {
-            Text(project.name).font(.headline).lineLimit(1)
-            Text(project.baseBranch).font(.caption.monospaced()).foregroundStyle(.secondary)
+          AgentAvatar(name: project.name, size: 28)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(project.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+            HStack(spacing: 3) {
+              Image(systemName: "arrow.triangle.branch").imageScale(.small)
+              Text(project.baseBranch).font(.caption.monospaced())
+            }
+            .foregroundStyle(.secondary)
           }
         } else {
-          MusterMark(size: 20); Text("Muster").font(.headline)
+          MusterMark(size: 22); Text("Muster").font(.headline)
         }
-        Spacer()
-        Image(systemName: "chevron.up.chevron.down").font(.caption).foregroundStyle(.secondary)
+        Spacer(minLength: 4)
+        Image(systemName: "chevron.up.chevron.down").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
       }
-      .contentShape(Rectangle())
+      .padding(.horizontal, 8).padding(.vertical, 7)
+      .contentShape(RoundedRectangle(cornerRadius: 10))
+      .glassSurface(cornerRadius: 12, interactive: true)
     }
-    .menuStyle(.borderlessButton)
+    .menuStyle(.button)
+    .buttonStyle(.plain)
     .menuIndicator(.hidden)
     .help("切换工作空间")
   }
@@ -180,12 +190,15 @@ private struct ConnectionFooter: View {
     let (color, text): (Color, String) = !store.connected ? (.orange, "正在连接服务…")
       : online == 0 ? (.orange, "没有在线的执行机")
       : (.green, running > 0 ? "执行机在线 · \(running) 个运行中" : "执行机在线")
-    HStack(spacing: 6) {
+    HStack(spacing: 7) {
       Circle().fill(color).frame(width: 7, height: 7)
+        .shadow(color: color.opacity(0.7), radius: 3)
       Text(text).font(.caption).foregroundStyle(.secondary)
       Spacer()
     }
-    .padding(.horizontal, 16).padding(.vertical, 10)
+    .padding(.horizontal, 12).padding(.vertical, 8)
+    .glassSurface(cornerRadius: 10)
+    .padding(.horizontal, 10).padding(.bottom, 10)
     .help(store.machines.map { "\($0.name)：\($0.online == true ? "在线" : "离线")" }.joined(separator: "\n"))
   }
 }

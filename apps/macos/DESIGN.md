@@ -62,3 +62,21 @@ The first pass copied the web layout (sidebar of links + kanban + chat). That is
 ignores what a Mac does well. Changed: the board became a secondary view, the sidebar became a live triage list, the
 diff moved into a real inspector, and custom colours were dropped in favour of system materials so the one accent and
 the live line carry the identity.
+
+## Revision 2 (0.3.1): from "native-shaped" to native
+
+Feedback on 0.3.0: it looked plain and did not feel native. Snapshots (`Muster --snapshot`) showed why: a broken
+workspace switcher, a faint icon as the main action, flat chat, a flat composer, diff rows that stopped short.
+
+- **Decision card** is now the one bold element: at review or failure, a tinted card under the task title says what
+  happened (files, +/−, duration, or the error) and holds the single action, `完成并合并` / `重新运行…`, as a
+  prominent glass button with ⌘↩ / ⌘R. Everything else stays quiet.
+- **Liquid Glass** where macOS uses it, for things floating over content: the composer, the workspace switcher, the
+  machine status pill, suggestion buttons and the decision-card actions. Content itself never sits on glass.
+- **Conversation** reads like Messages: your messages are right-aligned tinted bubbles; agent messages carry a
+  rounded-square avatar whose colour is stable per agent; tool calls collapse into a strip of pills (Read · Bash · Edit
+  with their target) that expands into inputs and outputs; phase changes are clickable pills.
+- **Markdown** moved to Textual (community successor to MarkdownUI): real lists and tables, highlighted code blocks.
+- **Diff**: full-width rows, a gutter with +/− markers, directory dimmed and file name bold, new/deleted tags and a
+  five-block change bar per file.
+- **Agents** became a card grid with runtime, model and reasoning pills and what each agent is doing now.

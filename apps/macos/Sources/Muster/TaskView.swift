@@ -25,24 +25,30 @@ struct TaskView: View {
     let todo = store.todo(id) ?? detail.todo
     let agent = store.agent(todo.agentId)
     let build = detail.builds.last
-    VStack(spacing: 0) {
-      Header(todo: todo, detail: detail, agent: agent, project: store.project(todo.projectId))
-      Divider()
-      ConversationView(
-        conversationId: build?.id ?? "",
-        todoId: todo.id,
-        agentName: agent?.name ?? "Agent",
-        runtime: agent?.runtime,
-        disabledReason: Self.disabledReason(todo.phase),
-        placeholder: todo.phase == .review ? "写下修改意见，Agent 会在同一分支上继续修改" : "给 Agent 发送补充说明",
-        initialSpec: todo.spec
-      )
-      .id(build?.id ?? todo.id)
+    ConversationView(
+      conversationId: build?.id ?? "",
+      todoId: todo.id,
+      agentName: agent?.name ?? "Agent",
+      runtime: agent?.runtime,
+      disabledReason: Self.disabledReason(todo.phase),
+      placeholder: todo.phase == .review ? "写下修改意见，Agent 会在同一分支上继续修改…" : "给 \(agent?.name ?? "Agent") 补充说明…",
+      initialSpec: todo.spec
+    )
+    .id(build?.id ?? todo.id)
+    .safeAreaInset(edge: .top, spacing: 0) {
+      VStack(alignment: .leading, spacing: 14) {
+        Header(todo: todo, detail: detail, agent: agent)
+        DecisionCard(todo: todo, detail: detail, agent: agent, inspector: $inspector, complete: { completing = true }, rerun: { rerunning = true })
+      }
+      .padding(.horizontal, 28).padding(.top, 18).padding(.bottom, 14)
+      .frame(maxWidth: 836)
+      .frame(maxWidth: .infinity)
+      .background(.bar)
     }
     .navigationTitle("#\(todo.number) \(todo.title)")
     .navigationSubtitle(store.project(todo.projectId)?.name ?? "")
     .inspector(isPresented: $inspector) {
-      ChangesInspector(detail: detail).inspectorColumnWidth(min: 320, ideal: 520, max: 900)
+      ChangesInspector(detail: detail).inspectorColumnWidth(min: 340, ideal: 540, max: 960)
     }
     .toolbar { actions(todo, detail) }
     .sheet(isPresented: $completing) { CompleteSheet(todo: todo) }
@@ -69,23 +75,20 @@ struct TaskView: View {
 
   @ToolbarContentBuilder private func actions(_ todo: Todo, _ detail: TodoDetail) -> some ToolbarContent {
     ToolbarItemGroup(placement: .primaryAction) {
-      switch todo.phase {
-      case .todo:
-        Button { Task { await store.act(todo, .start) } } label: { Label("开始", systemImage: "play.fill") }.help("开始执行（⌘↩）")
-      case .review:
-        Button { completing = true } label: { Label("完成", systemImage: "checkmark.circle") }.help("完成并合并（⌘↩）")
-      case .failed:
-        Button { rerunning = true } label: { Label("重新运行", systemImage: "arrow.clockwise") }.help("重新运行（⌘R）")
-      case .queued, .building:
+      if todo.phase.running {
         let active = ["queued", "running"].contains(detail.builds.last?.turns.last?.status ?? "")
         Button { Task { await store.act(todo, .stop) } } label: { Label("停止", systemImage: "stop.fill") }.disabled(!active).help("请求 Agent 停下（⌘.）")
-      case .done, .closed:
-        Button { Task { await store.act(todo, .reopen) } } label: { Label("重新打开", systemImage: "arrow.uturn.backward") }
       }
-      if ![.done, .closed].contains(todo.phase) {
-        Button { Task { await store.act(todo, .close) } } label: { Label("关闭任务", systemImage: "xmark.circle") }.help("关闭任务（⌘⌫）")
-      }
-      Button { inspector.toggle() } label: { Label("变更", systemImage: "sidebar.right") }.help("显示或隐藏变更（⌘⌥I）")
+      Menu {
+        if [.done, .closed].contains(todo.phase) { Button("重新打开") { Task { await store.act(todo, .reopen) } } }
+        else { Button("关闭任务") { Task { await store.act(todo, .close) } }.keyboardShortcut(.delete) }
+        if todo.phase == .failed { Button("重新运行…") { rerunning = true } }
+        Divider()
+        if let branch = detail.builds.last?.branch { Button("复制分支名") { Clipboard.copy(branch) } }
+        Button("复制任务编号") { Clipboard.copy("#\(todo.number)") }
+      } label: { Label("更多", systemImage: "ellipsis") }
+      .help("更多操作")
+      Button { withAnimation(.snappy) { inspector.toggle() } } label: { Label("变更", systemImage: "sidebar.right") }.help("显示或隐藏变更（⌘⌥I）")
     }
   }
 }
@@ -94,34 +97,86 @@ private struct Header: View {
   var todo: Todo
   var detail: TodoDetail
   var agent: Agent?
-  var project: Project?
   var body: some View {
     let turns = detail.builds.flatMap(\.turns)
     let tokens = detail.builds.reduce(0) { $0 + $1.tokensIn + $1.tokensOut }
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Text("#\(todo.number)").font(.title3.monospacedDigit()).foregroundStyle(.tertiary)
-        Text(todo.title).font(.title3.weight(.semibold)).lineLimit(2).textSelection(.enabled)
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(alignment: .firstTextBaseline, spacing: 10) {
+        Text("#\(todo.number)").font(.system(size: 22, weight: .medium, design: .rounded)).foregroundStyle(.tertiary).monospacedDigit()
+        Text(todo.title).font(.system(size: 22, weight: .bold)).lineLimit(2).textSelection(.enabled)
       }
-      HStack(spacing: 12) {
+      HStack(spacing: 8) {
         PhaseBadge(phase: todo.phase)
         if let agent {
-          HStack(spacing: 5) { Monogram(name: agent.name, size: 16); Text(agent.name) }
+          MetaPill(systemImage: nil) { AgentAvatar(name: agent.name, size: 15); Text(agent.name) }
             .help("\(Runtimes.label(agent.runtime)) · \(agent.model == "default" ? "CLI 默认模型" : agent.model)")
         }
         if let branch = detail.builds.last?.branch {
-          Label(branch, systemImage: "arrow.triangle.branch").font(.caption.monospaced()).lineLimit(1).truncationMode(.middle)
+          MetaPill(systemImage: "arrow.triangle.branch") { Text(branch).font(.callout.monospaced()).lineLimit(1).truncationMode(.middle) }
+            .frame(maxWidth: 260, alignment: .leading)
             .contextMenu { Button("复制分支名") { Clipboard.copy(branch) } }
         }
-        Spacer()
-        Text(Format.age(todo.updatedAt)).foregroundStyle(.tertiary)
-        if tokens > 0 { Label(Format.tokens(tokens), systemImage: "circle.hexagongrid").help("本任务累计用量") }
+        Spacer(minLength: 8)
+        if tokens > 0 { MetaPill(systemImage: "bolt") { Text(Format.tokens(tokens)).monospacedDigit() }.help("本任务累计 token") }
         RunRecords(turns: turns)
+        Text(Format.age(todo.updatedAt)).font(.callout).foregroundStyle(.tertiary)
       }
-      .font(.callout)
-      .foregroundStyle(.secondary)
     }
-    .padding(.horizontal, 20).padding(.vertical, 12)
+  }
+}
+
+/// The moment the task needs you: what happened, and the one action to take.
+private struct DecisionCard: View {
+  @Environment(Store.self) private var store
+  var todo: Todo
+  var detail: TodoDetail
+  var agent: Agent?
+  @Binding var inspector: Bool
+  var complete: () -> Void
+  var rerun: () -> Void
+
+  var body: some View {
+    let build = detail.builds.last
+    let files = build?.documents.filter { $0.kind == "changes" }.max { $0.version < $1.version }.map { Diff.parse($0.content) } ?? []
+    let added = files.reduce(0) { $0 + $1.added }, removed = files.reduce(0) { $0 + $1.removed }
+    let name = agent?.name ?? "Agent"
+    switch todo.phase {
+    case .review:
+      card(tint: .orange, symbol: "checkmark.seal.fill",
+           title: "\(name) 完成了，等你验收",
+           detail: Text(files.isEmpty ? "这次构建没有记录 diff" : "\(files.count) 个文件 · ") + Text(files.isEmpty ? "" : "+\(added)").foregroundColor(.green) + Text(files.isEmpty ? "" : " −\(removed)").foregroundColor(.red) + Text(build.map { " · 用时 \(Format.duration($0.durationMs))" } ?? "")) {
+        if !inspector { Button { withAnimation(.snappy) { inspector = true } } label: { Text("查看变更") }.secondaryAction().fixedSize() }
+        Button(action: complete) { Label("完成并合并", systemImage: "arrow.triangle.merge") }.primaryAction(tint: .orange).fixedSize().keyboardShortcut(.return, modifiers: .command).help("完成并把分支合并到基准分支（⌘↩）")
+      }
+    case .failed:
+      let error = build?.turns.last?.error
+      card(tint: .red, symbol: "xmark.octagon.fill", title: "\(name) 没能完成这个任务",
+           detail: Text(error.map { String($0.prefix(240)) } ?? "查看下方对话了解失败原因")) {
+        Button(action: rerun) { Label("重新运行…", systemImage: "arrow.clockwise") }.primaryAction(tint: .red).fixedSize().keyboardShortcut("r")
+      }
+    case .todo:
+      card(tint: .muster, symbol: "play.circle.fill", title: "这个任务还没开始", detail: Text("开始后 \(name) 会在独立的 worktree 和分支里执行。")) {
+        Button { Task { await store.act(todo, .start) } } label: { Label("开始", systemImage: "play.fill") }.primaryAction().fixedSize().keyboardShortcut(.return, modifiers: .command)
+      }
+    default:
+      EmptyView()
+    }
+  }
+
+  private func card<Actions: View>(tint: Color, symbol: String, title: String, detail: Text, @ViewBuilder actions: () -> Actions) -> some View {
+    HStack(spacing: 14) {
+      Image(systemName: symbol).font(.system(size: 26)).foregroundStyle(tint).symbolRenderingMode(.hierarchical)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(title).font(.headline).lineLimit(1).layoutPriority(1)
+        detail.font(.callout).foregroundStyle(.secondary).lineLimit(2)
+      }
+      Spacer(minLength: 12)
+      HStack(spacing: 8) { actions() }
+    }
+    .padding(.horizontal, 16).padding(.vertical, 14)
+    .background(tint.opacity(0.09), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(tint.opacity(0.28)))
+    .transition(.move(edge: .top).combined(with: .opacity))
   }
 }
 
@@ -130,8 +185,8 @@ private struct RunRecords: View {
   var turns: [Turn]
   @State private var open = false
   var body: some View {
-    Button { open.toggle() } label: { Label("\(turns.count) 轮", systemImage: "clock.arrow.circlepath") }
-      .buttonStyle(.borderless)
+    Button { open.toggle() } label: { MetaPill(systemImage: "clock.arrow.circlepath") { Text("\(turns.count) 轮") } }
+      .buttonStyle(.plain)
       .popover(isPresented: $open, arrowEdge: .bottom) {
         ScrollView {
           VStack(alignment: .leading, spacing: 12) {

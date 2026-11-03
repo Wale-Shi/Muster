@@ -23,11 +23,6 @@ final class ParsingTests: XCTestCase {
     XCTAssertTrue(files[1].binary)
   }
 
-  func testMarkdownBlocks() {
-    let blocks = MarkdownView.blocks("# Title\n\nSome *text*\n\n- one\n- [x] two\n\n```swift\nlet a = 1\n```")
-    XCTAssertEqual(blocks, [.heading(1, "Title"), .paragraph("Some *text*"), .bullet("one", 0, "•"), .bullet("two", 0, "☑"), .code("swift", "let a = 1")])
-  }
-
   func testTaskDetailDecodesFlattenedTodo() throws {
     let json = #"{"id":"t1","number":3,"projectId":"p","title":"T","spec":"","phase":"review","agentId":null,"createdBy":"user","topicId":null,"previousGate":null,"createdAt":"2026-11-03T10:00:00.000Z","updatedAt":"2026-11-03T10:00:00.000Z","doneAt":null,"builds":[{"id":"b","todoId":"t1","branch":"muster/3","machineId":null,"status":"active","baseCommit":null,"headCommit":null,"tokensIn":1,"tokensOut":2,"durationMs":3,"createdAt":"x","turns":[],"documents":[]}]}"#
     let detail = try JSONDecoder().decode(TodoDetail.self, from: Data(json.utf8))

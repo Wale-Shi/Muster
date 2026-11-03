@@ -84,7 +84,7 @@ REST API 没有登录：能访问端口的人就能使用整个 Muster。它面�
 
 ## macOS App
 
-macOS 版是原生 SwiftUI App（`apps/macos`），不再基于 Electron。需要 Xcode 15+ / Swift 5.10+ 和 Node.js 22+：
+macOS 版是原生 SwiftUI App（`apps/macos`），不再基于 Electron，支持 macOS 15+（macOS 26+ 使用 Liquid Glass）。构建需要 Xcode 16+ 和 Node.js 22+：
 
 ```sh
 npm install
@@ -95,7 +95,7 @@ npm run mac:test   # Swift 单元测试
 把 `apps/macos/build/Muster.app` 拖到 `/Applications` 即可。App 启动时会在本机拉起 server 和 daemon（已有运行中的 Muster 服务或 daemon 时直接复用），退出时先停 daemon 再停 server。它从登录 shell 的 PATH 里找 `node`，也可以用 `MUSTER_NODE` 指定；`apps/macos/scripts/bundle.sh --embed-node=<node 路径> --dmg` 会把指定的 node（请用 nodejs.org 官方构建）打进包里并生成 DMG，这样目标机器不需要装 Node。数据在 `~/.muster`，日志在 `~/.muster/logs`。
 
 - 侧边栏就是待办队列：主会话之后按「需要你 → 进行中 → 待开始 → 最近完成」分组，运行中的任务直接显示 Agent 的最新一行输出。
-- 任务页左边是对话，右边是 diff 检查器（⌘⌥I）；⌘↩ 开始或完成并合并，⌘R 重新运行，⌘. 停止，⌘⌫ 关闭任务。
+- 任务等你验收或失败时，任务页顶部出现决策卡片，一键「完成并合并」或「重新运行」；左边是对话（Agent 的工具调用折叠成一行标签），右边是 diff 检查器（⌘⌥I）；⌘↩ 开始或完成并合并，⌘R 重新运行，⌘. 停止，⌘⌫ 关闭任务。
 - ⌘N 新建任务，⌘⇧N 新建工作空间，⌘K 快速打开，⌘1/⌘2 主会话/看板，⌘⌥1…9 切换工作空间，⌘, 设置。
 - 关闭窗口后 App 继续运行；菜单栏图标显示需要你处理和正在运行的任务。任务待验收、失败、完成时发送通知（点通知打开任务），Dock 角标显示需要你处理的任务数。
 - 技能导入和连接编辑仍在浏览器界面里完成（菜单「文件 → 在浏览器中打开」）。

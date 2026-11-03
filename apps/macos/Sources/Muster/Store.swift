@@ -28,6 +28,8 @@ struct LiveLine: Equatable { var text: String; var tool: Bool; var at: Date }
 @MainActor @Observable
 final class Store {
   var api: API?
+  /// Renders sample data without a server (snapshot mode).
+  @ObservationIgnored var offline = false
   var connected = false
   var startupError: String?
   var projects: [Project] = []
@@ -101,7 +103,7 @@ final class Store {
 
   /// Runs one fetch at a time per key; reports failures without clearing what is shown.
   func load(_ key: String, _ body: @escaping @MainActor (API) async throws -> Void) async {
-    guard let api, !refreshing.contains(key) else { return }
+    guard let api, !offline, !refreshing.contains(key) else { return }
     refreshing.insert(key); defer { refreshing.remove(key) }
     do { try await body(api) } catch is CancellationError {} catch { if connected { lastError = error.localizedDescription } }
   }

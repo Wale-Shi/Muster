@@ -23,7 +23,7 @@ struct BoardView: View {
         Label(notice, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).padding(.horizontal, 16).padding(.top, 10)
       }
       ScrollView(.horizontal) {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: 14) {
           ForEach(Array(columns.enumerated()), id: \.offset) { index, column in
             let items = tasks.filter(column.match).sorted { $0.number > $1.number }
             VStack(alignment: .leading, spacing: 8) {
@@ -45,9 +45,9 @@ struct BoardView: View {
               }
             }
             .padding(10)
-            .frame(width: 280)
+            .frame(minWidth: 250, idealWidth: 300, maxWidth: 360)
             .frame(maxHeight: .infinity, alignment: .top)
-            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 10))
+            .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .dropDestination(for: String.self) { ids, _ in
               guard index == 3, let todo = ids.first.flatMap({ id in tasks.first { $0.id == id } }) else { return false }
               if todo.phase == .review { completing = todo } else { show("只有待验收的任务可以标记为完成。") }
@@ -88,14 +88,15 @@ private struct Card: View {
           Text(live.text).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(Color.muster).lineLimit(2)
         }
         if let agent = store.agent(todo.agentId) {
-          HStack(spacing: 4) { Monogram(name: agent.name, size: 14); Text(agent.name) }.font(.caption).foregroundStyle(.secondary)
+          HStack(spacing: 5) { AgentAvatar(name: agent.name, size: 16); Text(agent.name) }.font(.caption).foregroundStyle(.secondary)
         }
       }
-      .padding(10)
+      .padding(12)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(.background, in: RoundedRectangle(cornerRadius: 8))
-      .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(.separator))
-      .contentShape(RoundedRectangle(cornerRadius: 8))
+      .background(.background, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+      .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(todo.phase.needsYou ? todo.phase.color.opacity(0.45) : Color.primary.opacity(0.08)))
+      .shadow(color: .black.opacity(0.06), radius: 3, y: 1)
+      .contentShape(RoundedRectangle(cornerRadius: 11))
     }
     .buttonStyle(.plain)
     .draggable(todo.id)

@@ -8,38 +8,85 @@ struct AgentsView: View {
   @State private var creating = false
   var body: some View {
     let installed = Set(store.onlineMachines.flatMap(\.runtimes))
-    List {
-      ForEach(store.agents) { agent in
-        let active = store.todos.filter { $0.agentId == agent.id && ![.todo, .done, .closed].contains($0.phase) }.count
-        let leads = store.projects.filter { $0.chiefAgentId == agent.id }.count
-        Button { store.route = .agent(agent.id) } label: {
-          HStack(alignment: .top, spacing: 12) {
-            Monogram(name: agent.name, size: 32)
-            VStack(alignment: .leading, spacing: 3) {
-              HStack(spacing: 6) {
-                Text(agent.name).font(.headline)
-                if agent.isChief { Tag(text: "默认 master") } else if leads > 0 { Tag(text: "master") }
-                if !installed.isEmpty && !installed.contains(agent.runtime) && agent.runtime != "mock" {
-                  Tag(text: "本机未安装", tint: .orange).help("没有在线执行机支持 \(Runtimes.label(agent.runtime))")
-                }
-              }
-              Text(agent.role).foregroundStyle(.secondary).lineLimit(2)
-              Text("\(Runtimes.label(agent.runtime)) · \(agent.model == "default" ? "CLI 默认模型" : agent.model)\(agent.reasoning.map { " · \($0)" } ?? "")")
-                .font(.caption.monospaced()).foregroundStyle(.tertiary)
-            }
-            Spacer()
-            if active > 0 { Label("\(active) 个进行中", systemImage: "circle.fill").font(.caption).foregroundStyle(Color.muster) }
+    ScrollView {
+      VStack(alignment: .leading, spacing: 18) {
+        Text("每个 Agent 是一个编码 CLI 加上它的职责。master agent 按职责把任务分派给它们。")
+          .foregroundStyle(.secondary)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300, maximum: 420), spacing: 16)], spacing: 16) {
+          ForEach(store.agents) { agent in
+            AgentCard(agent: agent, missing: !installed.isEmpty && !installed.contains(agent.runtime) && agent.runtime != "mock")
           }
-          .padding(.vertical, 4)
-          .contentShape(Rectangle())
+          Button { creating = true } label: {
+            VStack(spacing: 8) {
+              Image(systemName: "plus").font(.title2).foregroundStyle(Color.muster)
+              Text("新建 Agent").font(.headline)
+              Text("选择运行时、模型和它负责的事").font(.caption).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, minHeight: 168)
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])).foregroundStyle(.tertiary))
+            .contentShape(RoundedRectangle(cornerRadius: 16))
+          }
+          .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
       }
+      .padding(28)
     }
-    .overlay { if store.agents.isEmpty { ContentUnavailableView("还没有 Agent", systemImage: "person.2", description: Text("创建一个编码 Agent，让 master agent 给它派活。")) } }
     .navigationTitle("Agent")
     .toolbar { Button { creating = true } label: { Label("新建 Agent", systemImage: "plus") } }
     .sheet(isPresented: $creating) { NewAgentSheet() }
+  }
+}
+
+private struct AgentCard: View {
+  @Environment(Store.self) private var store
+  var agent: Agent
+  var missing: Bool
+  var body: some View {
+    let active = store.todos.filter { $0.agentId == agent.id && $0.phase.running }
+    let review = store.todos.filter { $0.agentId == agent.id && $0.phase.needsYou }.count
+    let leads = store.projects.filter { $0.chiefAgentId == agent.id }.count
+    Button { store.route = .agent(agent.id) } label: {
+      VStack(alignment: .leading, spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
+          AgentAvatar(name: agent.name, size: 44)
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+              Text(agent.name).font(.title3.weight(.semibold))
+              if agent.isChief { Tag(text: "默认 master") } else if leads > 0 { Tag(text: "master") }
+            }
+            Text(agent.role).font(.callout).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+          }
+          Spacer(minLength: 0)
+        }
+        HStack(spacing: 6) {
+          MetaPill(systemImage: "terminal") { Text(Runtimes.label(agent.runtime)) }
+          MetaPill(systemImage: "cpu") { Text(agent.model == "default" ? "CLI 默认" : agent.model).lineLimit(1) }
+          if let reasoning = agent.reasoning { MetaPill(systemImage: "brain") { Text(reasoning) } }
+        }
+        .font(.caption)
+        Divider()
+        HStack(spacing: 10) {
+          if missing {
+            Label("本机未安装 \(Runtimes.label(agent.runtime))", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+          } else if active.isEmpty && review == 0 {
+            Label("空闲", systemImage: "moon.zzz").foregroundStyle(.tertiary)
+          } else {
+            if !active.isEmpty { Label("\(active.count) 个进行中", systemImage: "circle.dotted.circle").foregroundStyle(Color.muster) }
+            if review > 0 { Label("\(review) 个等你处理", systemImage: "hand.raised").foregroundStyle(.orange) }
+          }
+          Spacer()
+          Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+        }
+        .font(.caption.weight(.medium))
+      }
+      .padding(16)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+      .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+      .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
+      .contentShape(RoundedRectangle(cornerRadius: 16))
+    }
+    .buttonStyle(.plain)
   }
 }
 
@@ -152,7 +199,7 @@ struct AgentDetailView: View {
       Form {
         Section {
           HStack(spacing: 12) {
-            Monogram(name: agent.name, size: 40)
+            AgentAvatar(name: agent.name, size: 40)
             VStack(alignment: .leading) {
               TextField("名称", text: $name).font(.title2.weight(.semibold)).textFieldStyle(.plain).disabled(agent.isChief)
                 .onSubmit { save(["name": .string(name)]) }
