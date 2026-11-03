@@ -82,20 +82,25 @@ npm run build && npm start
 
 REST API 没有登录：能访问端口的人就能使用整个 Muster。它面向可信机器上的单个用户。为了挡住其他网站，server 只接受 `Host` 为回环地址、`MUSTER_PUBLIC_URL` 的主机名或 `MUSTER_ALLOWED_HOSTS` 中主机名的请求，并拒绝带外部 `Origin` 或 `Sec-Fetch-Site: cross-site` 的写请求——这能防住恶意网页和 DNS 重绑定，但不是身份认证。机器请求使用每台机器的 token，`/api/mcp` 需要 API 密钥，可选的 enrollment key 只保护机器注册。Agent 在 Git worktree 里以完全访问/跳过审批模式运行，所以只把 Muster 指向你信任的仓库、CLI 和凭据。漏洞请按 [SECURITY.md](SECURITY.md) 私下报告。远程部署请放在带认证的反向代理和 TLS 后面。
 
-## 桌面 App
+## macOS App
 
-在 macOS 上可以把整个本地工作台打包成一个 App：
+macOS 版是原生 SwiftUI App（`apps/macos`），不再基于 Electron。需要 Xcode 15+ / Swift 5.10+ 和 Node.js 22+：
 
 ```sh
 npm install
-npm run desktop:dev
-# 为本机架构构建 ad-hoc 签名的 Muster.app 和 DMG：
-npm run desktop:dist
-# 可选：用 mock 回合在隐藏窗口中检查打包后的 App：
-npm run desktop:smoke
+npm run mac        # 构建全部 workspace，并生成 apps/macos/build/Muster.app
+npm run mac:test   # Swift 单元测试
 ```
 
-产物在 `apps/desktop/release/`。安装包未经 Apple 公证，首次打开会提示无法验证开发者：在「系统设置 → 隐私与安全性」底部点「仍要打开」，或运行 `xattr -dr com.apple.quarantine /Applications/Muster.app`。App 内置 Electron 的 Node、server、daemon 和界面，不需要系统 Node；Git 和各 Agent CLI 需要另行安装并登录。请把 App 安装在 `/Applications` 或 `~/Applications`。数据在 `~/.muster`，日志在 `~/.muster/logs`。App 会在任务待验收、失败、完成时发送通知（可在设置里开关），并在程序坞显示需要你处理的任务数。
+把 `apps/macos/build/Muster.app` 拖到 `/Applications` 即可。App 启动时会在本机拉起 server 和 daemon（已有运行中的 Muster 服务或 daemon 时直接复用），退出时先停 daemon 再停 server。它从登录 shell 的 PATH 里找 `node`，也可以用 `MUSTER_NODE` 指定；`apps/macos/scripts/bundle.sh --embed-node=<node 路径> --dmg` 会把指定的 node（请用 nodejs.org 官方构建）打进包里并生成 DMG，这样目标机器不需要装 Node。数据在 `~/.muster`，日志在 `~/.muster/logs`。
+
+- 侧边栏就是待办队列：主会话之后按「需要你 → 进行中 → 待开始 → 最近完成」分组，运行中的任务直接显示 Agent 的最新一行输出。
+- 任务页左边是对话，右边是 diff 检查器（⌘⌥I）；⌘↩ 开始或完成并合并，⌘R 重新运行，⌘. 停止，⌘⌫ 关闭任务。
+- ⌘N 新建任务，⌘⇧N 新建工作空间，⌘K 快速打开，⌘1/⌘2 主会话/看板，⌘⌥1…9 切换工作空间，⌘, 设置。
+- 关闭窗口后 App 继续运行；菜单栏图标显示需要你处理和正在运行的任务。任务待验收、失败、完成时发送通知（点通知打开任务），Dock 角标显示需要你处理的任务数。
+- 技能导入和连接编辑仍在浏览器界面里完成（菜单「文件 → 在浏览器中打开」）。
+
+App 是 ad-hoc 签名、未公证的；首次打开如被拦截，在「系统设置 → 隐私与安全性」里点「仍要打开」。设计说明见 [apps/macos/DESIGN.md](apps/macos/DESIGN.md)。
 
 ## 配置
 
@@ -163,7 +168,7 @@ flowchart LR
   ExtMCP --> Server
 ```
 
-`packages/shared` 定义领域类型和协议；`apps/server` 负责持久化与编排；`apps/daemon` 管理 worktree 和运行时；`apps/web` 是界面；`apps/desktop` 是 Electron 外壳。产品规格见 [docs/PLAN.md](docs/PLAN.md)，接口契约见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
+`packages/shared` 定义领域类型和协议；`apps/server` 负责持久化与编排；`apps/daemon` 管理 worktree 和运行时；`apps/web` 是界面；`apps/macos` 是原生 SwiftUI 的 macOS App。产品规格见 [docs/PLAN.md](docs/PLAN.md)，接口契约见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 ## 参与贡献
 

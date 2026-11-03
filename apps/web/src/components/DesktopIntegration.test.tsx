@@ -3,7 +3,7 @@ import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 import { DesktopIntegration } from "./DesktopIntegration";
 import { Markdown } from "./Conversation";
-import type { DesktopCommand } from "../../../desktop/src/bridge";
+import type { DesktopCommand } from "../desktop";
 afterEach(() => { delete window.muster; });
 it("receives native new-task and notification navigation commands and unsubscribes", () => {
   let callback: (command: DesktopCommand) => void = () => {};
