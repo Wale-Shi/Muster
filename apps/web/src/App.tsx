@@ -1,4 +1,5 @@
 import { SettingsPage } from "./pages/Settings";
+import { UsagePage } from "./pages/Usage";
 import { ConnectionsPage } from "./pages/Connections";
 import { AgentPage } from "./pages/Agent";
 import { SkillsPage, NewSkillPage, SkillPage } from "./pages/Skills";
@@ -75,6 +76,7 @@ export function App() {
           <Route path="/skills/:slug" element={<SkillPage key={location.pathname} />} />
           <Route path="/connections" element={<ConnectionsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/usage" element={<UsagePage />} />
           <Route path="/projects/:id" element={<LegacyProjectRedirect />} />
           <Route
             path="*"

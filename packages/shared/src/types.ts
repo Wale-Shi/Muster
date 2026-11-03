@@ -111,6 +111,23 @@ export interface Turn {
   error: string | null;
   tokensIn: number;
   tokensOut: number;
+  /** The runtime's own session (Claude/ACP session id, Codex thread id or pi session file); known once a turn ends. */
+  sessionId: string | null;
+  agent: { name: string; runtime: string; model: string } | null;
+}
+
+/** Token use of the turns that share a day, agent, model and workspace. */
+export interface UsageRow {
+  day: string;
+  agentId: string | null;
+  agentName: string;
+  runtime: string;
+  model: string;
+  projectId: string | null;
+  tokensIn: number;
+  tokensOut: number;
+  durationMs: number;
+  turns: number;
 }
 
 export interface Message {

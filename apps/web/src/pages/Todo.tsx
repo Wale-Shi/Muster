@@ -1,7 +1,9 @@
 import { useI18n } from "../i18n";
+import { copyText } from "../lib/clipboard";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ArrowLeft, Coins, PanelRightClose } from "lucide-react";
+import { ArrowLeft, Check, Coins, Copy, History, PanelRightClose } from "lucide-react";
+import type { Turn } from "@muster/shared";
 import { useAgents, useProjects, useTodo } from "../api/queries";
 import { Conversation } from "../components/Conversation";
 import { DocumentsPanel } from "../components/DocumentsPanel";
@@ -111,6 +113,7 @@ export function TodoPage() {
               </span>
             </div>
           </details>
+          <ExecutionRecords builds={todo.builds} />
           <div className="spacer" />
           <TodoActions todo={todo} onDone={() => setDone(true)} />
         </div>
@@ -166,6 +169,66 @@ export function TodoPage() {
         right={<DocumentsPanel key={todo.id} todo={todo} />}
       />
       {done && <DoneDialog todo={todo} onClose={() => setDone(false)} />}
+    </div>
+  );
+}
+
+/** Every turn of the task with the runtime session it ran in, so a run can be resumed or inspected in its CLI. */
+function ExecutionRecords({ builds }: { builds: Array<{ turns: Turn[] }> }) {
+  const { t, label, formatDate } = useI18n();
+  const turns = builds.flatMap((build) => build.turns);
+  return (
+    <details className="usage-popover">
+      <summary className="button ghost">
+        <History size={13} />
+        {t("run.records")}
+      </summary>
+      <div className="popover run-records">
+        <strong>{t("run.records")}</strong>
+        {!turns.length && <span>{t("run.empty")}</span>}
+        <ol>
+          {turns.map((turn, index) => (
+            <li key={turn.id}>
+              <div className="run-record-head">
+                <b>{t("run.round", { n: index + 1 })}</b>
+                <span>{t(`run.kind_${turn.kind}`)}</span>
+                <span className={`run-record-status ${turn.status}`}>{label("status", turn.status)}</span>
+                {turn.startedAt && <span className="dim">{formatDate(turn.startedAt, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+              </div>
+              {turn.agent && (
+                <div className="dim">
+                  {turn.agent.name} · {label("runtime", turn.agent.runtime)} · {turn.agent.model === "default" ? t("usage.defaultModel") : turn.agent.model}
+                  {turn.tokensIn + turn.tokensOut > 0 && ` · ${t("text.tokens", { count: turn.tokensIn + turn.tokensOut })}`}
+                </div>
+              )}
+              <SessionId turn={turn} />
+            </li>
+          ))}
+        </ol>
+        {turns.some((turn) => turn.sessionId) && <small className="dim">{t("run.sessionHelp")}</small>}
+      </div>
+    </details>
+  );
+}
+
+function SessionId({ turn }: { turn: Turn }) {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  if (!turn.sessionId)
+    return <div className="run-session dim">{t("run.session")}：{turn.status === "queued" || turn.status === "running" ? t("run.sessionPending") : t("run.sessionNone")}</div>;
+  return (
+    <div className="run-session">
+      <span className="dim">{t("run.session")}</span>
+      <code title={turn.sessionId}>{turn.sessionId}</code>
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={t("run.copySession")}
+        title={t("run.copySession")}
+        onClick={() => { void copyText(turn.sessionId!).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }}
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+      </button>
     </div>
   );
 }

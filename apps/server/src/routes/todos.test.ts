@@ -1,15 +1,19 @@
 import { afterEach, describe, expect, it } from "vitest";
 import type { Hono } from "hono";
 import { createApp } from "../app.js";
-import { createTodo, requestJson, seedProjectAndAgent } from "../test/helpers.js";
+import { createTodo, enroll, requestJson, seedProjectAndAgent } from "../test/helpers.js";
 
 const databases: Array<ReturnType<typeof createApp>["services"]["db"]> = [];
 afterEach(() => { while (databases.length) databases.pop()?.close(); });
 
 function setup(): Hono {
-  const { app, services } = createApp({ claimWaitMs: 0, autoFollowUp: false });
-  databases.push(services.db);
-  return app;
+  return setupWithServices().app;
+}
+
+function setupWithServices() {
+  const created = createApp({ claimWaitMs: 0, autoFollowUp: false });
+  databases.push(created.services.db);
+  return created;
 }
 
 describe("todo routes", () => {
@@ -44,5 +48,19 @@ describe("todo routes", () => {
     const stopped = (await requestJson(app, `/api/todos/${todoId}`)).json.data;
     expect(stopped.phase).toBe("failed");
     expect(stopped.builds.at(-1).turns.at(-1)).toMatchObject({ status: "stopped", error: "Stopped before claim" });
+  });
+
+  it("shows each turn's runtime session and agent, and totals token use by agent, model and workspace", async () => {
+    const { app, services } = setupWithServices(); const { projectId, agentId } = await seedProjectAndAgent(app);
+    const machine = await enroll(app);
+    const todoId = await createTodo(app, projectId, agentId);
+    await requestJson(app, `/api/todos/${todoId}/start`, "POST", {});
+    const job = services.scheduler.claim(machine.token)!;
+    expect((await requestJson(app, `/api/todos/${todoId}`)).json.data.builds[0].turns[0]).toMatchObject({ sessionId: null, agent: { name: "Mock", runtime: "mock", model: "mock-1" } });
+    await requestJson(app, `/api/machine/turns/${job.turnId}/complete`, "POST", { status: "done", diff: "", usage: { tokensIn: 100, tokensOut: 25, durationMs: 40 }, sessionState: { threadId: "thread-1" } }, machine.token);
+    expect((await requestJson(app, `/api/todos/${todoId}`)).json.data.builds[0].turns[0]).toMatchObject({ sessionId: "thread-1" });
+
+    const usage = (await requestJson(app, "/api/usage?days=7")).json.data;
+    expect(usage).toEqual([expect.objectContaining({ agentId, agentName: "Mock", runtime: "mock", model: "mock-1", projectId, tokensIn: 100, tokensOut: 25, durationMs: 40, turns: 1 })]);
   });
 });

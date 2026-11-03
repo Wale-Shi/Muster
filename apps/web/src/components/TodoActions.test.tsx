@@ -15,7 +15,7 @@ const todo: TodoDetail = {
 const build = (status: TodoDetail["builds"][number]["turns"][number]["status"]): TodoDetail["builds"] => [{
   id: "build", todoId: "task", branch: "muster/conv-build", machineId: null, status: "active",
   baseCommit: null, headCommit: null, tokensIn: 0, tokensOut: 0, durationMs: 0, createdAt: "2026-10-25",
-  turns: [{ id: "turn", buildId: "build", kind: "build", status, machineId: null, prompt: "", startedAt: null, endedAt: null, error: null, tokensIn: 0, tokensOut: 0 }],
+  turns: [{ id: "turn", buildId: "build", kind: "build", status, machineId: null, prompt: "", startedAt: null, endedAt: null, error: null, tokensIn: 0, tokensOut: 0, sessionId: null, agent: null }],
   documents: [],
 }];
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks(); });

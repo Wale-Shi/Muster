@@ -93,7 +93,8 @@ function createWindow() {
   const openExternal = (url: string) => { if (["https:", "http:"].includes(new URL(url).protocol)) void shell.openExternal(url); };
   window.webContents.setWindowOpenHandler(({ url }) => { openExternal(url); return { action: "deny" }; });
   window.webContents.on("will-navigate", (event, url) => { if (new URL(url).origin !== origin) { event.preventDefault(); openExternal(url); } });
-  window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  // Only copying to the clipboard is allowed; every other permission (camera, notifications from the page, …) is denied.
+  window.webContents.session.setPermissionRequestHandler((_contents, permission, callback) => callback(permission === "clipboard-sanitized-write"));
   void window.loadURL(origin);
   return window;
 }

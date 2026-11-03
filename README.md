@@ -95,7 +95,7 @@ npm run desktop:dist
 npm run desktop:smoke
 ```
 
-产物在 `apps/desktop/release/`。App 内置 Electron 的 Node、server、daemon 和界面，不需要系统 Node；Git 和各 Agent CLI 需要另行安装并登录。请把 App 安装在 `/Applications` 或 `~/Applications`。数据在 `~/.muster`，日志在 `~/.muster/logs`。App 会在任务待验收、失败、完成时发送通知（可在设置里开关），并在程序坞显示需要你处理的任务数。
+产物在 `apps/desktop/release/`。安装包未经 Apple 公证，首次打开会提示无法验证开发者：在「系统设置 → 隐私与安全性」底部点「仍要打开」，或运行 `xattr -dr com.apple.quarantine /Applications/Muster.app`。App 内置 Electron 的 Node、server、daemon 和界面，不需要系统 Node；Git 和各 Agent CLI 需要另行安装并登录。请把 App 安装在 `/Applications` 或 `~/Applications`。数据在 `~/.muster`，日志在 `~/.muster/logs`。App 会在任务待验收、失败、完成时发送通知（可在设置里开关），并在程序坞显示需要你处理的任务数。
 
 ## 配置
 

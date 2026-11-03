@@ -66,6 +66,23 @@ export function apiRoutes(services: AppServices): Hono {
     db.transaction(() => { db.run("UPDATE todos SET agent_id=NULL WHERE agent_id=?", agentId); db.run("UPDATE todos SET plan_agent_id=NULL WHERE plan_agent_id=?", agentId); db.run("UPDATE projects SET chief_agent_id=NULL WHERE chief_agent_id=?", agentId); db.run("DELETE FROM agents WHERE id = ?", agentId); }); events.emit({ type: "agent.deleted", payload: { id: agentId } }); events.emit({ type: "project.changed", payload: {} }); return c.body(null, 204);
   });
 
+  // Token use per day, agent, model and workspace; the page groups it further. Master agent turns count under their workspace.
+  app.get("/usage", (c) => {
+    const days = Number(c.req.query("days"));
+    const since = Number.isInteger(days) && days > 0 ? new Date(Date.now() - days * 86_400_000).toISOString() : null;
+    const rows = db.rows(`SELECT date(t.started_at,'localtime') AS day, json_extract(t.agent_snapshot_json,'$.id') AS agent_id,
+        json_extract(t.agent_snapshot_json,'$.name') AS agent_name, json_extract(t.agent_snapshot_json,'$.runtime') AS runtime,
+        json_extract(t.agent_snapshot_json,'$.model') AS model, COALESCE(td.project_id, tp.project_id) AS project_id,
+        sum(t.tokens_in) AS tokens_in, sum(t.tokens_out) AS tokens_out, sum(t.duration_ms) AS duration_ms, count(*) AS turns
+      FROM turns t JOIN builds b ON b.id=t.build_id LEFT JOIN todos td ON td.id=b.todo_id LEFT JOIN topics tp ON b.branch='chief:'||tp.id
+      WHERE t.started_at IS NOT NULL AND t.agent_snapshot_json IS NOT NULL AND (? IS NULL OR t.started_at>=?)
+      GROUP BY 1,2,3,4,5,6 ORDER BY 1`, since, since);
+    return c.json({ data: rows.map((row) => ({
+      day: String(row.day), agentId: row.agent_id as string | null, agentName: String(row.agent_name ?? ""), runtime: String(row.runtime ?? ""),
+      model: String(row.model ?? ""), projectId: row.project_id as string | null, tokensIn: Number(row.tokens_in), tokensOut: Number(row.tokens_out),
+      durationMs: Number(row.duration_ms), turns: Number(row.turns),
+    })) });
+  });
   app.get("/machines", (c) => {
     services.scheduler.failOfflineMachines(); const cutoff = Date.now() - 30_000;
     const data = db.rows(`SELECT m.*, (SELECT count(*) FROM turns t WHERE t.machine_id=m.id AND t.status='running') AS running FROM machines m ORDER BY created_at`).map((row) => ({ ...db.machine(row), online: typeof row.last_seen_at === "string" && Date.parse(row.last_seen_at) >= cutoff, running: Number(row.running) }));

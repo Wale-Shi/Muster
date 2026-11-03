@@ -46,7 +46,8 @@ const serverErrors: Record<string, keyof typeof messages.error> = {
   "Master agent is still working": "master_busy",
   "The default master agent cannot be deleted": "default_master",
   "Workspace conversation not found": "workspace_conversation",
-  "Topic not found": "topic_missing"
+  "Topic not found": "topic_missing",
+  "clipboard-unavailable": "clipboard"
 };
 const known = new Map(Object.entries(serverErrors).map(([text, key]) => [text, `error.${key}` as MessageKey]));
 export function displayError(error: unknown, t: ReturnType<typeof createI18n>["t"], label: ReturnType<typeof createI18n>["label"]) {

@@ -72,7 +72,7 @@ export class MusterDb {
   machine(row: Row): Machine { return { id: String(row.id), name: String(row.name), concurrency: Number(row.concurrency), runtimes: json(row.runtimes_json, []), models: json(row.models_json, {}), lastSeenAt: row.last_seen_at as string | null, createdAt: String(row.created_at) }; }
   todo(row: Row): Todo { return { id: String(row.id), number: Number(row.number), projectId: String(row.project_id), title: String(row.title), spec: String(row.spec), phase: row.phase as Todo["phase"], agentId: row.agent_id as string | null, createdBy: row.created_by as Todo["createdBy"], topicId: row.topic_id as string | null, previousGate: row.previous_gate as Todo["previousGate"], createdAt: String(row.created_at), updatedAt: String(row.updated_at), doneAt: row.done_at as string | null }; }
   build(row: Row): Build { return { id: String(row.id), todoId: row.todo_id as string | null, branch: String(row.branch), machineId: row.machine_id as string | null, status: row.status as Build["status"], baseCommit: row.base_commit as string | null, headCommit: row.head_commit as string | null, tokensIn: Number(row.tokens_in), tokensOut: Number(row.tokens_out), durationMs: Number(row.duration_ms), createdAt: String(row.created_at) }; }
-  turn(row: Row): Turn { return { id: String(row.id), buildId: String(row.build_id), kind: row.kind as Turn["kind"], status: row.status as Turn["status"], machineId: row.machine_id as string | null, prompt: String(row.prompt), startedAt: row.started_at as string | null, endedAt: row.ended_at as string | null, error: row.error as string | null, tokensIn: Number(row.tokens_in), tokensOut: Number(row.tokens_out) }; }
+  turn(row: Row): Turn { return { id: String(row.id), buildId: String(row.build_id), kind: row.kind as Turn["kind"], status: row.status as Turn["status"], machineId: row.machine_id as string | null, prompt: String(row.prompt), startedAt: row.started_at as string | null, endedAt: row.ended_at as string | null, error: row.error as string | null, tokensIn: Number(row.tokens_in), tokensOut: Number(row.tokens_out), sessionId: sessionIdOf(json(row.session_state_json, null)), agent: turnAgent(json(row.agent_snapshot_json, null)) }; }
   message(row: Row): Message { return { id: String(row.id), conversationId: String(row.conversation_id), turnId: row.turn_id as string | null, role: row.role as Message["role"], content: String(row.content), meta: json(row.meta_json, {}), createdAt: String(row.created_at) }; }
   document(row: Row): Document { return { id: String(row.id), buildId: String(row.build_id), kind: row.kind as Document["kind"], version: Number(row.version), content: String(row.content), createdAt: String(row.created_at) }; }
   topic(row: Row): Topic { return { id: String(row.id), projectId: row.project_id as string | null, title: String(row.title), runtimeSession: json(row.runtime_session_json, null), ...this.topicActivity(String(row.id)), createdAt: String(row.created_at), updatedAt: String(row.updated_at) }; }
@@ -90,4 +90,13 @@ export class MusterDb {
     try { const result = operation(); this.raw.exec("COMMIT"); return result; }
     catch (error) { this.raw.exec("ROLLBACK"); throw error; }
   }
+}
+
+function sessionIdOf(state: Record<string, unknown> | null): string | null {
+  const value = state?.sessionId ?? state?.threadId ?? state?.sessionFile;
+  return typeof value === "string" && value ? value : null;
+}
+
+function turnAgent(snapshot: Record<string, unknown> | null): Turn["agent"] {
+  return snapshot ? { name: String(snapshot.name ?? ""), runtime: String(snapshot.runtime ?? ""), model: String(snapshot.model ?? "") } : null;
 }

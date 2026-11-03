@@ -6,6 +6,7 @@ import { Trash2, X } from "lucide-react";
 import { CLI_DEFAULT_MODEL, type Agent, type AgentPermissions, type Project, type Skill, type Todo } from "@muster/shared";
 import { request } from "../api/client";
 import { useI18n } from "../i18n";
+import { copyText } from "../lib/clipboard";
 import { Avatar, ErrorNotice, Loading, PhaseBadge, Section, SettingRow, Switch } from "../components/ui";
 import { RuntimeOptions } from "../components/RuntimeOptions";
 import { initialModel, keepReasoning, ModelSelect, ReasoningSelect, reasoningLevels } from "../components/ModelFields";
@@ -40,7 +41,7 @@ export function AgentPage() {
               <div className="profile-meta">
                 <span className="badge">{label("runtime", a.runtime)}</span>
                 <span className="mono">{a.model}</span>
-                <button className="copy-id" title={t("parity.copyId")} onClick={() => { void navigator.clipboard.writeText(a.id).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }}>{copied ? t("parity.copied") : a.id.slice(0, 12)}</button>
+                <button className="copy-id" title={t("parity.copyId")} onClick={() => { void copyText(a.id).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }}>{copied ? t("parity.copied") : a.id.slice(0, 12)}</button>
               </div>
               <textarea key={a.role} className="profile-duty" rows={1} aria-label={t("field.role")} title={t("parity.dutyHelp")} defaultValue={a.role} onBlur={(e) => { const role = e.target.value.trim(); if (role && role !== a.role) save.mutate({ role }); }} />
             </div>

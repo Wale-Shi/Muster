@@ -2492,3 +2492,97 @@ svg { stroke-width: 1.75; }
 
 /* An agent whose CLI is not installed on this computer. */
 .badge.warning { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 40%, transparent); margin-left: 6px; }
+
+/* Execution records: each turn of a task and the runtime session it ran in. */
+.popover.run-records {
+  width: min(380px, calc(100vw - 32px));
+  max-height: min(460px, 70vh);
+  overflow-y: auto;
+}
+.run-records ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.run-records li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 9px;
+  border-top: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  min-width: 0;
+}
+.run-record-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.run-record-head b {
+  font-family: inherit;
+  font-weight: 600;
+}
+.run-record-status.failed {
+  color: var(--danger);
+}
+.run-record-status.running,
+.run-record-status.queued {
+  color: var(--accent);
+}
+.run-session {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.run-session code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  user-select: all;
+}
+.run-session .icon-button {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+/* Usage: token totals by day, model, agent, runtime and workspace. One hue: every bar is a magnitude. */
+.usage-page .page-content { max-width: 1040px; display: flex; flex-direction: column; gap: 20px; }
+.usage-subtitle { margin: 0; font-size: 12px; }
+.usage-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.usage-tile { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--border-default); border-radius: 8px; background: var(--surface-secondary); min-width: 0; }
+.usage-tile span { font-size: 12px; color: var(--text-tertiary); }
+.usage-tile strong { font-size: 20px; font-weight: 500; font-family: "JetBrains Mono", monospace; color: var(--text-primary); }
+.usage-section { display: flex; flex-direction: column; gap: 12px; }
+.usage-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; min-height: 28px; }
+.usage-section-head h2 { font-size: 13px; font-weight: 600; }
+.usage-readout { font-size: 12px; font-family: "JetBrains Mono", monospace; }
+.usage-daily { display: flex; align-items: flex-end; gap: 2px; height: 140px; padding-bottom: 1px; border-bottom: 1px solid var(--border-strong); }
+.usage-day { flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; cursor: default; }
+.usage-day > span { width: 100%; border-radius: 4px 4px 0 0; background: color-mix(in srgb, var(--accent) 78%, transparent); }
+.usage-day.active > span { background: var(--accent); }
+.usage-daily:hover .usage-day:not(.active) > span { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.usage-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.usage-table th, .usage-table td { padding: 8px 10px; border-bottom: 1px solid var(--border-default); text-align: right; white-space: nowrap; font-weight: 400; }
+.usage-table thead th { color: var(--text-tertiary); font-size: 11px; }
+.usage-table tbody th { text-align: left; max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+.usage-table tbody th small { margin-left: 6px; }
+.usage-table td { font-family: "JetBrains Mono", monospace; color: var(--text-secondary); }
+.usage-name { color: var(--text-primary); }
+.usage-table .usage-bar-cell { width: 34%; text-align: left; }
+.usage-bar { display: block; height: 8px; border-radius: 0 4px 4px 0; background: var(--accent); }
+.usage-empty { padding: 40px 0; text-align: center; }
+.usage-note { margin: 0; font-size: 11px; }
+@media (max-width: 767px) {
+  .usage-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .usage-table .usage-bar-cell, .usage-table th:nth-child(4), .usage-table td:nth-child(4), .usage-table th:nth-child(5), .usage-table td:nth-child(5) { display: none; }
+  .usage-page .page-header { height: auto; padding-top: 8px; padding-bottom: 8px; flex-wrap: wrap; }
+}

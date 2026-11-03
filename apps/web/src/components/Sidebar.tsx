@@ -5,6 +5,7 @@ import { useI18n } from "../i18n";
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink } from "react-router";
 import {
+  BarChart3,
   BookOpen,
   Plug,
   Bot,
@@ -154,6 +155,7 @@ export function Sidebar({
     { to: "/agents", title: t("ui.agents"), icon: Bot },
     { to: "/skills", title: t("parity.skills"), icon: BookOpen },
     { to: "/connections", title: t("phaseB.connections"), icon: Plug },
+    { to: "/usage", title: t("usage.title"), icon: BarChart3 },
   ];
   const connectionText = connection === "connecting" ? t("ui.connectingToServer")
     : connection === "unknown" ? t("ui.machineStatusUnavailable")

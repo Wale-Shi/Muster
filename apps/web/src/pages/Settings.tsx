@@ -5,13 +5,14 @@ import type { ApiKey, WorkspaceSettings } from "@muster/shared";
 import { request } from "../api/client";
 import { useProjects } from "../api/queries";
 import { useI18n } from "../i18n";
+import { copyText } from "../lib/clipboard";
 import { useTheme } from "../hooks/usePreferences";
 import { Dialog, ErrorNotice, Section, Segmented, SettingRow, Switch } from "../components/ui";
 
 export function useWorkspaceSettings() { return useQuery({ queryKey: ["settings"], queryFn: () => request<WorkspaceSettings>("/settings") }); }
 export function CopyButton({ value }: { value: string }) {
   const { t } = useI18n(); const [copied, setCopied] = useState(false); const [error, setError] = useState<unknown>(null);
-  return <><button type="button" className="button ghost sm" onClick={() => { void navigator.clipboard.writeText(value).then(() => setCopied(true), setError); }}>{t(copied ? "phaseC.copied" : "phaseC.copy")}</button><ErrorNotice error={error} /></>;
+  return <><button type="button" className="button ghost sm" onClick={() => { setError(null); void copyText(value).then(() => setCopied(true), setError); }}>{t(copied ? "phaseC.copied" : "phaseC.copy")}</button><ErrorNotice error={error} /></>;
 }
 /** Client configuration for an MCP endpoint, with `<key>` left for the user's API key. */
 export function clientSnippets(url: string, name = "muster") {
